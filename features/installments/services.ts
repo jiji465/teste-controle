@@ -68,7 +68,7 @@ function mapDbToInstallment(row: any): Installment {
 
 export async function getInstallments(): Promise<Installment[]> {
   if (!hasSupabaseConfig()) return local.getInstallments()
-  const supabase = await getSupabaseClient()
+  const supabase = getSupabaseClient()
   const { data, error } = await supabase.from("installments").select("*").order("due_day")
   if (error) { console.error("[db] Error fetching installments:", error); return local.getInstallments() }
   return data.map(mapDbToInstallment)
@@ -76,14 +76,14 @@ export async function getInstallments(): Promise<Installment[]> {
 
 export async function saveInstallment(installment: Installment): Promise<void> {
   if (!hasSupabaseConfig()) { local.saveInstallment(installment); return }
-  const supabase = await getSupabaseClient()
+  const supabase = getSupabaseClient()
   const { error } = await supabase.from("installments").upsert(mapInstallmentToDb(installment))
   if (error) { console.error("[db] Error saving installment:", error); throw error }
 }
 
 export async function deleteInstallment(id: string): Promise<void> {
   if (!hasSupabaseConfig()) { local.deleteInstallment(id); return }
-  const supabase = await getSupabaseClient()
+  const supabase = getSupabaseClient()
   const { error } = await supabase.from("installments").delete().eq("id", id)
   if (error) { console.error("[db] Error deleting installment:", error); throw error }
 }

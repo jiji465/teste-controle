@@ -197,7 +197,13 @@ export function ClientList({ clients, onUpdate }: ClientListProps) {
         </Table>
       </div>
 
-      <ClientForm client={editingClient} open={isFormOpen} onOpenChange={setIsFormOpen} onSave={handleSave} />
+      <ClientForm 
+        client={editingClient} 
+        open={isFormOpen} 
+        onOpenChange={setIsFormOpen} 
+        onSave={handleSave} 
+        onObligationsCreated={onUpdate}
+      />
     </div>
   )
 }

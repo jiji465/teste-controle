@@ -56,7 +56,7 @@ function mapDbToTax(row: any): Tax {
 
 export async function getTaxes(): Promise<Tax[]> {
   if (!hasSupabaseConfig()) return local.getTaxes()
-  const supabase = await getSupabaseClient()
+  const supabase = getSupabaseClient()
   const { data, error } = await supabase.from("taxes").select("*").order("name")
   if (error) { console.error("[db] Error fetching taxes:", error); return local.getTaxes() }
   return data.map(mapDbToTax)
@@ -64,14 +64,14 @@ export async function getTaxes(): Promise<Tax[]> {
 
 export async function saveTax(tax: Tax): Promise<void> {
   if (!hasSupabaseConfig()) { local.saveTax(tax); return }
-  const supabase = await getSupabaseClient()
+  const supabase = getSupabaseClient()
   const { error } = await supabase.from("taxes").upsert(mapTaxToDb(tax))
   if (error) { console.error("[db] Error saving tax:", error); throw error }
 }
 
 export async function deleteTax(id: string): Promise<void> {
   if (!hasSupabaseConfig()) { local.deleteTax(id); return }
-  const supabase = await getSupabaseClient()
+  const supabase = getSupabaseClient()
   const { error } = await supabase.from("taxes").delete().eq("id", id)
   if (error) { console.error("[db] Error deleting tax:", error); throw error }
 }

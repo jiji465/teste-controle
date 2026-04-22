@@ -10,6 +10,7 @@ function mapClientToDb(client: Client) {
     phone: client.phone || null,
     status: client.status,
     tax_regime: client.taxRegime || null,
+    business_activity: client.businessActivity || null,
     ie: client.ie || null,
     im: client.im || null,
     notes: client.notes || null,
@@ -26,6 +27,7 @@ function mapDbToClient(row: any): Client {
     phone: row.phone || "",
     status: row.status,
     taxRegime: row.tax_regime || undefined,
+    businessActivity: row.business_activity || undefined,
     ie: row.ie || undefined,
     im: row.im || undefined,
     notes: row.notes || undefined,
@@ -35,7 +37,7 @@ function mapDbToClient(row: any): Client {
 
 export async function getClients(): Promise<Client[]> {
   if (!hasSupabaseConfig()) return local.getClients()
-  const supabase = await getSupabaseClient()
+  const supabase = getSupabaseClient()
   const { data, error } = await supabase.from("clients").select("*").order("name")
   if (error) { console.error("[db] Error fetching clients:", error); return local.getClients() }
   return data.map(mapDbToClient)
@@ -43,14 +45,14 @@ export async function getClients(): Promise<Client[]> {
 
 export async function saveClient(client: Client): Promise<void> {
   if (!hasSupabaseConfig()) { local.saveClient(client); return }
-  const supabase = await getSupabaseClient()
+  const supabase = getSupabaseClient()
   const { error } = await supabase.from("clients").upsert(mapClientToDb(client))
   if (error) { console.error("[db] Error saving client:", error); throw error }
 }
 
 export async function deleteClient(id: string): Promise<void> {
   if (!hasSupabaseConfig()) { local.deleteClient(id); return }
-  const supabase = await getSupabaseClient()
+  const supabase = getSupabaseClient()
   const { error } = await supabase.from("clients").delete().eq("id", id)
   if (error) { console.error("[db] Error deleting client:", error); throw error }
 }

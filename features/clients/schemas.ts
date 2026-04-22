@@ -16,6 +16,7 @@ export const clientSchema = z.object({
   phone: z.string().optional(),
   status: z.enum(["active", "inactive"]).default("active"),
   taxRegime: taxRegimeSchema.optional(),
+  businessActivity: z.string().optional(),
   ie: z.string().optional(),
   im: z.string().optional(),
   notes: z.string().optional(),

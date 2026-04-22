@@ -31,6 +31,7 @@ export type Client = {
   phone: string
   status: "active" | "inactive"
   taxRegime?: TaxRegime
+  businessActivity?: string
   ie?: string // Inscrição Estadual
   im?: string // Inscrição Municipal
   notes?: string

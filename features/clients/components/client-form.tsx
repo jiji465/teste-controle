@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { useEffect } from "react"
+import { useEffect, useState } from "react"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { Button } from "@/components/ui/button"
@@ -27,6 +27,9 @@ import {
 import type { Client, TaxRegime } from "@/lib/types"
 import { TAX_REGIME_LABELS } from "@/lib/types"
 import { clientSchema, type ClientFormData } from "@/features/clients/schemas"
+import { TemplateApplyDialog } from "@/components/template-apply-dialog"
+import { type BusinessActivity, BUSINESS_ACTIVITY_LABELS, getTemplateForClient, type ObligationTemplate } from "@/lib/obligation-templates"
+import { saveObligation } from "@/features/obligations/services"
 
 const formatCNPJ = (value: string) => {
   const digits = value.replace(/\D/g, "")
@@ -43,9 +46,14 @@ type ClientFormProps = {
   open: boolean
   onOpenChange: (open: boolean) => void
   onSave: (client: Client) => void
+  onObligationsCreated?: () => void
 }
 
-export function ClientForm({ client, open, onOpenChange, onSave }: ClientFormProps) {
+export function ClientForm({ client, open, onOpenChange, onSave, onObligationsCreated }: ClientFormProps) {
+  const [pendingClient, setPendingClient] = useState<Client | null>(null)
+  const [pendingActivity, setPendingActivity] = useState<BusinessActivity | null>(null)
+  const [templateOpen, setTemplateOpen] = useState(false)
+
   const form = useForm<ClientFormData>({
     resolver: zodResolver(clientSchema),
     defaultValues: {
@@ -57,6 +65,7 @@ export function ClientForm({ client, open, onOpenChange, onSave }: ClientFormPro
       ie: "",
       im: "",
       notes: "",
+      businessActivity: undefined,
     },
   })
 
@@ -85,6 +94,7 @@ export function ClientForm({ client, open, onOpenChange, onSave }: ClientFormPro
           phone: "",
           status: "active",
           taxRegime: undefined,
+          businessActivity: undefined,
           ie: "",
           im: "",
           notes: "",
@@ -102,12 +112,52 @@ export function ClientForm({ client, open, onOpenChange, onSave }: ClientFormPro
       phone: data.phone || "",
       status: data.status,
       taxRegime: data.taxRegime as TaxRegime | undefined,
+      businessActivity: data.businessActivity,
       ie: data.ie || undefined,
       im: data.im || undefined,
       notes: data.notes || undefined,
       createdAt: data.createdAt || new Date().toISOString(),
     }
     onSave(clientData)
+    // For new clients with regime + activity, offer template
+    const isNew = !data.id
+    if (isNew && data.taxRegime && data.businessActivity) {
+      setPendingClient(clientData)
+      setPendingActivity(data.businessActivity as BusinessActivity)
+      setTemplateOpen(true)
+    } else {
+      onOpenChange(false)
+    }
+  }
+
+  const handleTemplateConfirm = async (templates: ObligationTemplate[]) => {
+    if (!pendingClient) return
+    const now = new Date().toISOString()
+    await Promise.all(
+      templates.map(t =>
+        saveObligation({
+          id: crypto.randomUUID(),
+          name: t.name,
+          description: t.description,
+          category: t.category,
+          clientId: pendingClient.id,
+          dueDay: t.dueDay,
+          frequency: t.frequency,
+          recurrence: t.recurrence,
+          weekendRule: t.weekendRule,
+          status: "pending",
+          priority: t.priority,
+          autoGenerate: true,
+          createdAt: now,
+          history: [],
+          tags: [],
+          attachments: [],
+        })
+      )
+    )
+    onObligationsCreated?.()
+    setPendingClient(null)
+    setPendingActivity(null)
     onOpenChange(false)
   }
 
@@ -188,34 +238,57 @@ export function ClientForm({ client, open, onOpenChange, onSave }: ClientFormPro
               </div>
             </div>
 
-            {/* Regime Tributário */}
+            {/* Regime Tributário + Atividade */}
             <div className="space-y-3 border-t pt-3">
               <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Regime Tributário</h3>
-              
-              <FormField
-                control={form.control}
-                name="taxRegime"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Regime Tributário *</FormLabel>
-                    <Select onValueChange={field.onChange} defaultValue={field.value} value={field.value}>
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Selecione o regime" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {(Object.entries(TAX_REGIME_LABELS) as [TaxRegime, string][]).map(([value, label]) => (
-                          <SelectItem key={value} value={value}>
-                            {label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+
+              <div className="grid sm:grid-cols-2 gap-3">
+                <FormField
+                  control={form.control}
+                  name="taxRegime"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Regime Tributário *</FormLabel>
+                      <Select onValueChange={field.onChange} defaultValue={field.value} value={field.value}>
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Selecione o regime" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {(Object.entries(TAX_REGIME_LABELS) as [TaxRegime, string][]).map(([value, label]) => (
+                            <SelectItem key={value} value={value}>{label}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="businessActivity"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Atividade Principal</FormLabel>
+                      <Select onValueChange={field.onChange} defaultValue={field.value} value={field.value}>
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Selecione a atividade" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {(Object.entries(BUSINESS_ACTIVITY_LABELS) as [BusinessActivity, string][]).map(([value, label]) => (
+                            <SelectItem key={value} value={value}>{label}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
 
               <div className="grid sm:grid-cols-2 gap-3">
                 <FormField
@@ -295,11 +368,24 @@ export function ClientForm({ client, open, onOpenChange, onSave }: ClientFormPro
               <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
                 Cancelar
               </Button>
-              <Button type="submit">Salvar</Button>
+              <Button type="submit">Salvar empresa</Button>
             </DialogFooter>
           </form>
         </Form>
       </DialogContent>
     </Dialog>
+
+    {pendingClient && pendingActivity && (
+      <TemplateApplyDialog
+        open={templateOpen}
+        onOpenChange={(v) => { setTemplateOpen(v); if (!v) onOpenChange(false) }}
+        clientName={pendingClient.name}
+        regime={pendingClient.taxRegime!}
+        activity={pendingActivity}
+        templates={getTemplateForClient(pendingClient.taxRegime!, pendingActivity)}
+        onConfirm={handleTemplateConfirm}
+      />
+    )}
+  </>
   )
 }

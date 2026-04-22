@@ -70,7 +70,7 @@ function mapDbToObligation(row: any): Obligation {
 
 export async function getObligations(): Promise<Obligation[]> {
   if (!hasSupabaseConfig()) return local.getObligations()
-  const supabase = await getSupabaseClient()
+  const supabase = getSupabaseClient()
   const { data, error } = await supabase.from("obligations").select("*").order("due_day")
   if (error) { console.error("[db] Error fetching obligations:", error); return local.getObligations() }
   return data.map(mapDbToObligation)
@@ -78,14 +78,14 @@ export async function getObligations(): Promise<Obligation[]> {
 
 export async function saveObligation(obligation: Obligation): Promise<void> {
   if (!hasSupabaseConfig()) { local.saveObligation(obligation); return }
-  const supabase = await getSupabaseClient()
+  const supabase = getSupabaseClient()
   const { error } = await supabase.from("obligations").upsert(mapObligationToDb(obligation))
   if (error) { console.error("[db] Error saving obligation:", error); throw error }
 }
 
 export async function deleteObligation(id: string): Promise<void> {
   if (!hasSupabaseConfig()) { local.deleteObligation(id); return }
-  const supabase = await getSupabaseClient()
+  const supabase = getSupabaseClient()
   const { error } = await supabase.from("obligations").delete().eq("id", id)
   if (error) { console.error("[db] Error deleting obligation:", error); throw error }
 }
