@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { ClientForm } from "./client-form"
 import { MoreVertical, Pencil, Trash2, Search, Plus, Building2 } from "lucide-react"
 import type { Client } from "@/lib/types"
@@ -42,13 +42,8 @@ export function ClientList({ clients, onUpdate }: ClientListProps) {
     }
   }
 
-  const handleEdit = (client: Client) => {
+  const handleOpenForm = (client?: Client) => {
     setEditingClient(client)
-    setIsFormOpen(true)
-  }
-
-  const handleNew = () => {
-    setEditingClient(undefined)
     setIsFormOpen(true)
   }
 
@@ -64,30 +59,36 @@ export function ClientList({ clients, onUpdate }: ClientListProps) {
 
   return (
     <div className="space-y-4">
-      {/* Summary chips */}
-      <div className="flex flex-wrap gap-2 text-sm">
-        <span className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-muted text-muted-foreground">
-          <Building2 className="size-3.5" />
-          {clients.length} cliente{clients.length !== 1 ? "s" : ""} · {activeCount} ativo{activeCount !== 1 ? "s" : ""}
-        </span>
-        {(Object.entries(regimeCounts) as [keyof typeof TAX_REGIME_LABELS, number][]).map(([regime, count]) => (
-          <span
-            key={regime}
-            className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${TAX_REGIME_COLORS[regime as keyof typeof TAX_REGIME_COLORS]}`}
-          >
-            {TAX_REGIME_LABELS[regime as keyof typeof TAX_REGIME_LABELS]}: {count}
+      {/* Toolbar: search + stats + action */}
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        <div className="flex flex-wrap gap-2 text-sm">
+          <span className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-muted text-muted-foreground">
+            <Building2 className="size-3.5" />
+            {clients.length} empresa{clients.length !== 1 ? "s" : ""} · {activeCount} ativa{activeCount !== 1 ? "s" : ""}
           </span>
-        ))}
-      </div>
-
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight text-foreground">Empresas</h1>
-          <p className="text-muted-foreground mt-1">Gerencie o cadastro de empresas e seus dados fiscais</p>
+          {(Object.entries(regimeCounts) as [keyof typeof TAX_REGIME_LABELS, number][]).map(([regime, count]) => (
+            <span
+              key={regime}
+              className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${TAX_REGIME_COLORS[regime as keyof typeof TAX_REGIME_COLORS]}`}
+            >
+              {TAX_REGIME_LABELS[regime as keyof typeof TAX_REGIME_LABELS]}: {count}
+            </span>
+          ))}
         </div>
-        <Button onClick={() => handleOpenForm()}>
+        <Button onClick={() => handleOpenForm()} className="shrink-0">
           <Plus className="mr-2 h-4 w-4" /> Nova Empresa
         </Button>
+      </div>
+
+      {/* Search bar */}
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+        <Input
+          placeholder="Buscar por nome, CNPJ ou regime tributário..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="pl-10"
+        />
       </div>
 
       <div className="border rounded-lg">
@@ -178,7 +179,7 @@ export function ClientList({ clients, onUpdate }: ClientListProps) {
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
                         <DropdownMenuItem onClick={() => handleOpenForm(client)}>
-                          <Edit className="mr-2 h-4 w-4" /> Editar
+                          <Pencil className="mr-2 h-4 w-4" /> Editar
                         </DropdownMenuItem>
                         <DropdownMenuItem
                           onClick={() => handleDelete(client.id)}

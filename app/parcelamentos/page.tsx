@@ -10,7 +10,7 @@ import { Navigation } from "@/components/navigation"
 import { InstallmentForm } from "@/features/installments/components/installment-form"
 import { getInstallments, getClients, getTaxes, saveInstallment, deleteInstallment } from "@/lib/supabase/database"
 import type { Installment, Client, Tax } from "@/lib/types"
-import { Plus, Search, Pencil, Trash2, Play, CheckCircle2, AlertCircle, Flame, TrendingUp, Zap } from "lucide-react"
+import { Plus, Search, Pencil, Trash2, Play, CheckCircle2, AlertCircle, Flame, TrendingUp, Zap, Clock, PlayCircle, AlertTriangle } from "lucide-react"
 import { formatDate, adjustForWeekend } from "@/lib/date-utils"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useData } from "@/contexts/data-context"
@@ -176,12 +176,13 @@ export default function ParcelamentosPage() {
   return (
     <div className="min-h-screen bg-background">
       <Navigation />
-      <main className="container mx-auto p-6 space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight">Parcelamentos</h1>
-            <p className="text-muted-foreground">Gerencie parcelamentos de impostos e obrigações</p>
-          </div>
+      <main className="container mx-auto px-4 py-8">
+        <div className="space-y-6">
+          <div className="flex items-start justify-between gap-4">
+            <div className="space-y-2">
+              <h1 className="text-4xl font-bold tracking-tight text-balance">Parcelamentos</h1>
+              <p className="text-lg text-muted-foreground">Gerencie parcelamentos de impostos e obrigações</p>
+            </div>
           <Button
             onClick={() => {
               setSelectedInstallment(undefined)
@@ -193,67 +194,69 @@ export default function ParcelamentosPage() {
           </Button>
         </div>
 
-        <Tabs value={statusFilter} onValueChange={setStatusFilter} className="w-full">
-          <TabsList className="grid w-full grid-cols-5">
-            <TabsTrigger value="all" className="relative">
-              Todas
-              <Badge variant="secondary" className="ml-2">
-                {statusCounts.all}
-              </Badge>
-            </TabsTrigger>
-            <TabsTrigger value="pending" className="relative">
-              Pendentes
-              <Badge variant="secondary" className="ml-2">
-                {statusCounts.pending}
-              </Badge>
-            </TabsTrigger>
-            <TabsTrigger value="in_progress" className="relative">
-              Em Andamento
-              <Badge variant="secondary" className="ml-2">
-                {statusCounts.in_progress}
-              </Badge>
-            </TabsTrigger>
-            <TabsTrigger value="completed" className="relative">
-              Concluídas
-              <Badge variant="secondary" className="ml-2">
-                {statusCounts.completed}
-              </Badge>
-            </TabsTrigger>
-            <TabsTrigger value="overdue" className="relative">
-              Atrasadas
-              <Badge variant="destructive" className="ml-2">
-                {statusCounts.overdue}
-              </Badge>
-            </TabsTrigger>
-          </TabsList>
-        </Tabs>
+          <Tabs value={statusFilter} onValueChange={setStatusFilter} className="w-full">
+            <TabsList className="grid w-full grid-cols-5 h-auto">
+              <TabsTrigger value="all" className="flex flex-col gap-1 py-3">
+                <span className="text-sm font-medium">Todas</span>
+                <Badge variant="secondary" className="text-xs">{statusCounts.all}</Badge>
+              </TabsTrigger>
+              <TabsTrigger value="pending" className="flex flex-col gap-1 py-3">
+                <div className="flex items-center gap-1.5">
+                  <Clock className="size-3.5" />
+                  <span className="text-sm font-medium">Pendentes</span>
+                </div>
+                <Badge variant="secondary" className="text-xs">{statusCounts.pending}</Badge>
+              </TabsTrigger>
+              <TabsTrigger value="in_progress" className="flex flex-col gap-1 py-3">
+                <div className="flex items-center gap-1.5">
+                  <PlayCircle className="size-3.5" />
+                  <span className="text-sm font-medium">Em Andamento</span>
+                </div>
+                <Badge variant="secondary" className="text-xs bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300">{statusCounts.in_progress}</Badge>
+              </TabsTrigger>
+              <TabsTrigger value="completed" className="flex flex-col gap-1 py-3">
+                <div className="flex items-center gap-1.5">
+                  <CheckCircle2 className="size-3.5" />
+                  <span className="text-sm font-medium">Concluídas</span>
+                </div>
+                <Badge variant="secondary" className="text-xs bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-300">{statusCounts.completed}</Badge>
+              </TabsTrigger>
+              <TabsTrigger value="overdue" className="flex flex-col gap-1 py-3">
+                <div className="flex items-center gap-1.5">
+                  <AlertTriangle className="size-3.5" />
+                  <span className="text-sm font-medium">Atrasadas</span>
+                </div>
+                <Badge variant="secondary" className="text-xs bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300">{statusCounts.overdue}</Badge>
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
 
-        <div className="flex gap-4">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              placeholder="Buscar parcelamentos..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-10"
-            />
+          <div className="flex gap-4">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                placeholder="Buscar parcelamentos..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-10"
+              />
+            </div>
+            <Select value={clientFilter} onValueChange={setClientFilter}>
+              <SelectTrigger className="w-[200px]">
+                <SelectValue placeholder="Filtrar por cliente" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos os clientes</SelectItem>
+                {clients.map((client) => (
+                  <SelectItem key={client.id} value={client.id}>
+                    {client.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
-          <Select value={clientFilter} onValueChange={setClientFilter}>
-            <SelectTrigger className="w-[200px]">
-              <SelectValue placeholder="Filtrar por cliente" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Todos os clientes</SelectItem>
-              {clients.map((client) => (
-                <SelectItem key={client.id} value={client.id}>
-                  {client.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
 
-        <div className="rounded-lg border bg-card">
+          <div className="rounded-lg border bg-card">
           <Table>
             <TableHeader>
               <TableRow>
@@ -324,6 +327,7 @@ export default function ParcelamentosPage() {
               )}
             </TableBody>
           </Table>
+          </div>
         </div>
       </main>
 

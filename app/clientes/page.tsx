@@ -18,9 +18,9 @@ export default function ClientesPage() {
       <Navigation />
       <main className="container mx-auto px-4 py-8">
         <div className="space-y-6">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight">Empresas</h1>
-            <p className="text-muted-foreground mt-2">
+          <div className="space-y-2">
+            <h1 className="text-4xl font-bold tracking-tight text-balance">Empresas</h1>
+            <p className="text-lg text-muted-foreground">
               Gerencie as empresas, regimes tributários e informações cadastrais
             </p>
           </div>

@@ -153,7 +153,7 @@ export function ReportsPanel({ obligations }: ReportsPanelProps) {
           <CardContent>
             <div className="text-2xl font-bold">{inProgress.length}</div>
             <p className="text-xs text-muted-foreground mt-3">
-              {Math.round((inProgress.length / filteredObligations.length) * 100)}% do total
+              {filteredObligations.length > 0 ? Math.round((inProgress.length / filteredObligations.length) * 100) : 0}% do total
             </p>
           </CardContent>
         </Card>
