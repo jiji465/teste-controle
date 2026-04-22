@@ -80,19 +80,13 @@ export function ClientList({ clients, onUpdate }: ClientListProps) {
         ))}
       </div>
 
-      <div className="flex items-center justify-between gap-4">
-        <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
-          <Input
-            placeholder="Buscar por nome, CNPJ ou regime..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="pl-9"
-          />
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight text-foreground">Empresas</h1>
+          <p className="text-muted-foreground mt-1">Gerencie o cadastro de empresas e seus dados fiscais</p>
         </div>
-        <Button onClick={handleNew}>
-          <Plus className="size-4 mr-2" />
-          Novo Cliente
+        <Button onClick={() => handleOpenForm()}>
+          <Plus className="mr-2 h-4 w-4" /> Nova Empresa
         </Button>
       </div>
 
@@ -112,7 +106,20 @@ export function ClientList({ clients, onUpdate }: ClientListProps) {
             {filteredClients.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
-                  Nenhum cliente encontrado
+                  <div className="flex flex-col items-center justify-center text-center p-8">
+                    <Building2 className="h-12 w-12 text-muted-foreground mb-4 opacity-20" />
+                    <h3 className="text-lg font-medium text-foreground">Nenhuma empresa encontrada</h3>
+                    <p className="text-muted-foreground mt-1 max-w-sm">
+                      {search
+                        ? "Tente ajustar o termo de busca."
+                        : "Cadastre sua primeira empresa para começar a gerenciar suas obrigações fiscais."}
+                    </p>
+                    {!search && (
+                      <Button onClick={() => handleOpenForm()} className="mt-4">
+                        <Plus className="mr-2 h-4 w-4" /> Cadastrar Empresa
+                      </Button>
+                    )}
+                  </div>
                 </TableCell>
               </TableRow>
             ) : (
@@ -156,21 +163,28 @@ export function ClientList({ clients, onUpdate }: ClientListProps) {
                       {client.status === "active" ? "Ativo" : "Inativo"}
                     </Badge>
                   </TableCell>
-                  <TableCell>
+                  <TableCell className="text-right">
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon">
-                          <MoreVertical className="size-4" />
+                        <Button variant="ghost" className="h-8 w-8 p-0">
+                          <span className="sr-only">Abrir menu</span>
+                          <MoreVertical className="h-4 w-4" />
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => handleEdit(client)}>
-                          <Pencil className="size-4 mr-2" />
-                          Editar
+                        <DropdownMenuLabel>Ações</DropdownMenuLabel>
+                        <DropdownMenuItem onClick={() => navigator.clipboard.writeText(client.cnpj)}>
+                          Copiar CNPJ
                         </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => handleDelete(client.id)} className="text-destructive">
-                          <Trash2 className="size-4 mr-2" />
-                          Excluir
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem onClick={() => handleOpenForm(client)}>
+                          <Edit className="mr-2 h-4 w-4" /> Editar
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={() => handleDelete(client.id)}
+                          className="text-red-600 focus:text-red-600 focus:bg-red-50 dark:focus:bg-red-950/50"
+                        >
+                          <Trash2 className="mr-2 h-4 w-4" /> Excluir
                         </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>

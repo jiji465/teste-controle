@@ -19,9 +19,9 @@ export default function ClientesPage() {
       <main className="container mx-auto px-4 py-8">
         <div className="space-y-6">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight">Clientes</h1>
+            <h1 className="text-3xl font-bold tracking-tight">Empresas</h1>
             <p className="text-muted-foreground mt-2">
-              Gerencie os clientes, regimes tributários e informações cadastrais
+              Gerencie as empresas, regimes tributários e informações cadastrais
             </p>
           </div>
 

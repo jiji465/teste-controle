@@ -28,6 +28,16 @@ import type { Client, TaxRegime } from "@/lib/types"
 import { TAX_REGIME_LABELS } from "@/lib/types"
 import { clientSchema, type ClientFormData } from "@/features/clients/schemas"
 
+const formatCNPJ = (value: string) => {
+  const digits = value.replace(/\D/g, "")
+  return digits
+    .replace(/^(\d{2})(\d)/, "$1.$2")
+    .replace(/^(\d{2})\.(\d{3})(\d)/, "$1.$2.$3")
+    .replace(/\.(\d{3})(\d)/, ".$1/$2")
+    .replace(/(\d{4})(\d)/, "$1-$2")
+    .slice(0, 18)
+}
+
 type ClientFormProps = {
   client?: Client
   open: boolean
@@ -105,8 +115,8 @@ export function ClientForm({ client, open, onOpenChange, onSave }: ClientFormPro
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[560px] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>{client ? "Editar Cliente" : "Novo Cliente"}</DialogTitle>
-          <DialogDescription>Preencha os dados do cliente para gerenciar suas obrigações fiscais.</DialogDescription>
+          <DialogTitle>{client ? "Editar Empresa" : "Nova Empresa"}</DialogTitle>
+          <DialogDescription>Preencha os dados da empresa para gerenciar suas obrigações fiscais.</DialogDescription>
         </DialogHeader>
 
         <Form {...form}>
@@ -136,7 +146,11 @@ export function ClientForm({ client, open, onOpenChange, onSave }: ClientFormPro
                   <FormItem>
                     <FormLabel>CNPJ *</FormLabel>
                     <FormControl>
-                      <Input placeholder="00.000.000/0000-00" {...field} />
+                      <Input 
+                        placeholder="00.000.000/0000-00" 
+                        {...field} 
+                        onChange={(e) => field.onChange(formatCNPJ(e.target.value))}
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -266,7 +280,7 @@ export function ClientForm({ client, open, onOpenChange, onSave }: ClientFormPro
                     <FormLabel>Observações</FormLabel>
                     <FormControl>
                       <Textarea
-                        placeholder="Informações adicionais sobre o cliente..."
+                        placeholder="Informações adicionais sobre a empresa..."
                         rows={2}
                         {...field}
                       />
