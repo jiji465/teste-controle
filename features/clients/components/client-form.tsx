@@ -162,6 +162,7 @@ export function ClientForm({ client, open, onOpenChange, onSave, onObligationsCr
   }
 
   return (
+    <>
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[560px] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
