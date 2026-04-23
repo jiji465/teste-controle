@@ -5,7 +5,7 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { LayoutDashboard, Users, FileText, Calendar, Receipt, Menu, X, BarChart3, Bell, CreditCard, Building2 } from "lucide-react"
+import { LayoutDashboard, Users, FileText, Calendar, Receipt, Menu, X, BarChart3, Bell, CreditCard, Building2, Layers } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { getObligationsWithDetails } from "@/lib/dashboard-utils"
 import { isOverdue } from "@/lib/date-utils"
@@ -66,6 +66,7 @@ export function Navigation() {
       badgeVariant: "default" as const,
     },
     { href: "/relatorios", label: "Relatórios", icon: BarChart3 },
+    { href: "/templates", label: "Templates", icon: Layers },
   ]
 
   const totalAlerts = alertCounts.overdue + alertCounts.thisWeek

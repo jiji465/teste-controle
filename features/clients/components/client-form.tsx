@@ -383,7 +383,7 @@ export function ClientForm({ client, open, onOpenChange, onSave, onObligationsCr
         clientName={pendingClient.name}
         regime={pendingClient.taxRegime!}
         activity={pendingActivity}
-        templates={getTemplateForClient(pendingClient.taxRegime!, pendingActivity)}
+        systemTemplates={getTemplateForClient(pendingClient.taxRegime!, pendingActivity)}
         onConfirm={handleTemplateConfirm}
       />
     )}

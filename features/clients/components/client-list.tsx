@@ -11,6 +11,10 @@ import { MoreVertical, Pencil, Trash2, Search, Plus, Building2 } from "lucide-re
 import type { Client } from "@/lib/types"
 import { TAX_REGIME_LABELS, TAX_REGIME_COLORS } from "@/lib/types"
 import { saveClient, deleteClient } from "@/features/clients/services"
+import { TemplateApplyDialog } from "@/components/template-apply-dialog"
+import { getTemplateForClient, type ObligationTemplate, type BusinessActivity } from "@/lib/obligation-templates"
+import { saveObligation } from "@/features/obligations/services"
+import { Sparkles } from "lucide-react"
 
 type ClientListProps = {
   clients: Client[]
@@ -21,6 +25,7 @@ export function ClientList({ clients, onUpdate }: ClientListProps) {
   const [search, setSearch] = useState("")
   const [editingClient, setEditingClient] = useState<Client | undefined>()
   const [isFormOpen, setIsFormOpen] = useState(false)
+  const [templateClient, setTemplateClient] = useState<Client | null>(null)
 
   const filteredClients = clients.filter(
     (client) =>
@@ -45,6 +50,35 @@ export function ClientList({ clients, onUpdate }: ClientListProps) {
   const handleOpenForm = (client?: Client) => {
     setEditingClient(client)
     setIsFormOpen(true)
+  }
+
+  const handleApplyTemplate = async (templates: ObligationTemplate[]) => {
+    if (!templateClient) return
+    const now = new Date().toISOString()
+    await Promise.all(
+      templates.map(t =>
+        saveObligation({
+          id: crypto.randomUUID(),
+          name: t.name,
+          description: t.description,
+          category: t.category,
+          clientId: templateClient.id,
+          dueDay: t.dueDay,
+          frequency: t.frequency,
+          recurrence: t.recurrence,
+          weekendRule: t.weekendRule,
+          status: "pending",
+          priority: t.priority,
+          autoGenerate: true,
+          createdAt: now,
+          history: [],
+          tags: [],
+          attachments: [],
+        })
+      )
+    )
+    setTemplateClient(null)
+    onUpdate()
   }
 
   // Group stats
@@ -181,6 +215,9 @@ export function ClientList({ clients, onUpdate }: ClientListProps) {
                         <DropdownMenuItem onClick={() => handleOpenForm(client)}>
                           <Pencil className="mr-2 h-4 w-4" /> Editar
                         </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => setTemplateClient(client)}>
+                          <Sparkles className="mr-2 h-4 w-4" /> Aplicar Template
+                        </DropdownMenuItem>
                         <DropdownMenuItem
                           onClick={() => handleDelete(client.id)}
                           className="text-red-600 focus:text-red-600 focus:bg-red-50 dark:focus:bg-red-950/50"
@@ -204,6 +241,21 @@ export function ClientList({ clients, onUpdate }: ClientListProps) {
         onSave={handleSave} 
         onObligationsCreated={onUpdate}
       />
+
+      {templateClient && (
+        <TemplateApplyDialog
+          open={!!templateClient}
+          onOpenChange={(v) => { if (!v) setTemplateClient(null) }}
+          clientName={templateClient.name}
+          regime={templateClient.taxRegime || "simples_nacional"}
+          activity={(templateClient.businessActivity as BusinessActivity) || "servicos"}
+          systemTemplates={getTemplateForClient(
+            templateClient.taxRegime || "simples_nacional", 
+            (templateClient.businessActivity as BusinessActivity) || "servicos"
+          )}
+          onConfirm={handleApplyTemplate}
+        />
+      )}
     </div>
   )
 }

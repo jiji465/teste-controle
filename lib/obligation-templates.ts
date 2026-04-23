@@ -128,3 +128,35 @@ export function getTemplateForClient(regime: TaxRegime, activity: BusinessActivi
   const key: TemplateKey = `${regime}_${activity}`
   return TEMPLATES[key] ?? COMMON_ALL
 }
+
+export type CustomTemplatePackage = {
+  id: string
+  name: string
+  description?: string
+  obligations: ObligationTemplate[]
+  createdAt: string
+}
+
+const CUSTOM_TEMPLATES_KEY = "fiscal_custom_templates"
+
+export const getCustomTemplates = (): CustomTemplatePackage[] => {
+  if (typeof window === "undefined") return []
+  const data = localStorage.getItem(CUSTOM_TEMPLATES_KEY)
+  return data ? JSON.parse(data) : []
+}
+
+export const saveCustomTemplate = (pkg: CustomTemplatePackage): void => {
+  const templates = getCustomTemplates()
+  const index = templates.findIndex((t) => t.id === pkg.id)
+  if (index >= 0) {
+    templates[index] = pkg
+  } else {
+    templates.push(pkg)
+  }
+  localStorage.setItem(CUSTOM_TEMPLATES_KEY, JSON.stringify(templates))
+}
+
+export const deleteCustomTemplate = (id: string): void => {
+  const templates = getCustomTemplates().filter((t) => t.id !== id)
+  localStorage.setItem(CUSTOM_TEMPLATES_KEY, JSON.stringify(templates))
+}

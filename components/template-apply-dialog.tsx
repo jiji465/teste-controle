@@ -7,10 +7,11 @@ import { Badge } from "@/components/ui/badge"
 import { Checkbox } from "@/components/ui/checkbox"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { CheckCircle2, FileText, Receipt, BookOpen, Loader2, Sparkles } from "lucide-react"
-import type { ObligationTemplate, BusinessActivity } from "@/lib/obligation-templates"
+import { getCustomTemplates, type ObligationTemplate, type BusinessActivity, type CustomTemplatePackage } from "@/lib/obligation-templates"
 import type { TaxRegime } from "@/lib/types"
 import { TAX_REGIME_LABELS, TAX_REGIME_COLORS } from "@/lib/types"
 import { BUSINESS_ACTIVITY_LABELS } from "@/lib/obligation-templates"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
 type Props = {
   open: boolean
@@ -18,7 +19,7 @@ type Props = {
   clientName: string
   regime: TaxRegime
   activity: BusinessActivity
-  templates: ObligationTemplate[]
+  systemTemplates: ObligationTemplate[]
   onConfirm: (selected: ObligationTemplate[]) => Promise<void>
 }
 
@@ -50,9 +51,30 @@ const PRIORITY_COLORS: Record<string, string> = {
   low: "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300",
 }
 
-export function TemplateApplyDialog({ open, onOpenChange, clientName, regime, activity, templates, onConfirm }: Props) {
-  const [selected, setSelected] = useState<Set<string>>(new Set(templates.map(t => t.name)))
+export function TemplateApplyDialog({ open, onOpenChange, clientName, regime, activity, systemTemplates, onConfirm }: Props) {
+  const [customPackages, setCustomPackages] = useState<CustomTemplatePackage[]>([])
+  const [activePackageId, setActivePackageId] = useState<string>("system")
   const [loading, setLoading] = useState(false)
+
+  // Determine current templates based on selection
+  const currentTemplates = activePackageId === "system" 
+    ? systemTemplates 
+    : customPackages.find(p => p.id === activePackageId)?.obligations || []
+
+  const [selected, setSelected] = useState<Set<string>>(new Set(currentTemplates.map(t => t.name)))
+
+  // Load custom packages and reset selection when package changes
+  import("react").then(React => {
+    React.useEffect(() => {
+      if (open) {
+        setCustomPackages(getCustomTemplates())
+      }
+    }, [open])
+
+    React.useEffect(() => {
+      setSelected(new Set(currentTemplates.map(t => t.name)))
+    }, [activePackageId, currentTemplates.length]) // Only depend on length to avoid infinite loops if reference changes
+  })
 
   const toggle = (name: string) => {
     setSelected(prev => {
@@ -66,7 +88,7 @@ export function TemplateApplyDialog({ open, onOpenChange, clientName, regime, ac
   const handleConfirm = async () => {
     setLoading(true)
     try {
-      const chosen = templates.filter(t => selected.has(t.name))
+      const chosen = currentTemplates.filter(t => selected.has(t.name))
       await onConfirm(chosen)
       onOpenChange(false)
     } finally {
@@ -75,7 +97,7 @@ export function TemplateApplyDialog({ open, onOpenChange, clientName, regime, ac
   }
 
   // Group by category
-  const grouped = templates.reduce((acc, t) => {
+  const grouped = currentTemplates.reduce((acc, t) => {
     if (!acc[t.category]) acc[t.category] = []
     acc[t.category].push(t)
     return acc
@@ -106,10 +128,29 @@ export function TemplateApplyDialog({ open, onOpenChange, clientName, regime, ac
           </div>
         </DialogHeader>
 
-        <div className="flex items-center justify-between py-2 border-b text-sm">
-          <span className="text-muted-foreground">{selected.size} de {templates.length} selecionadas</span>
+        <div className="px-6 py-3 bg-muted/30 border-b flex items-center justify-between">
+          <span className="text-sm font-medium">Pacote Base:</span>
+          <Select value={activePackageId} onValueChange={setActivePackageId}>
+            <SelectTrigger className="w-[300px] h-8 text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="system">
+                Padrão ({TAX_REGIME_LABELS[regime]} - {BUSINESS_ACTIVITY_LABELS[activity]})
+              </SelectItem>
+              {customPackages.map(pkg => (
+                <SelectItem key={pkg.id} value={pkg.id}>
+                  {pkg.name} ({pkg.obligations.length} obrigações)
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="flex items-center justify-between px-6 py-2 border-b text-sm">
+          <span className="text-muted-foreground">{selected.size} de {currentTemplates.length} selecionadas</span>
           <div className="flex gap-2">
-            <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setSelected(new Set(templates.map(t => t.name)))}>
+            <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setSelected(new Set(currentTemplates.map(t => t.name)))}>
               Marcar todas
             </Button>
             <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setSelected(new Set())}>
