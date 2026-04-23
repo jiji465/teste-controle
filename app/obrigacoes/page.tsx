@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { Navigation } from "@/components/navigation"
 import { ObligationList } from "@/features/obligations/components/obligation-list"
 import { GlobalSearch } from "@/components/global-search"
@@ -8,15 +8,19 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { getClients, getTaxes, getObligations } from "@/lib/supabase/database"
+import { getObligationsWithDetails } from "@/lib/dashboard-utils"
 import { CheckCircle2, Clock, PlayCircle, AlertTriangle, Search } from "lucide-react"
-import type { Client, Tax, Obligation } from "@/lib/types"
 import { useData } from "@/contexts/data-context"
 
 export default function ObligacoesPage() {
-  const { obligations, clients, taxes, refreshData } = useData()
+  const { obligations: rawObligations, clients, taxes, refreshData } = useData()
   const [activeTab, setActiveTab] = useState("all")
   const [searchOpen, setSearchOpen] = useState(false)
+
+  const obligations = useMemo(
+    () => getObligationsWithDetails(rawObligations, clients, taxes),
+    [rawObligations, clients, taxes],
+  )
 
   const updateData = async () => {
     await refreshData()
@@ -40,10 +44,9 @@ export default function ObligacoesPage() {
   const overdueObligations = obligations.filter((o) => {
     if (o.status === "completed") return false
     if (o.status === "overdue") return true
-    // Check if past due based on dueDay in current month
     const today = new Date()
     const dueDate = new Date(today.getFullYear(), today.getMonth(), o.dueDay)
-    return dueDate < today && o.status !== "completed"
+    return dueDate < today
   })
 
   const getFilteredObligations = () => {

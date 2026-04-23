@@ -377,7 +377,7 @@ export function ObligationList({ obligations, clients, taxes, onUpdate }: Obliga
                       <div className="text-xs text-muted-foreground">
                         {getRelativeDate(obligation.calculatedDueDate)}
                       </div>
-                      {obligation.recurrence && obligation.recurrence !== "none" && (
+                      {obligation.recurrence && (
                         <Badge variant="secondary" className="text-xs">
                           {getRecurrenceDescription(obligation)}
                         </Badge>

@@ -54,13 +54,13 @@ export function OperationHub({ obligations, onUpdate, currentPeriod }: Operation
   }, [obligations])
 
   const categories = useMemo(() => {
-    const cats = {
-      federal: obligations.filter(o => o.category === 'federal'),
-      estatual: obligations.filter(o => o.category === 'estadual'),
-      municipal: obligations.filter(o => o.category === 'municipal'),
-      trabalhista: obligations.filter(o => o.category === 'trabalhista' || o.category === 'folha')
+    return {
+      SPED: obligations.filter(o => o.category === 'sped'),
+      'Guias de Imposto': obligations.filter(o => o.category === 'tax_guide'),
+      'Certidões': obligations.filter(o => o.category === 'certificate'),
+      'Declarações': obligations.filter(o => o.category === 'declaration'),
+      'Outras': obligations.filter(o => o.category === 'other'),
     }
-    return cats
   }, [obligations])
 
   const handleBulkComplete = () => {

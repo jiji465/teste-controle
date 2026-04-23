@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { Navigation } from "@/components/navigation"
 import { TaxForm } from "@/features/taxes/components/tax-form"
 import { GlobalSearch } from "@/components/global-search"
@@ -10,7 +10,9 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
-import { getTaxes, saveTax, deleteTax, getClients, getObligations } from "@/lib/supabase/database"
+import { saveTax, deleteTax } from "@/lib/supabase/database"
+import { getObligationsWithDetails } from "@/lib/dashboard-utils"
+import { toast } from "sonner"
 import {
   CheckCircle2,
   Clock,
@@ -23,16 +25,21 @@ import {
   Trash2,
   Tag,
 } from "lucide-react"
-import type { Tax, Client, Obligation } from "@/lib/types"
+import type { Tax } from "@/lib/types"
 import { TAX_REGIME_LABELS, TAX_REGIME_COLORS } from "@/lib/types"
 import { useData } from "@/contexts/data-context"
 
 export default function ImpostosPage() {
-  const { taxes, clients, obligations, refreshData } = useData()
+  const { taxes, clients, obligations: rawObligations, refreshData } = useData()
   const [editingTax, setEditingTax] = useState<Tax | undefined>()
   const [isFormOpen, setIsFormOpen] = useState(false)
   const [activeTab, setActiveTab] = useState("all")
   const [searchOpen, setSearchOpen] = useState(false)
+
+  const obligations = useMemo(
+    () => getObligationsWithDetails(rawObligations, clients, taxes),
+    [rawObligations, clients, taxes],
+  )
 
   const updateData = async () => {
     await refreshData()
@@ -57,8 +64,8 @@ export default function ImpostosPage() {
       setEditingTax(undefined)
       setIsFormOpen(false)
     } catch (error) {
-      console.error("[v0] Error saving tax:", error)
-      alert("Erro ao salvar imposto. Tente novamente.")
+      console.error("[impostos] Erro ao salvar imposto:", error)
+      toast.error("Erro ao salvar imposto. Tente novamente.")
     }
   }
 
@@ -68,8 +75,8 @@ export default function ImpostosPage() {
         await deleteTax(id)
         await updateData()
       } catch (error) {
-        console.error("[v0] Error deleting tax:", error)
-        alert("Erro ao excluir imposto. Tente novamente.")
+        console.error("[impostos] Erro ao excluir imposto:", error)
+        toast.error("Erro ao excluir imposto. Tente novamente.")
       }
     }
   }

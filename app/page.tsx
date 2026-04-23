@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useState, useMemo } from "react"
+import dynamic from "next/dynamic"
 import { Navigation } from "@/components/navigation"
 import { DashboardStatsCards } from "@/components/dashboard-stats"
 import { ProductivityStats } from "@/components/productivity-stats"
@@ -8,7 +9,16 @@ import { UpcomingObligations } from "@/components/upcoming-obligations"
 import { ClientOverview } from "@/components/client-overview"
 import { TaxCalendar } from "@/components/tax-calendar"
 import { OperationHub } from "@/components/operation-hub"
-import { RegimeDistributionChart } from "@/components/regime-distribution-chart"
+
+const RegimeDistributionChart = dynamic(
+  () => import("@/components/regime-distribution-chart").then((m) => m.RegimeDistributionChart),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="h-[360px] animate-pulse rounded-lg border bg-muted/30" aria-hidden />
+    ),
+  },
+)
 import { getObligationsWithDetails, calculateDashboardStats } from "@/lib/dashboard-utils"
 import { getCurrentPeriod } from "@/lib/recurrence-engine"
 import { TrendingUp, CalendarIcon, AlertCircle, CreditCard, Activity, Lock, Unlock } from "lucide-react"

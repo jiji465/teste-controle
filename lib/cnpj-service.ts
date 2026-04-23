@@ -15,12 +15,7 @@ export type CNPJData = {
 export async function lookupCNPJ(cnpj: string): Promise<CNPJData | null> {
   // Em um cenário real, usaríamos uma API como BrasilAPI ou ReceitaWS
   // Ex: return fetch(`https://brasilapi.com.br/api/cnpj/v1/${cnpj.replace(/\D/g, '')}`).then(res => res.json())
-  
-  console.log(`[CNPJ Service] Buscando dados para: ${cnpj}`);
-  
-  // Simular delay de rede
-  await new Promise(resolve => setTimeout(resolve, 1500));
-  
+
   const cleanCnpj = cnpj.replace(/\D/g, '');
   
   // Mock de dados para demonstração

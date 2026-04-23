@@ -34,8 +34,6 @@ export async function checkAndGenerateRecurrences(): Promise<void> {
     return
   }
 
-  console.log("[v0] Iniciando geração automática de recorrências para", currentPeriod)
-
   try {
     const { calculateNextDueDate } = await import("./recurrence-utils")
     
@@ -81,7 +79,6 @@ export async function checkAndGenerateRecurrences(): Promise<void> {
         if (!alreadyGenerated) {
           const newObligation = generateObligationForPeriod(obligation, nextPeriod)
           await saveObligation(newObligation)
-          console.log("[v0] Obrigação gerada:", newObligation.name, "para", nextPeriod)
         }
       }
     }
@@ -97,7 +94,6 @@ export async function checkAndGenerateRecurrences(): Promise<void> {
       if (!alreadyGenerated) {
         const newTax = generateTaxForPeriod(tax, currentPeriod)
         await saveTax(newTax)
-        console.log("[v0] Imposto gerado:", newTax.name, "para", currentPeriod)
       }
     }
 
@@ -108,18 +104,9 @@ export async function checkAndGenerateRecurrences(): Promise<void> {
     for (const installment of installmentsToGenerate) {
       const newInstallment = generateInstallmentForPeriod(installment, currentPeriod)
       await saveInstallment(newInstallment)
-      console.log(
-        "[v0] Parcela gerada:",
-        newInstallment.name,
-        `${newInstallment.currentInstallment}/${newInstallment.installmentCount}`,
-        "para",
-        currentPeriod,
-      )
     }
 
-    // Atualiza a data da última verificação
     setLastRecurrenceCheck(today)
-    console.log("[v0] Geração automática de recorrências concluída")
   } catch (error) {
     console.error("Erro ao gerar recorrências:", error)
   }
