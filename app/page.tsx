@@ -7,10 +7,11 @@ import { ProductivityStats } from "@/components/productivity-stats"
 import { UpcomingObligations } from "@/components/upcoming-obligations"
 import { ClientOverview } from "@/components/client-overview"
 import { TaxCalendar } from "@/components/tax-calendar"
-import { QuickActions } from "@/components/quick-actions"
+import { OperationHub } from "@/components/operation-hub"
 import { RegimeDistributionChart } from "@/components/regime-distribution-chart"
 import { getObligationsWithDetails, calculateDashboardStats } from "@/lib/dashboard-utils"
-import { TrendingUp, CalendarIcon, AlertCircle, CreditCard } from "lucide-react"
+import { getCurrentPeriod } from "@/lib/recurrence-engine"
+import { TrendingUp, CalendarIcon, AlertCircle, CreditCard, Activity, Lock, Unlock } from "lucide-react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { adjustForWeekend } from "@/lib/date-utils"
@@ -18,8 +19,16 @@ import type { DashboardStats } from "@/lib/types"
 import { useData } from "@/contexts/data-context"
 
 export default function DashboardPage() {
-  const { clients, taxes, obligations: rawObligations, installments, isLoading, refreshData } = useData()
+  const { clients, taxes, obligations: rawObligations, installments, lockedPeriods, isLoading, refreshData, togglePeriodLock } = useData()
   const [stats, setStats] = useState<DashboardStats | null>(null)
+  const [isMounted, setIsMounted] = useState(false)
+
+  const currentPeriod = useMemo(() => getCurrentPeriod(), [])
+  const isPeriodLocked = useMemo(() => lockedPeriods.includes(currentPeriod), [lockedPeriods, currentPeriod])
+
+  useEffect(() => {
+    setIsMounted(true)
+  }, [])
 
   const obligations = useMemo(() => {
     if (isLoading || !clients.length) return []
@@ -36,7 +45,7 @@ export default function DashboardPage() {
     await refreshData()
   }
 
-  if (isLoading) {
+  if (!isMounted || isLoading) {
     return (
       <div className="min-h-screen bg-background flex flex-col">
         <Navigation />
@@ -189,7 +198,14 @@ export default function DashboardPage() {
             </Card>
           )}
 
-          <QuickActions obligations={obligations} onUpdate={updateData} />
+          <div className="space-y-6">
+            <h2 className="text-2xl font-bold tracking-tight flex items-center gap-2">
+              <Activity className="size-6 text-primary" />
+              Central de Operações
+              {isPeriodLocked && <Badge variant="secondary" className="bg-amber-100 text-amber-800 ml-2"><Lock className="size-3 mr-1" /> Bloqueado</Badge>}
+            </h2>
+            <OperationHub obligations={obligations} onUpdate={updateData} currentPeriod={currentPeriod} />
+          </div>
 
           <TaxCalendar taxes={taxes} />
 

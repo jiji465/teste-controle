@@ -92,6 +92,42 @@ export function ProductivityStats({ obligations }: ProductivityStatsProps) {
           <p className="text-xs text-muted-foreground">Últimos 30 dias</p>
         </CardContent>
       </Card>
+      <Card className="md:col-span-2 lg:col-span-4 mt-2">
+        <CardHeader>
+          <CardTitle className="text-sm font-medium">Produtividade por Analista</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            {Object.entries(
+              obligations.reduce((acc, obl) => {
+                const analyst = obl.assignedTo || "Sem Atribuição"
+                if (!acc[analyst]) acc[analyst] = { total: 0, completed: 0 }
+                acc[analyst].total++
+                if (obl.status === 'completed') acc[analyst].completed++
+                return acc
+              }, {} as Record<string, { total: number, completed: number }>)
+            ).map(([analyst, stats]) => (
+              <div key={analyst} className="flex items-center justify-between">
+                <div className="flex flex-col">
+                  <span className="text-sm font-semibold">{analyst}</span>
+                  <span className="text-xs text-muted-foreground">{stats.completed} de {stats.total} concluídas</span>
+                </div>
+                <div className="flex items-center gap-4 w-48">
+                  <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
+                    <div 
+                      className="h-full bg-primary transition-all" 
+                      style={{ width: `${Math.round((stats.completed / stats.total) * 100)}%` }}
+                    />
+                  </div>
+                  <span className="text-xs font-bold w-8 text-right">
+                    {Math.round((stats.completed / stats.total) * 100)}%
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
     </div>
   )
 }

@@ -9,6 +9,7 @@ const STORAGE_KEYS = {
   COMPLETED_TAXES: "fiscal_completed_taxes",
   COMPLETED_INSTALLMENTS: "fiscal_completed_installments",
   LAST_RECURRENCE_CHECK: "fiscal_last_recurrence_check",
+  LOCKED_PERIODS: "fiscal_locked_periods",
 }
 
 // Client Storage
@@ -151,4 +152,25 @@ export const getLastRecurrenceCheck = (): string | null => {
 
 export const setLastRecurrenceCheck = (date: string): void => {
   localStorage.setItem(STORAGE_KEYS.LAST_RECURRENCE_CHECK, date)
+}
+
+// Period Locking
+export const getLockedPeriods = (): string[] => {
+  if (typeof window === "undefined") return []
+  const data = localStorage.getItem(STORAGE_KEYS.LOCKED_PERIODS)
+  return data ? JSON.parse(data) : []
+}
+
+export const lockPeriod = (period: string): void => {
+  const periods = getLockedPeriods()
+  if (!periods.includes(period)) {
+    periods.push(period)
+    localStorage.setItem(STORAGE_KEYS.LOCKED_PERIODS, JSON.stringify(periods))
+  }
+}
+
+export const unlockPeriod = (period: string): void => {
+  const periods = getLockedPeriods()
+  const newPeriods = periods.filter(p => p !== period)
+  localStorage.setItem(STORAGE_KEYS.LOCKED_PERIODS, JSON.stringify(newPeriods))
 }

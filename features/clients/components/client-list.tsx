@@ -55,28 +55,48 @@ export function ClientList({ clients, onUpdate }: ClientListProps) {
   const handleApplyTemplate = async (templates: ObligationTemplate[]) => {
     if (!templateClient) return
     const now = new Date().toISOString()
-    await Promise.all(
-      templates.map(t =>
-        saveObligation({
-          id: crypto.randomUUID(),
-          name: t.name,
-          description: t.description,
-          category: t.category,
-          clientId: templateClient.id,
-          dueDay: t.dueDay,
-          frequency: t.frequency,
-          recurrence: t.recurrence,
-          weekendRule: t.weekendRule,
-          status: "pending",
-          priority: t.priority,
-          autoGenerate: true,
-          createdAt: now,
-          history: [],
-          tags: [],
-          attachments: [],
-        })
+    
+    // Buscar obrigações existentes para não duplicar
+    const { getObligations } = await import("@/lib/supabase/database")
+    const existingObligations = await getObligations()
+    const clientExistingNames = existingObligations
+      .filter(o => o.clientId === templateClient.id)
+      .map(o => o.name)
+
+    const templatesToApply = templates.filter(t => !clientExistingNames.includes(t.name))
+
+    if (templatesToApply.length < templates.length) {
+      const { toast } = await import("sonner")
+      toast.info(`${templates.length - templatesToApply.length} obrigações já existiam e foram ignoradas.`)
+    }
+
+    if (templatesToApply.length > 0) {
+      await Promise.all(
+        templatesToApply.map(t =>
+          saveObligation({
+            id: crypto.randomUUID(),
+            name: t.name,
+            description: t.description,
+            category: t.category,
+            clientId: templateClient.id,
+            dueDay: t.dueDay,
+            frequency: t.frequency,
+            recurrence: t.recurrence,
+            weekendRule: t.weekendRule,
+            status: "pending",
+            priority: t.priority,
+            autoGenerate: true,
+            createdAt: now,
+            history: [],
+            tags: [],
+            attachments: [],
+          })
+        )
       )
-    )
+      const { toast } = await import("sonner")
+      toast.success(`${templatesToApply.length} obrigações criadas com sucesso!`)
+    }
+
     setTemplateClient(null)
     onUpdate()
   }

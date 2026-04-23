@@ -30,6 +30,9 @@ import { clientSchema, type ClientFormData } from "@/features/clients/schemas"
 import { TemplateApplyDialog } from "@/components/template-apply-dialog"
 import { type BusinessActivity, BUSINESS_ACTIVITY_LABELS, getTemplateForClient, type ObligationTemplate } from "@/lib/obligation-templates"
 import { saveObligation } from "@/features/obligations/services"
+import { lookupCNPJ } from "@/lib/cnpj-service"
+import { Search, Loader2 } from "lucide-react"
+import { toast } from "sonner"
 
 const formatCNPJ = (value: string) => {
   const digits = value.replace(/\D/g, "")
@@ -53,6 +56,7 @@ export function ClientForm({ client, open, onOpenChange, onSave, onObligationsCr
   const [pendingClient, setPendingClient] = useState<Client | null>(null)
   const [pendingActivity, setPendingActivity] = useState<BusinessActivity | null>(null)
   const [templateOpen, setTemplateOpen] = useState(false)
+  const [isSearching, setIsSearching] = useState(false)
 
   const form = useForm<ClientFormData>({
     resolver: zodResolver(clientSchema),
@@ -133,28 +137,46 @@ export function ClientForm({ client, open, onOpenChange, onSave, onObligationsCr
   const handleTemplateConfirm = async (templates: ObligationTemplate[]) => {
     if (!pendingClient) return
     const now = new Date().toISOString()
-    await Promise.all(
-      templates.map(t =>
-        saveObligation({
-          id: crypto.randomUUID(),
-          name: t.name,
-          description: t.description,
-          category: t.category,
-          clientId: pendingClient.id,
-          dueDay: t.dueDay,
-          frequency: t.frequency,
-          recurrence: t.recurrence,
-          weekendRule: t.weekendRule,
-          status: "pending",
-          priority: t.priority,
-          autoGenerate: true,
-          createdAt: now,
-          history: [],
-          tags: [],
-          attachments: [],
-        })
+    
+    // Buscar obrigações existentes para não duplicar
+    const { getObligations } = await import("@/lib/supabase/database")
+    const existingObligations = await getObligations()
+    const clientExistingNames = existingObligations
+      .filter(o => o.clientId === pendingClient.id)
+      .map(o => o.name)
+
+    const templatesToApply = templates.filter(t => !clientExistingNames.includes(t.name))
+
+    if (templatesToApply.length < templates.length) {
+      toast.info(`${templates.length - templatesToApply.length} obrigações já existiam e foram ignoradas.`)
+    }
+
+    if (templatesToApply.length > 0) {
+      await Promise.all(
+        templatesToApply.map(t =>
+          saveObligation({
+            id: crypto.randomUUID(),
+            name: t.name,
+            description: t.description,
+            category: t.category,
+            clientId: pendingClient.id,
+            dueDay: t.dueDay,
+            frequency: t.frequency,
+            recurrence: t.recurrence,
+            weekendRule: t.weekendRule,
+            status: "pending",
+            priority: t.priority,
+            autoGenerate: true,
+            createdAt: now,
+            history: [],
+            tags: [],
+            attachments: [],
+          })
+        )
       )
-    )
+      toast.success(`${templatesToApply.length} obrigações criadas com sucesso!`)
+    }
+    
     onObligationsCreated?.()
     setPendingClient(null)
     setPendingActivity(null)
@@ -196,13 +218,42 @@ export function ClientForm({ client, open, onOpenChange, onSave, onObligationsCr
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>CNPJ *</FormLabel>
-                    <FormControl>
-                      <Input 
-                        placeholder="00.000.000/0000-00" 
-                        {...field} 
-                        onChange={(e) => field.onChange(formatCNPJ(e.target.value))}
-                      />
-                    </FormControl>
+                    <div className="flex gap-2">
+                      <FormControl>
+                        <Input 
+                          placeholder="00.000.000/0000-00" 
+                          {...field} 
+                          onChange={(e) => field.onChange(formatCNPJ(e.target.value))}
+                        />
+                      </FormControl>
+                      <Button 
+                        type="button" 
+                        variant="secondary" 
+                        size="icon"
+                        className="shrink-0"
+                        disabled={isSearching || field.value.replace(/\D/g, '').length !== 14}
+                        onClick={async () => {
+                          setIsSearching(true)
+                          try {
+                            const data = await lookupCNPJ(field.value)
+                            if (data) {
+                              form.setValue("name", data.nome)
+                              form.setValue("email", data.email)
+                              form.setValue("phone", data.telefone)
+                              toast.success("Dados encontrados com sucesso!")
+                            } else {
+                              toast.error("CNPJ não encontrado.")
+                            }
+                          } catch (error) {
+                            toast.error("Erro ao buscar CNPJ.")
+                          } finally {
+                            setIsSearching(false)
+                          }
+                        }}
+                      >
+                        {isSearching ? <Loader2 className="size-4 animate-spin" /> : <Search className="size-4" />}
+                      </Button>
+                    </div>
                     <FormMessage />
                   </FormItem>
                 )}

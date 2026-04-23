@@ -5,13 +5,12 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { LayoutDashboard, Users, FileText, Calendar, Receipt, Menu, X, BarChart3, Bell, CreditCard, Building2, Layers } from "lucide-react"
+import { LayoutDashboard, FileText, Calendar, Receipt, Menu, X, BarChart3, Bell, CreditCard, Building2, Layers } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { getObligationsWithDetails } from "@/lib/dashboard-utils"
 import { isOverdue } from "@/lib/date-utils"
-import { getObligations, getClients, getTaxes } from "@/lib/supabase/database"
-
 import { useData } from "@/contexts/data-context"
+import { PeriodSwitcher } from "@/components/period-switcher"
 
 export function Navigation() {
   const pathname = usePathname()
@@ -72,18 +71,18 @@ export function Navigation() {
   const totalAlerts = alertCounts.overdue + alertCounts.thisWeek
 
   return (
-    <nav className="border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 sticky top-0 z-50 shadow-sm">
+    <nav className="glass-panel border-b sticky top-0 z-50">
       <div className="container mx-auto px-4">
         <div className="flex items-center justify-between h-16">
           <div className="flex items-center gap-8">
             <Link href="/" className="flex items-center gap-2 group">
-              <div className="size-8 bg-primary rounded-lg flex items-center justify-center transition-transform group-hover:scale-110">
+              <div className="size-8 bg-primary rounded-lg flex items-center justify-center transition-transform group-hover:scale-110 shadow-lg shadow-primary/20">
                 <FileText className="size-5 text-primary-foreground" />
               </div>
-              <span className="font-semibold text-lg hidden sm:inline">Controle Fiscal</span>
+              <span className="font-bold text-lg hidden sm:inline tracking-tight">Controle Fiscal</span>
             </Link>
 
-            <div className="hidden md:flex items-center gap-1">
+            <div className="hidden lg:flex items-center gap-1">
               {navItems.map((item) => {
                 const Icon = item.icon
                 const isActive = pathname === item.href
@@ -91,12 +90,15 @@ export function Navigation() {
                   <Link key={item.href} href={item.href}>
                     <Button
                       variant={isActive ? "secondary" : "ghost"}
-                      className={cn("gap-2 relative transition-all", isActive && "bg-secondary shadow-sm")}
+                      className={cn(
+                        "gap-2 relative transition-all rounded-full h-9",
+                        isActive && "bg-primary/10 text-primary hover:bg-primary/20"
+                      )}
                     >
                       <Icon className="size-4" />
-                      {item.label}
+                      <span className="text-sm font-medium">{item.label}</span>
                       {item.badge && (
-                        <Badge variant={item.badgeVariant} className="ml-1 h-5 min-w-5 px-1 text-xs">
+                        <Badge variant={item.badgeVariant} className="ml-1 h-4 min-w-4 px-1 text-[10px]">
                           {item.badge}
                         </Badge>
                       )}
@@ -107,34 +109,43 @@ export function Navigation() {
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            {totalAlerts > 0 && (
-              <div className="hidden md:flex items-center gap-2 px-3 py-1.5 bg-red-50 dark:bg-red-950/20 rounded-full border border-red-200 dark:border-red-800">
-                <Bell className="size-4 text-red-600 dark:text-red-400" />
-                <span className="text-sm font-medium text-red-700 dark:text-red-300">
-                  {totalAlerts} {totalAlerts === 1 ? "alerta" : "alertas"}
-                </span>
-              </div>
-            )}
+          <div className="flex items-center gap-4">
+            <div className="hidden xl:block">
+              <PeriodSwitcher />
+            </div>
 
-            <Button
-              variant="ghost"
-              size="icon"
-              className="md:hidden relative"
-              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            >
-              {mobileMenuOpen ? <X className="size-5" /> : <Menu className="size-5" />}
+            <div className="flex items-center gap-2">
               {totalAlerts > 0 && (
-                <Badge variant="destructive" className="absolute -top-1 -right-1 h-5 min-w-5 px-1 text-xs">
-                  {totalAlerts}
-                </Badge>
+                <div className="hidden sm:flex items-center gap-2 px-3 py-1 bg-red-50 dark:bg-red-950/20 rounded-full border border-red-200 dark:border-red-800 animate-pulse">
+                  <Bell className="size-3.5 text-red-600 dark:text-red-400" />
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-red-700 dark:text-red-300">
+                    {totalAlerts} Alertas
+                  </span>
+                </div>
               )}
-            </Button>
+
+              <Button
+                variant="ghost"
+                size="icon"
+                className="lg:hidden relative"
+                onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+              >
+                {mobileMenuOpen ? <X className="size-5" /> : <Menu className="size-5" />}
+                {totalAlerts > 0 && (
+                  <Badge variant="destructive" className="absolute -top-1 -right-1 h-4 min-w-4 px-1 text-[10px]">
+                    {totalAlerts}
+                  </Badge>
+                )}
+              </Button>
+            </div>
           </div>
         </div>
 
         {mobileMenuOpen && (
-          <div className="md:hidden py-4 space-y-1 animate-in slide-in-from-top-2">
+          <div className="lg:hidden py-4 space-y-1 animate-in">
+            <div className="pb-4 mb-4 border-b">
+              <PeriodSwitcher />
+            </div>
             {navItems.map((item) => {
               const Icon = item.icon
               const isActive = pathname === item.href

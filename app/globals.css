@@ -148,13 +148,13 @@
   }
 
   .animate-in {
-    animation: slideIn 0.2s ease-out;
+    animation: slideIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
   }
 
   @keyframes slideIn {
     from {
       opacity: 0;
-      transform: translateY(-10px);
+      transform: translateY(10px);
     }
     to {
       opacity: 1;
@@ -163,11 +163,27 @@
   }
 
   .hover-lift {
-    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
   }
 
   .hover-lift:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    transform: translateY(-4px);
+    box-shadow: 0 12px 24px -10px rgba(0, 0, 0, 0.15);
+  }
+
+  .glass-card {
+    @apply bg-background/60 backdrop-blur-md border border-white/20 dark:border-white/10 shadow-xl;
+  }
+
+  .glass-panel {
+    @apply bg-background/40 backdrop-blur-lg border-b border-border/50 sticky top-0 z-50;
+  }
+
+  .premium-gradient {
+    background: linear-gradient(135deg, oklch(0.45 0.15 250) 0%, oklch(0.55 0.15 280) 100%);
+  }
+
+  .success-gradient {
+    background: linear-gradient(135deg, oklch(0.55 0.15 145) 0%, oklch(0.65 0.15 160) 100%);
   }
 }

@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useMemo } from "react"
 import { Navigation } from "@/components/navigation"
-import { CalendarView } from "@/components/calendar-view"
+import { FiscalCalendar } from "@/components/fiscal-calendar"
 import { useData } from "@/contexts/data-context"
 import { getObligationsWithDetails } from "@/lib/dashboard-utils"
 import { adjustForWeekend } from "@/lib/date-utils"
@@ -48,7 +48,7 @@ export default function CalendarioPage() {
             </p>
           </div>
 
-          <CalendarView obligations={obligations} taxes={taxes} installments={installments} />
+          <FiscalCalendar obligations={obligations} />
         </div>
       </main>
     </div>
