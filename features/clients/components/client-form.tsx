@@ -30,7 +30,7 @@ import { clientSchema, type ClientFormData } from "@/features/clients/schemas"
 import { TemplateApplyDialog } from "@/components/template-apply-dialog"
 import { type BusinessActivity, BUSINESS_ACTIVITY_LABELS, type TemplateItem } from "@/lib/obligation-templates"
 import { useData } from "@/contexts/data-context"
-import { saveObligation } from "@/features/obligations/services"
+import { applyTemplateToClient, summarizeApplyResult } from "@/lib/template-applier"
 import { lookupCNPJ, CNPJLookupError } from "@/lib/cnpj-service"
 import { inferBusinessActivityFromCNAE } from "@/lib/cnae-mapping"
 import { Search, Loader2 } from "lucide-react"
@@ -156,51 +156,12 @@ export function ClientForm({ client, open, onOpenChange, onSave, onObligationsCr
 
   const handleTemplateConfirm = async (templates: TemplateItem[]) => {
     if (!pendingClient) return
-    const now = new Date().toISOString()
-
-    const { getObligations } = await import("@/lib/supabase/database")
-    const existingObligations = await getObligations()
-    const existingForClient = existingObligations.filter((o) => o.clientId === pendingClient.id)
-    const existingNames = new Set(existingForClient.map((o) => o.name.toLowerCase()))
-    const existingTaxIds = new Set(existingForClient.map((o) => o.taxId).filter(Boolean) as string[])
-
-    const templatesToApply = templates.filter((t) => {
-      if (t.sourceTaxId && existingTaxIds.has(t.sourceTaxId)) return false
-      return !existingNames.has(t.name.toLowerCase())
-    })
-
-    if (templatesToApply.length < templates.length) {
-      toast.info(`${templates.length - templatesToApply.length} obrigações já existiam e foram ignoradas.`)
+    const result = await applyTemplateToClient(pendingClient, templates)
+    const summary = summarizeApplyResult(result)
+    if (summary) toast.success(summary)
+    if (result.obligationsSkipped > 0) {
+      toast.info(`${result.obligationsSkipped} obrigaç${result.obligationsSkipped > 1 ? "ões já existiam" : "ão já existia"} e foi ignorada`)
     }
-
-    if (templatesToApply.length > 0) {
-      await Promise.all(
-        templatesToApply.map((t) =>
-          saveObligation({
-            id: crypto.randomUUID(),
-            name: t.name,
-            description: t.description,
-            category: t.category,
-            clientId: pendingClient.id,
-            taxId: t.sourceTaxId,
-            dueDay: t.dueDay,
-            frequency: t.frequency,
-            recurrence: t.recurrence,
-            weekendRule: t.weekendRule,
-            status: "pending",
-            priority: t.priority,
-            autoGenerate: true,
-            source: t.sourceTaxId ? "tax" : "template",
-            createdAt: now,
-            history: [],
-            tags: [],
-            attachments: [],
-          }),
-        ),
-      )
-      toast.success(`${templatesToApply.length} obrigações criadas com sucesso!`)
-    }
-
     onObligationsCreated?.()
     setPendingClient(null)
     setPendingActivity(null)
