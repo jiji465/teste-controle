@@ -174,8 +174,37 @@ export type CustomTemplatePackage = {
   id: string
   name: string
   description?: string
+  /** Regime tributário ao qual este template se aplica. Quando preenchido,
+   *  o sistema pré-seleciona este template ao aplicar em uma empresa do mesmo regime. */
+  regime?: TaxRegime
+  /** Atividade econômica. Combina com regime para matching automático. */
+  activity?: BusinessActivity
   obligations: ObligationTemplate[]
   createdAt: string
+}
+
+/**
+ * Encontra o template customizado que melhor combina com o regime + atividade
+ * de um cliente. Prioridade:
+ *   1. Match exato regime + atividade
+ *   2. Match só de regime (qualquer atividade)
+ *   3. null (caller decide o fallback)
+ */
+export function findBestTemplateMatch(
+  templates: CustomTemplatePackage[],
+  regime: TaxRegime | undefined,
+  activity: BusinessActivity | undefined,
+): CustomTemplatePackage | null {
+  if (!regime) return null
+  // Match exato
+  const exact = templates.find((t) => t.regime === regime && t.activity === activity)
+  if (exact) return exact
+  // Match só de regime
+  const regimeOnly = templates.find((t) => t.regime === regime && !t.activity)
+  if (regimeOnly) return regimeOnly
+  // Qualquer template do mesmo regime
+  const anyOfRegime = templates.find((t) => t.regime === regime)
+  return anyOfRegime ?? null
 }
 
 const CUSTOM_TEMPLATES_KEY = "fiscal_custom_templates"
@@ -246,32 +275,39 @@ export const cloneCustomTemplate = (id: string): CustomTemplatePackage | null =>
 const SEEDED_NAMES_KEY = "fiscal_templates_seeded_names"
 const LEGACY_SEED_FLAG_V1 = "fiscal_templates_seeded_v1"
 
-const DEFAULT_TEMPLATE_DEFINITIONS: Array<{ name: string; description: string; key: TemplateKey }> = [
-  {
-    name: "Padrão · Simples Nacional · Serviços",
-    description: "Obrigações típicas de empresas Simples Nacional prestadoras de serviços",
-    key: "simples_nacional_servicos",
-  },
-  {
-    name: "Padrão · Simples Nacional · Comércio",
-    description: "Obrigações típicas de empresas Simples Nacional do comércio/varejo (com SPED ICMS)",
-    key: "simples_nacional_comercio",
-  },
-  {
-    name: "Padrão · Lucro Presumido · Serviços",
-    description: "Obrigações típicas de empresas Lucro Presumido prestadoras de serviços",
-    key: "lucro_presumido_servicos",
-  },
-  {
-    name: "Padrão · Lucro Presumido · Comércio",
-    description: "Obrigações típicas de empresas Lucro Presumido do comércio/varejo (com SPED ICMS)",
-    key: "lucro_presumido_comercio",
-  },
-  {
-    name: "Padrão · MEI",
-    description: "Obrigações do Microempreendedor Individual",
-    key: "mei_servicos",
-  },
+type SeedDef = {
+  name: string
+  description: string
+  key: TemplateKey
+  regime: TaxRegime
+  activity: BusinessActivity
+}
+
+// 14 combinações cobrindo todos os regimes × atividades.
+// Cada template recebe regime + activity para matching automático ao
+// aplicar em uma empresa nova com o mesmo perfil.
+const DEFAULT_TEMPLATE_DEFINITIONS: SeedDef[] = [
+  // ── Simples Nacional ────────────────────────────────────────────────────
+  { name: "Padrão · Simples Nacional · Serviços", description: "Empresas Simples Nacional prestadoras de serviços (DAS, PGDAS-D, ISS)", key: "simples_nacional_servicos", regime: "simples_nacional", activity: "servicos" },
+  { name: "Padrão · Simples Nacional · Comércio", description: "Comércio/varejo no Simples Nacional (com SPED ICMS)", key: "simples_nacional_comercio", regime: "simples_nacional", activity: "comercio" },
+  { name: "Padrão · Simples Nacional · Indústria", description: "Indústria no Simples Nacional (com IPI e SPED ICMS)", key: "simples_nacional_industria", regime: "simples_nacional", activity: "industria" },
+  { name: "Padrão · Simples Nacional · Misto", description: "Atividade mista (serviços + comércio) no Simples Nacional", key: "simples_nacional_misto", regime: "simples_nacional", activity: "misto" },
+
+  // ── Lucro Presumido ─────────────────────────────────────────────────────
+  { name: "Padrão · Lucro Presumido · Serviços", description: "Serviços no Lucro Presumido (IRPJ/CSLL trim, PIS/COFINS, ISS, DCTF)", key: "lucro_presumido_servicos", regime: "lucro_presumido", activity: "servicos" },
+  { name: "Padrão · Lucro Presumido · Comércio", description: "Comércio no Lucro Presumido (com ICMS e SPED Fiscal)", key: "lucro_presumido_comercio", regime: "lucro_presumido", activity: "comercio" },
+  { name: "Padrão · Lucro Presumido · Indústria", description: "Indústria no Lucro Presumido (com IPI, ICMS, SPED Fiscal)", key: "lucro_presumido_industria", regime: "lucro_presumido", activity: "industria" },
+  { name: "Padrão · Lucro Presumido · Misto", description: "Atividade mista no Lucro Presumido", key: "lucro_presumido_misto", regime: "lucro_presumido", activity: "misto" },
+
+  // ── Lucro Real ──────────────────────────────────────────────────────────
+  { name: "Padrão · Lucro Real · Serviços", description: "Serviços no Lucro Real (IRPJ/CSLL mensal, PIS/COFINS não-cumulativos, EFD-Contribuições, ECF, ECD, LALUR)", key: "lucro_real_servicos", regime: "lucro_real", activity: "servicos" },
+  { name: "Padrão · Lucro Real · Comércio", description: "Comércio no Lucro Real (com ICMS e SPED Fiscal)", key: "lucro_real_comercio", regime: "lucro_real", activity: "comercio" },
+  { name: "Padrão · Lucro Real · Indústria", description: "Indústria no Lucro Real (com IPI, ICMS, SPED Fiscal)", key: "lucro_real_industria", regime: "lucro_real", activity: "industria" },
+  { name: "Padrão · Lucro Real · Misto", description: "Atividade mista no Lucro Real", key: "lucro_real_misto", regime: "lucro_real", activity: "misto" },
+
+  // ── MEI ─────────────────────────────────────────────────────────────────
+  { name: "Padrão · MEI · Serviços", description: "Microempreendedor Individual prestador de serviços", key: "mei_servicos", regime: "mei", activity: "servicos" },
+  { name: "Padrão · MEI · Comércio", description: "Microempreendedor Individual do comércio", key: "mei_comercio", regime: "mei", activity: "comercio" },
 ]
 
 const loadSeededNames = (): Set<string> => {
@@ -306,12 +342,18 @@ const saveSeededNames = (names: Set<string>): void => {
 export const seedDefaultTemplates = (): void => {
   if (typeof window === "undefined") return
   const seeded = loadSeededNames()
-  const existingNames = new Set(getCustomTemplates().map((p) => p.name))
+  const existingNames = new Map(getCustomTemplates().map((p) => [p.name, p]))
   let changed = false
   for (const def of DEFAULT_TEMPLATE_DEFINITIONS) {
-    if (seeded.has(def.name)) continue
+    if (seeded.has(def.name)) {
+      // Já criamos antes. Migra metadata regime/activity se ainda não tem.
+      const existing = existingNames.get(def.name)
+      if (existing && (!existing.regime || !existing.activity)) {
+        saveCustomTemplate({ ...existing, regime: def.regime, activity: def.activity })
+      }
+      continue
+    }
     if (existingNames.has(def.name)) {
-      // Usuário já tem com esse nome (ou criou manualmente) — não re-cria
       seeded.add(def.name)
       changed = true
       continue
@@ -321,6 +363,8 @@ export const seedDefaultTemplates = (): void => {
       id: crypto.randomUUID(),
       name: def.name,
       description: def.description,
+      regime: def.regime,
+      activity: def.activity,
       obligations,
       createdAt: new Date().toISOString(),
     })

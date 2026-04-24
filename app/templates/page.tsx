@@ -7,7 +7,8 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Plus, Trash2, Pencil, Sparkles, Layers, RotateCcw, Copy, Database, Eraser } from "lucide-react"
-import { getCustomTemplates, deleteCustomTemplate, seedDefaultTemplates, resetDefaultTemplates, cloneCustomTemplate, type CustomTemplatePackage } from "@/lib/obligation-templates"
+import { getCustomTemplates, deleteCustomTemplate, seedDefaultTemplates, resetDefaultTemplates, cloneCustomTemplate, BUSINESS_ACTIVITY_LABELS, type CustomTemplatePackage } from "@/lib/obligation-templates"
+import { TAX_REGIME_LABELS, TAX_REGIME_COLORS } from "@/lib/types"
 import { seedDemoData, clearAllData } from "@/lib/seed-demo"
 import { toast } from "sonner"
 import { TemplatePackageForm } from "@/features/templates/components/template-package-form"
@@ -157,8 +158,18 @@ export default function TemplatesPage() {
                     )}
                   </CardHeader>
                   <CardContent className="flex-1">
-                    <div className="flex items-center gap-2 mb-4">
-                      <Badge variant="secondary">{pkg.obligations.length} obrigações</Badge>
+                    <div className="flex items-center gap-2 mb-4 flex-wrap">
+                      <Badge variant="secondary">{pkg.obligations.length} itens</Badge>
+                      {pkg.regime && (
+                        <Badge className={`text-[10px] ${TAX_REGIME_COLORS[pkg.regime]}`}>
+                          {TAX_REGIME_LABELS[pkg.regime]}
+                        </Badge>
+                      )}
+                      {pkg.activity && (
+                        <Badge variant="outline" className="text-[10px]">
+                          {BUSINESS_ACTIVITY_LABELS[pkg.activity]}
+                        </Badge>
+                      )}
                     </div>
                     <ul className="text-sm space-y-2 text-muted-foreground line-clamp-4">
                       {pkg.obligations.slice(0, 4).map((o, i) => (

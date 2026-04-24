@@ -8,6 +8,7 @@ import { CheckCircle2, FileText, Receipt, Loader2, Sparkles, Layers } from "luci
 import Link from "next/link"
 import {
   getCustomTemplates,
+  findBestTemplateMatch,
   type ObligationTemplate,
   type BusinessActivity,
   type CustomTemplatePackage,
@@ -64,8 +65,10 @@ export function TemplateApplyDialog({
     if (!open) return
     const packages = getCustomTemplates()
     setCustomPackages(packages)
-    setActivePackageId(packages[0]?.id ?? "")
-  }, [open])
+    // Pré-seleciona o template que combina com regime+atividade do cliente
+    const match = findBestTemplateMatch(packages, regime, activity)
+    setActivePackageId(match?.id ?? packages[0]?.id ?? "")
+  }, [open, regime, activity])
 
   const baseTemplates: ObligationTemplate[] = useMemo(() => {
     if (!activePackageId) return []
@@ -147,20 +150,44 @@ export function TemplateApplyDialog({
         </DialogHeader>
 
         {customPackages.length > 0 && (
-          <div className="px-6 py-3 bg-muted/30 border-b flex items-center justify-between">
-            <span className="text-sm font-medium">Template:</span>
-            <Select value={activePackageId} onValueChange={setActivePackageId}>
-              <SelectTrigger className="w-[300px] h-8 text-xs">
-                <SelectValue placeholder="Selecione um template" />
-              </SelectTrigger>
-              <SelectContent>
-                {customPackages.map((pkg) => (
-                  <SelectItem key={pkg.id} value={pkg.id}>
-                    {pkg.name} ({pkg.obligations.length} itens)
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          <div className="px-6 py-3 bg-muted/30 border-b">
+            <div className="flex items-center justify-between gap-4">
+              <span className="text-sm font-medium">Template:</span>
+              <Select value={activePackageId} onValueChange={setActivePackageId}>
+                <SelectTrigger className="w-[340px] h-8 text-xs">
+                  <SelectValue placeholder="Selecione um template" />
+                </SelectTrigger>
+                <SelectContent>
+                  {/* Templates do mesmo regime do cliente aparecem primeiro, marcados */}
+                  {sortPackagesForClient(customPackages, regime, activity).map((pkg) => {
+                    const isMatch = pkg.regime === regime && pkg.activity === activity
+                    const isPartialMatch = !isMatch && pkg.regime === regime
+                    return (
+                      <SelectItem key={pkg.id} value={pkg.id}>
+                        <div className="flex items-center gap-2">
+                          {isMatch && <span className="text-emerald-600">✓</span>}
+                          {isPartialMatch && <span className="text-amber-600">~</span>}
+                          <span>{pkg.name}</span>
+                          <span className="text-muted-foreground">({pkg.obligations.length})</span>
+                        </div>
+                      </SelectItem>
+                    )
+                  })}
+                </SelectContent>
+              </Select>
+            </div>
+            {(() => {
+              const active = customPackages.find((p) => p.id === activePackageId)
+              if (!active?.regime) return null
+              const isMatch = active.regime === regime && active.activity === activity
+              return (
+                <p className={`text-xs mt-1.5 ${isMatch ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-400"}`}>
+                  {isMatch
+                    ? "✓ Template combina exatamente com o regime e atividade da empresa"
+                    : `⚠ Template é de outro perfil — você pode trocar acima ou continuar`}
+                </p>
+              )
+            })()}
           </div>
         )}
 
@@ -306,4 +333,27 @@ function Section({ title, subtitle, icon, items, selected, onToggle }: SectionPr
       </div>
     </div>
   )
+}
+
+/**
+ * Ordena os templates colocando os que combinam com o cliente no topo:
+ * 1. Match exato regime+atividade
+ * 2. Match só de regime
+ * 3. Demais
+ */
+function sortPackagesForClient(
+  packages: CustomTemplatePackage[],
+  regime: TaxRegime,
+  activity: BusinessActivity,
+): CustomTemplatePackage[] {
+  return [...packages].sort((a, b) => {
+    const score = (p: CustomTemplatePackage): number => {
+      if (p.regime === regime && p.activity === activity) return 0
+      if (p.regime === regime) return 1
+      return 2
+    }
+    const diff = score(a) - score(b)
+    if (diff !== 0) return diff
+    return a.name.localeCompare(b.name)
+  })
 }

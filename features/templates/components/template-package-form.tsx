@@ -32,6 +32,8 @@ const obligationSchema = z.object({
 const templatePackageSchema = z.object({
   name: z.string().min(2, "Nome é obrigatório"),
   description: z.string().optional().default(""),
+  regime: z.enum(["simples_nacional", "lucro_presumido", "lucro_real", "mei", "imune_isento", ""]).optional().default(""),
+  activity: z.enum(["servicos", "comercio", "industria", "misto", ""]).optional().default(""),
   obligations: z.array(obligationSchema).min(1, "Adicione ao menos um item"),
 })
 
@@ -88,6 +90,8 @@ export function TemplatePackageForm({ template, open, onOpenChange, onSave }: Pr
       form.reset({
         name: template.name,
         description: template.description || "",
+        regime: (template.regime ?? "") as "" | "simples_nacional" | "lucro_presumido" | "lucro_real" | "mei" | "imune_isento",
+        activity: (template.activity ?? "") as "" | "servicos" | "comercio" | "industria" | "misto",
         obligations: template.obligations.map((o) => ({
           name: o.name,
           description: o.description || "",
@@ -100,7 +104,7 @@ export function TemplatePackageForm({ template, open, onOpenChange, onSave }: Pr
         })),
       })
     } else {
-      form.reset({ name: "", description: "", obligations: [newItem()] })
+      form.reset({ name: "", description: "", regime: "", activity: "", obligations: [newItem()] })
     }
   }, [template, open, form])
 
@@ -109,6 +113,8 @@ export function TemplatePackageForm({ template, open, onOpenChange, onSave }: Pr
       id: template?.id || crypto.randomUUID(),
       name: data.name,
       description: data.description,
+      regime: data.regime ? (data.regime as CustomTemplatePackage["regime"]) : undefined,
+      activity: data.activity ? (data.activity as CustomTemplatePackage["activity"]) : undefined,
       obligations: data.obligations.map<ObligationTemplate>((o) => ({
         name: o.name,
         description: o.description || "",
@@ -169,6 +175,60 @@ export function TemplatePackageForm({ template, open, onOpenChange, onSave }: Pr
                     </FormItem>
                   )}
                 />
+
+                <div className="grid sm:grid-cols-2 gap-3">
+                  <FormField
+                    control={form.control}
+                    name="regime"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Regime aplicável (Opcional)</FormLabel>
+                        <Select onValueChange={(v) => field.onChange(v === "any" ? "" : v)} value={field.value || "any"}>
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Qualquer regime" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="any">Qualquer regime</SelectItem>
+                            <SelectItem value="simples_nacional">Simples Nacional</SelectItem>
+                            <SelectItem value="lucro_presumido">Lucro Presumido</SelectItem>
+                            <SelectItem value="lucro_real">Lucro Real</SelectItem>
+                            <SelectItem value="mei">MEI</SelectItem>
+                            <SelectItem value="imune_isento">Imune / Isento</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <p className="text-xs text-muted-foreground">
+                          Quando preenchido, o sistema sugere automaticamente este template ao cadastrar empresas com este regime.
+                        </p>
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="activity"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Atividade (Opcional)</FormLabel>
+                        <Select onValueChange={(v) => field.onChange(v === "any" ? "" : v)} value={field.value || "any"}>
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Qualquer atividade" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="any">Qualquer atividade</SelectItem>
+                            <SelectItem value="servicos">Serviços</SelectItem>
+                            <SelectItem value="comercio">Comércio / Varejo</SelectItem>
+                            <SelectItem value="industria">Indústria</SelectItem>
+                            <SelectItem value="misto">Misto (Serviços + Comércio)</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </FormItem>
+                    )}
+                  />
+                </div>
               </div>
 
               <div className="space-y-4 pt-4 border-t">
