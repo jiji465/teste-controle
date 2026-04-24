@@ -6,7 +6,6 @@ import { useUrlState } from "@/hooks/use-url-state"
 import { ObligationList, type ObligationListHandle } from "@/features/obligations/components/obligation-list"
 import { GlobalSearch } from "@/components/global-search"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { getObligationsWithDetails } from "@/lib/dashboard-utils"
@@ -148,15 +147,13 @@ export default function ObligacoesPage() {
             </TabsList>
 
             <TabsContent value={activeTab} className="mt-6">
-              <Card className="p-6">
-                <ObligationList
-                  ref={listRef}
-                  obligations={getFilteredObligations()}
-                  clients={clients}
-                  taxes={taxes}
-                  onUpdate={updateData}
-                />
-              </Card>
+              <ObligationList
+                ref={listRef}
+                obligations={getFilteredObligations()}
+                clients={clients}
+                taxes={taxes}
+                onUpdate={updateData}
+              />
             </TabsContent>
           </Tabs>
         </div>

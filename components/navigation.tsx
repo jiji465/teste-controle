@@ -24,16 +24,14 @@ export function Navigation() {
     return getObligationsWithDetails(obligations, clients, taxes)
   }, [obligations, clients, taxes, isLoading])
 
-  const { overdueList, weekList, pendingCount } = useMemo(() => {
+  const { overdueList, weekList } = useMemo(() => {
     const today = new Date()
     const nextWeek = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000)
     const overdueList: ObligationWithDetails[] = []
     const weekList: ObligationWithDetails[] = []
-    let pendingCount = 0
 
     for (const o of obsWithDetails) {
       if (o.status === "completed") continue
-      if (o.status === "pending") pendingCount++
       const due = new Date(o.calculatedDueDate)
       if (isOverdue(o.calculatedDueDate)) {
         overdueList.push(o)
@@ -43,45 +41,24 @@ export function Navigation() {
     }
     overdueList.sort((a, b) => new Date(a.calculatedDueDate).getTime() - new Date(b.calculatedDueDate).getTime())
     weekList.sort((a, b) => new Date(a.calculatedDueDate).getTime() - new Date(b.calculatedDueDate).getTime())
-    return { overdueList, weekList, pendingCount }
+    return { overdueList, weekList }
   }, [obsWithDetails])
 
-  const alertCounts = {
-    overdue: overdueList.length,
-    pending: pendingCount,
-    thisWeek: weekList.length,
-  }
+  const totalAlerts = overdueList.length + weekList.length
 
+  // Padronizado: nenhum item da navegação mostra badge de contagem.
+  // Alertas críticos (atrasados, vencendo na semana) ficam no popover do sino,
+  // que já é destacado em vermelho. Contagens totais aparecem nas próprias páginas.
   const navItems = [
-    {
-      href: "/",
-      label: "Dashboard",
-      icon: LayoutDashboard,
-      badge: alertCounts.overdue > 0 ? alertCounts.overdue : null,
-      badgeVariant: "destructive" as const,
-    },
+    { href: "/", label: "Dashboard", icon: LayoutDashboard },
     { href: "/clientes", label: "Empresas", icon: Building2 },
     { href: "/impostos", label: "Impostos", icon: Receipt },
-    {
-      href: "/obrigacoes",
-      label: "Obrigações",
-      icon: FileText,
-      badge: alertCounts.pending > 0 ? alertCounts.pending : null,
-      badgeVariant: "secondary" as const,
-    },
+    { href: "/obrigacoes", label: "Obrigações", icon: FileText },
     { href: "/parcelamentos", label: "Parcelamentos", icon: CreditCard },
-    {
-      href: "/calendario",
-      label: "Calendário",
-      icon: Calendar,
-      badge: alertCounts.thisWeek > 0 ? alertCounts.thisWeek : null,
-      badgeVariant: "default" as const,
-    },
+    { href: "/calendario", label: "Calendário", icon: Calendar },
     { href: "/relatorios", label: "Relatórios", icon: BarChart3 },
     { href: "/templates", label: "Templates", icon: Layers },
   ]
-
-  const totalAlerts = alertCounts.overdue + alertCounts.thisWeek
 
   return (
     <nav className="glass-panel border-b sticky top-0 z-50">
@@ -110,11 +87,6 @@ export function Navigation() {
                     >
                       <Icon className="size-4" />
                       <span className="text-sm font-medium">{item.label}</span>
-                      {item.badge && (
-                        <Badge variant={item.badgeVariant} className="ml-1 h-4 min-w-4 px-1 text-[10px]">
-                          {item.badge}
-                        </Badge>
-                      )}
                     </Button>
                   </Link>
                 )
@@ -178,11 +150,6 @@ export function Navigation() {
                   <Button variant={isActive ? "secondary" : "ghost"} className="w-full justify-start gap-2">
                     <Icon className="size-4" />
                     {item.label}
-                    {item.badge && (
-                      <Badge variant={item.badgeVariant} className="ml-auto h-5 min-w-5 px-1 text-xs">
-                        {item.badge}
-                      </Badge>
-                    )}
                   </Button>
                 </Link>
               )
