@@ -5,6 +5,7 @@ import { Analytics } from "@vercel/analytics/next"
 import { Suspense } from "react"
 import { DataProvider } from "@/contexts/data-context"
 import { AutoRecurrenceInitializer } from "@/components/auto-recurrence-initializer"
+import { ErrorBoundary } from "@/components/error-boundary"
 import "./globals.css"
 
 const geistSans = Geist({
@@ -33,7 +34,9 @@ export default function RootLayout({
       <body className="font-sans antialiased">
         <DataProvider>
           <AutoRecurrenceInitializer />
-          <Suspense fallback={null}>{children}</Suspense>
+          <ErrorBoundary>
+            <Suspense fallback={null}>{children}</Suspense>
+          </ErrorBoundary>
         </DataProvider>
         <Analytics />
       </body>

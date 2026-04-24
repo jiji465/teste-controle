@@ -11,6 +11,7 @@ function mapObligationToDb(obligation: Obligation) {
     tax_id: obligation.taxId || null,
     due_day: obligation.dueDay,
     due_month: obligation.dueMonth || null,
+    competency_month: obligation.competencyMonth || null,
     frequency: obligation.frequency,
     recurrence: obligation.recurrence,
     recurrence_interval: obligation.recurrenceInterval || null,
@@ -30,6 +31,8 @@ function mapObligationToDb(obligation: Obligation) {
     parent_obligation_id: obligation.parentObligationId || null,
     generated_for: obligation.generatedFor || null,
     tags: obligation.tags || [],
+    source: obligation.source || null,
+    template_id: obligation.templateId || null,
     created_at: obligation.createdAt,
   }
 }
@@ -44,6 +47,7 @@ function mapDbToObligation(row: any): Obligation {
     taxId: row.tax_id,
     dueDay: row.due_day,
     dueMonth: row.due_month,
+    competencyMonth: row.competency_month ?? undefined,
     frequency: row.frequency,
     recurrence: row.recurrence,
     recurrenceInterval: row.recurrence_interval,
@@ -63,6 +67,8 @@ function mapDbToObligation(row: any): Obligation {
     parentObligationId: row.parent_obligation_id,
     generatedFor: row.generated_for,
     tags: row.tags || [],
+    source: row.source ?? undefined,
+    templateId: row.template_id ?? undefined,
     createdAt: row.created_at,
     history: [],
   }

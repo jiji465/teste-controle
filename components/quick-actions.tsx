@@ -1,7 +1,9 @@
 "use client"
 
+import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { ConfirmDialog, type ConfirmState } from "@/components/ui/confirm-dialog"
 import { Zap, CheckCircle2, PlayCircle, AlertTriangle, FileText } from "lucide-react"
 import type { ObligationWithDetails } from "@/lib/types"
 import { saveObligation } from "@/lib/storage"
@@ -12,6 +14,7 @@ type QuickActionsProps = {
 }
 
 export function QuickActions({ obligations, onUpdate }: QuickActionsProps) {
+  const [confirmState, setConfirmState] = useState<ConfirmState>(null)
   const pendingObligations = obligations.filter((o) => o.status === "pending")
   const inProgressObligations = obligations.filter((o) => o.status === "in_progress")
   const overdueObligations = obligations.filter(
@@ -19,49 +22,49 @@ export function QuickActions({ obligations, onUpdate }: QuickActionsProps) {
   )
 
   const handleBulkComplete = (obligationList: ObligationWithDetails[]) => {
-    if (confirm(`Tem certeza que deseja marcar ${obligationList.length} obrigação(ões) como concluída(s)?`)) {
-      obligationList.forEach((obligation) => {
-        const updated = {
-          ...obligation,
-          status: "completed" as const,
-          completedAt: new Date().toISOString(),
-          realizationDate: new Date().toISOString().split("T")[0],
-          history: [
-            ...(obligation.history || []),
-            {
-              id: crypto.randomUUID(),
-              action: "completed" as const,
-              description: "Obrigação marcada como concluída (ação em lote)",
-              timestamp: new Date().toISOString(),
-            },
-          ],
-        }
-        saveObligation(updated)
-      })
-      onUpdate()
-    }
+    setConfirmState({
+      title: `Concluir ${obligationList.length} obrigação(ões)`,
+      description: `Marcar ${obligationList.length} obrigação(ões) como concluída(s)?`,
+      confirmLabel: "Concluir",
+      onConfirm: () => {
+        const now = new Date().toISOString()
+        obligationList.forEach((obligation) => {
+          saveObligation({
+            ...obligation,
+            status: "completed",
+            completedAt: now,
+            realizationDate: now.split("T")[0],
+            history: [
+              ...(obligation.history || []),
+              { id: crypto.randomUUID(), action: "completed" as const, description: "Concluída via ação em lote", timestamp: now },
+            ],
+          })
+        })
+        onUpdate()
+      },
+    })
   }
 
   const handleBulkStart = (obligationList: ObligationWithDetails[]) => {
-    if (confirm(`Tem certeza que deseja iniciar ${obligationList.length} obrigação(ões)?`)) {
-      obligationList.forEach((obligation) => {
-        const updated = {
-          ...obligation,
-          status: "in_progress" as const,
-          history: [
-            ...(obligation.history || []),
-            {
-              id: crypto.randomUUID(),
-              action: "status_changed" as const,
-              description: "Status alterado para Em Andamento (ação em lote)",
-              timestamp: new Date().toISOString(),
-            },
-          ],
-        }
-        saveObligation(updated)
-      })
-      onUpdate()
-    }
+    setConfirmState({
+      title: `Iniciar ${obligationList.length} obrigação(ões)`,
+      description: `Marcar ${obligationList.length} obrigação(ões) como "Em andamento"?`,
+      confirmLabel: "Iniciar",
+      onConfirm: () => {
+        const now = new Date().toISOString()
+        obligationList.forEach((obligation) => {
+          saveObligation({
+            ...obligation,
+            status: "in_progress",
+            history: [
+              ...(obligation.history || []),
+              { id: crypto.randomUUID(), action: "status_changed" as const, description: "Em andamento via ação em lote", timestamp: now },
+            ],
+          })
+        })
+        onUpdate()
+      },
+    })
   }
 
   const quickActions = [
@@ -104,6 +107,8 @@ export function QuickActions({ obligations, onUpdate }: QuickActionsProps) {
   ]
 
   return (
+    <>
+    <ConfirmDialog state={confirmState} onClose={() => setConfirmState(null)} />
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
@@ -138,5 +143,6 @@ export function QuickActions({ obligations, onUpdate }: QuickActionsProps) {
         </div>
       </CardContent>
     </Card>
+    </>
   )
 }

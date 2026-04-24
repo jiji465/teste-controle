@@ -2,6 +2,8 @@
 
 import { useEffect, useState, useMemo } from "react"
 import dynamic from "next/dynamic"
+import Link from "next/link"
+import { useSearchParams } from "next/navigation"
 import { Navigation } from "@/components/navigation"
 import { DashboardStatsCards } from "@/components/dashboard-stats"
 import { ProductivityStats } from "@/components/productivity-stats"
@@ -32,8 +34,12 @@ export default function DashboardPage() {
   const { clients, taxes, obligations: rawObligations, installments, lockedPeriods, isLoading, refreshData, togglePeriodLock } = useData()
   const [stats, setStats] = useState<DashboardStats | null>(null)
   const [isMounted, setIsMounted] = useState(false)
+  const searchParams = useSearchParams()
 
-  const currentPeriod = useMemo(() => getCurrentPeriod(), [])
+  const currentPeriod = useMemo(() => {
+    const fromUrl = searchParams.get("period")
+    return fromUrl && /^\d{4}-\d{2}$/.test(fromUrl) ? fromUrl : getCurrentPeriod()
+  }, [searchParams])
   const isPeriodLocked = useMemo(() => lockedPeriods.includes(currentPeriod), [lockedPeriods, currentPeriod])
 
   useEffect(() => {
@@ -114,23 +120,31 @@ export default function DashboardPage() {
                   <AlertCircle className="size-5" />
                   Alertas Críticos
                 </CardTitle>
-                <CardDescription>Itens que requerem atenção imediata</CardDescription>
+                <CardDescription>Clique em um item para abrir a obrigação ou parcelamento</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="space-y-2">
                   {criticalAlerts.slice(0, 3).map((obl) => (
-                    <div key={obl.id} className="flex items-center justify-between p-2 bg-background rounded-lg">
+                    <Link
+                      key={obl.id}
+                      href={`/obrigacoes?clientId=${obl.clientId}&obligationId=${obl.id}&tab=overdue`}
+                      className="flex items-center justify-between p-2 bg-background rounded-lg hover:bg-muted/60 transition-colors cursor-pointer"
+                    >
                       <div>
                         <p className="font-medium">{obl.name}</p>
                         <p className="text-sm text-muted-foreground">{obl.client.name}</p>
                       </div>
                       <Badge className="bg-red-600">{obl.status === "overdue" ? "Atrasada" : "Vence hoje"}</Badge>
-                    </div>
+                    </Link>
                   ))}
                   {criticalInstallments.slice(0, 2).map((inst) => {
                     const client = clients.find((c) => c.id === inst.clientId)
                     return (
-                      <div key={inst.id} className="flex items-center justify-between p-2 bg-background rounded-lg">
+                      <Link
+                        key={inst.id}
+                        href={`/parcelamentos?clientId=${inst.clientId}`}
+                        className="flex items-center justify-between p-2 bg-background rounded-lg hover:bg-muted/60 transition-colors cursor-pointer"
+                      >
                         <div className="flex items-center gap-2">
                           <CreditCard className="size-4 text-muted-foreground" />
                           <div>
@@ -141,13 +155,16 @@ export default function DashboardPage() {
                           </div>
                         </div>
                         <Badge className="bg-red-600">Vencida</Badge>
-                      </div>
+                      </Link>
                     )
                   })}
                   {criticalAlerts.length + criticalInstallments.length > 5 && (
-                    <p className="text-sm text-muted-foreground text-center pt-2">
-                      +{criticalAlerts.length + criticalInstallments.length - 5} alertas adicionais
-                    </p>
+                    <Link
+                      href="/obrigacoes?tab=overdue"
+                      className="block text-sm text-muted-foreground text-center pt-2 hover:text-foreground transition-colors"
+                    >
+                      Ver todos os {criticalAlerts.length + criticalInstallments.length} alertas →
+                    </Link>
                   )}
                 </div>
               </CardContent>

@@ -1,5 +1,6 @@
 "use client"
 
+import { useMemo } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { TrendingUp, CheckCircle2, Clock, AlertCircle } from "lucide-react"
 import type { ObligationWithDetails } from "@/lib/types"
@@ -9,43 +10,37 @@ type ProductivityStatsProps = {
 }
 
 export function ProductivityStats({ obligations }: ProductivityStatsProps) {
-  const now = new Date()
-  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
-  const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0)
+  const { completedThisMonth, inProgress, overdue, onTimeRate } = useMemo(() => {
+    const now = new Date()
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
+    const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0)
+    const last30 = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
 
-  // Obrigações concluídas este mês
-  const completedThisMonth = obligations.filter((obl) => {
-    if (!obl.completedAt) return false
-    const completedDate = new Date(obl.completedAt)
-    return completedDate >= startOfMonth && completedDate <= endOfMonth
-  })
+    const completedThisMonth: ObligationWithDetails[] = []
+    const inProgress: ObligationWithDetails[] = []
+    const overdue: ObligationWithDetails[] = []
+    const completedLast30: ObligationWithDetails[] = []
+    const totalLast30: ObligationWithDetails[] = []
 
-  // Obrigações em andamento
-  const inProgress = obligations.filter((obl) => obl.status === "in_progress")
+    // Single pass O(n) em vez de 5 filters separados
+    for (const obl of obligations) {
+      const due = new Date(obl.calculatedDueDate)
+      const completed = obl.completedAt ? new Date(obl.completedAt) : null
 
-  // Obrigações atrasadas
-  const overdue = obligations.filter((obl) => {
-    if (obl.status === "completed") return false
-    const dueDate = new Date(obl.calculatedDueDate)
-    return dueDate < now
-  })
+      if (completed && completed >= startOfMonth && completed <= endOfMonth) {
+        completedThisMonth.push(obl)
+      }
+      if (obl.status === "in_progress") inProgress.push(obl)
+      if (obl.status !== "completed" && due < now) overdue.push(obl)
+      if (due >= last30 && due <= now) totalLast30.push(obl)
+      if (completed && completed >= last30 && completed <= due) completedLast30.push(obl)
+    }
 
-  // Taxa de conclusão no prazo (últimos 30 dias)
-  const last30Days = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
-  const completedLast30Days = obligations.filter((obl) => {
-    if (!obl.completedAt) return false
-    const completedDate = new Date(obl.completedAt)
-    const dueDate = new Date(obl.calculatedDueDate)
-    return completedDate >= last30Days && completedDate <= dueDate
-  })
+    const rate =
+      totalLast30.length > 0 ? Math.round((completedLast30.length / totalLast30.length) * 100) : 0
 
-  const totalLast30Days = obligations.filter((obl) => {
-    const dueDate = new Date(obl.calculatedDueDate)
-    return dueDate >= last30Days && dueDate <= now
-  })
-
-  const onTimeRate =
-    totalLast30Days.length > 0 ? Math.round((completedLast30Days.length / totalLast30Days.length) * 100) : 0
+    return { completedThisMonth, inProgress, overdue, onTimeRate: rate }
+  }, [obligations])
 
   return (
     <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">

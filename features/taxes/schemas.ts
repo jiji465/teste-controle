@@ -1,9 +1,12 @@
 import { z } from "zod"
 import { taxRegimeSchema } from "@/features/clients/schemas"
 
+export const taxScopeSchema = z.enum(["federal", "estadual", "municipal"])
+
 export const taxSchema = z.object({
   id: z.string().uuid().optional(),
   name: z.string().min(2, "Nome deve ter no mínimo 2 caracteres"),
+  scope: taxScopeSchema.optional(),
   description: z.string().optional().or(z.literal("")),
   federalTaxCode: z.string().optional().or(z.literal("")),
   dueDay: z.coerce.number().min(1, "O dia deve ser maior que 0").max(31, "O dia deve ser até 31").optional().or(z.literal(0)),

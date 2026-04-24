@@ -5,6 +5,7 @@ function mapTaxToDb(tax: Tax) {
   return {
     id: tax.id,
     name: tax.name,
+    scope: tax.scope || null,
     description: tax.description || null,
     federal_tax_code: tax.federalTaxCode || null,
     due_day: tax.dueDay || null,
@@ -31,6 +32,7 @@ function mapDbToTax(row: any): Tax {
   return {
     id: row.id,
     name: row.name,
+    scope: row.scope || undefined,
     description: row.description || "",
     federalTaxCode: row.federal_tax_code,
     dueDay: row.due_day,

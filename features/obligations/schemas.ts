@@ -8,6 +8,8 @@ export const obligationSchema = z.object({
   taxId: z.string().optional().or(z.literal("none")).or(z.literal("")),
   dueDay: z.coerce.number().min(1, "Dia inválido").max(31, "Dia inválido"),
   dueMonth: z.coerce.number().min(1).max(12).optional().or(z.literal(0)).or(z.nan()),
+  /** Mês-base do fato gerador no formato "YYYY-MM" (ex: "2026-01" = competência janeiro/2026). */
+  competencyMonth: z.string().regex(/^\d{4}-\d{2}$/, "Formato esperado: AAAA-MM").optional().or(z.literal("")),
   frequency: z.enum(["monthly", "quarterly", "annual", "custom"]).default("monthly"),
   recurrence: z.enum(["monthly", "bimonthly", "quarterly", "semiannual", "annual", "custom"]).default("monthly"),
   recurrenceInterval: z.coerce.number().min(1).optional(),

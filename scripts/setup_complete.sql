@@ -236,6 +236,45 @@ COMMENT ON TABLE public.installments IS 'Parcelamentos de impostos e obrigaçõe
 COMMENT ON TABLE public.history IS 'Histórico de ações em todas as entidades';
 
 -- ============================================
+-- PASSO 5: ALINHAMENTO DE SCHEMA + TEMPLATES (004)
+-- Campos adicionados depois do schema inicial e
+-- infraestrutura para templates persistidos.
+-- ============================================
+
+ALTER TABLE public.clients ADD COLUMN IF NOT EXISTS tax_regime TEXT;
+ALTER TABLE public.clients ADD COLUMN IF NOT EXISTS business_activity TEXT;
+ALTER TABLE public.clients ADD COLUMN IF NOT EXISTS ie TEXT;
+ALTER TABLE public.clients ADD COLUMN IF NOT EXISTS im TEXT;
+ALTER TABLE public.clients ADD COLUMN IF NOT EXISTS notes TEXT;
+
+ALTER TABLE public.taxes ADD COLUMN IF NOT EXISTS applicable_regimes TEXT[];
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'obligations' AND column_name = 'source'
+  ) THEN
+    ALTER TABLE public.obligations
+      ADD COLUMN source TEXT CHECK (source IN ('manual', 'template', 'tax'));
+  END IF;
+END $$;
+
+ALTER TABLE public.obligations ADD COLUMN IF NOT EXISTS template_id UUID;
+
+CREATE TABLE IF NOT EXISTS public.custom_obligation_templates (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL,
+  description TEXT,
+  obligations JSONB NOT NULL DEFAULT '[]'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_obligations_source ON public.obligations(source);
+CREATE INDEX IF NOT EXISTS idx_obligations_template_id ON public.obligations(template_id);
+
+-- ============================================
 -- CONFIGURAÇÃO CONCLUÍDA!
 -- ============================================
 -- Agora você pode usar o sistema de controle fiscal

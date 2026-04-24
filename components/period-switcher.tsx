@@ -1,27 +1,60 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useEffect, useState } from "react"
+import { useRouter, useSearchParams, usePathname } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { CalendarDays, ChevronLeft, ChevronRight } from "lucide-react"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { format, addMonths, subMonths } from "date-fns"
+import { format, addMonths, subMonths, parse } from "date-fns"
 import { ptBR } from "date-fns/locale"
 
+const formatPeriod = (date: Date): string =>
+  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`
+
+const parsePeriod = (period: string | null): Date => {
+  if (!period) return new Date()
+  try {
+    return parse(period, "yyyy-MM", new Date())
+  } catch {
+    return new Date()
+  }
+}
+
 export function PeriodSwitcher() {
-  const [currentDate, setCurrentDate] = useState(new Date())
+  const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
   const [isMounted, setIsMounted] = useState(false)
 
   useEffect(() => {
     setIsMounted(true)
   }, [])
 
-  const handlePrevMonth = () => setCurrentDate(subMonths(currentDate, 1))
-  const handleNextMonth = () => setCurrentDate(addMonths(currentDate, 1))
+  const currentPeriod = searchParams.get("period")
+  const currentDate = parsePeriod(currentPeriod)
+
+  const goTo = (date: Date) => {
+    const params = new URLSearchParams(Array.from(searchParams.entries()))
+    params.set("period", formatPeriod(date))
+    router.replace(`${pathname}?${params.toString()}`, { scroll: false })
+  }
+
+  const handlePrevMonth = () => goTo(subMonths(currentDate, 1))
+  const handleNextMonth = () => goTo(addMonths(currentDate, 1))
+  const handleReset = () => {
+    const params = new URLSearchParams(Array.from(searchParams.entries()))
+    params.delete("period")
+    const qs = params.toString()
+    router.replace(`${pathname}${qs ? `?${qs}` : ""}`, { scroll: false })
+  }
+
+  const isCurrentMonth =
+    !currentPeriod || currentPeriod === formatPeriod(new Date())
 
   return (
     <div className="flex items-center gap-2">
       <div className="flex items-center bg-muted/50 rounded-lg p-1 border">
-        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handlePrevMonth}>
+        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handlePrevMonth} aria-label="Mês anterior">
           <ChevronLeft className="size-4" />
         </Button>
         <Popover>
@@ -35,33 +68,43 @@ export function PeriodSwitcher() {
           </PopoverTrigger>
           <PopoverContent className="w-auto p-4" align="center">
             <div className="grid grid-cols-3 gap-2">
-              {/* This could be expanded to a full year/month picker */}
-              <p className="col-span-3 text-xs font-semibold text-muted-foreground uppercase mb-2">Selecione o Período</p>
+              <p className="col-span-3 text-xs font-semibold text-muted-foreground uppercase mb-2">Últimos meses</p>
               {[0, 1, 2, 3, 4, 5].map((i) => {
                 const date = subMonths(new Date(), i)
+                const isActive = formatPeriod(currentDate) === formatPeriod(date)
                 return (
                   <Button
                     key={i}
-                    variant={format(currentDate, "MM-yy") === format(date, "MM-yy") ? "default" : "outline"}
+                    variant={isActive ? "default" : "outline"}
                     size="sm"
                     className="text-xs capitalize"
-                    onClick={() => setCurrentDate(date)}
+                    onClick={() => goTo(date)}
                   >
                     {format(date, "MMM", { locale: ptBR })}
                   </Button>
                 )
               })}
+              <Button
+                variant="ghost"
+                size="sm"
+                className="col-span-3 text-xs mt-1"
+                onClick={handleReset}
+              >
+                Voltar para o mês atual
+              </Button>
             </div>
           </PopoverContent>
         </Popover>
-        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleNextMonth}>
+        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleNextMonth} aria-label="Próximo mês">
           <ChevronRight className="size-4" />
         </Button>
       </div>
-      
-      <div className="hidden sm:flex items-center px-3 py-1 bg-primary/10 text-primary rounded-full text-xs font-bold border border-primary/20">
-        PROCESSO ATIVO
-      </div>
+
+      {!isCurrentMonth && (
+        <div className="hidden sm:flex items-center px-3 py-1 rounded-full text-xs font-bold border bg-muted text-muted-foreground border-border">
+          CONSULTANDO PASSADO
+        </div>
+      )}
     </div>
   )
 }

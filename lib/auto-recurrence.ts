@@ -17,6 +17,7 @@ import {
   generateTaxForPeriod,
   generateInstallmentForPeriod,
 } from "./recurrence-engine"
+import { buildSafeDate } from "./date-utils"
 
 export async function checkAndGenerateRecurrences(): Promise<void> {
   const now = new Date()
@@ -57,7 +58,7 @@ export async function checkAndGenerateRecurrences(): Promise<void> {
         // For simplicity, we just use the recurrence engine
         const period = inst.generatedFor || `${new Date(inst.createdAt).getFullYear()}-${String(new Date(inst.createdAt).getMonth() + 1).padStart(2, "0")}`
         const [year, month] = period.split("-").map(Number)
-        const dueDate = new Date(year, month - 1, inst.dueDay || 1)
+        const dueDate = buildSafeDate(year, month - 1, inst.dueDay || 1)
         if (dueDate > latestDueDate) {
           latestDueDate = dueDate
           latestInstance = inst

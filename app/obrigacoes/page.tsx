@@ -1,21 +1,24 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { Navigation } from "@/components/navigation"
-import { ObligationList } from "@/features/obligations/components/obligation-list"
+import { useUrlState } from "@/hooks/use-url-state"
+import { ObligationList, type ObligationListHandle } from "@/features/obligations/components/obligation-list"
 import { GlobalSearch } from "@/components/global-search"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { getObligationsWithDetails } from "@/lib/dashboard-utils"
-import { CheckCircle2, Clock, PlayCircle, AlertTriangle, Search } from "lucide-react"
+import { buildSafeDate } from "@/lib/date-utils"
+import { CheckCircle2, Clock, PlayCircle, AlertTriangle, Search, Plus } from "lucide-react"
 import { useData } from "@/contexts/data-context"
 
 export default function ObligacoesPage() {
   const { obligations: rawObligations, clients, taxes, refreshData } = useData()
-  const [activeTab, setActiveTab] = useState("all")
+  const [activeTab, setActiveTab] = useUrlState("tab")
   const [searchOpen, setSearchOpen] = useState(false)
+  const listRef = useRef<ObligationListHandle>(null)
 
   const obligations = useMemo(
     () => getObligationsWithDetails(rawObligations, clients, taxes),
@@ -45,7 +48,7 @@ export default function ObligacoesPage() {
     if (o.status === "completed") return false
     if (o.status === "overdue") return true
     const today = new Date()
-    const dueDate = new Date(today.getFullYear(), today.getMonth(), o.dueDay)
+    const dueDate = buildSafeDate(today.getFullYear(), today.getMonth(), o.dueDay)
     return dueDate < today
   })
 
@@ -74,13 +77,19 @@ export default function ObligacoesPage() {
               <h1 className="text-4xl font-bold tracking-tight text-balance">Obrigações Acessórias</h1>
               <p className="text-lg text-muted-foreground">Gerencie todas as obrigações fiscais dos seus clientes</p>
             </div>
-            <Button variant="outline" onClick={() => setSearchOpen(true)} className="gap-2">
-              <Search className="size-4" />
-              Buscar
-              <kbd className="pointer-events-none hidden h-5 select-none items-center gap-1 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium opacity-100 sm:flex">
-                <span className="text-xs">⌘</span>K
-              </kbd>
-            </Button>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => setSearchOpen(true)} className="gap-2">
+                <Search className="size-4" />
+                Buscar
+                <kbd className="pointer-events-none hidden h-5 select-none items-center gap-1 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium opacity-100 sm:flex">
+                  <span className="text-xs">⌘</span>K
+                </kbd>
+              </Button>
+              <Button onClick={() => listRef.current?.openNewForm()}>
+                <Plus className="size-4 mr-2" />
+                Nova Obrigação
+              </Button>
+            </div>
           </div>
 
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
@@ -141,6 +150,7 @@ export default function ObligacoesPage() {
             <TabsContent value={activeTab} className="mt-6">
               <Card className="p-6">
                 <ObligationList
+                  ref={listRef}
                   obligations={getFilteredObligations()}
                   clients={clients}
                   taxes={taxes}

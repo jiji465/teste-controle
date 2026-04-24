@@ -1,5 +1,5 @@
 import type { Obligation, Tax, Installment, RecurrenceType } from "./types"
-import { adjustForWeekend } from "./date-utils"
+import { adjustForWeekend, buildSafeDate } from "./date-utils"
 
 export function shouldGenerateRecurrence(date: Date): boolean {
   // Always check for missing recurrences when the engine runs.
@@ -51,7 +51,7 @@ export function generateObligationForPeriod(
   period: string, // formato: "2025-01"
 ): Obligation {
   const [year, month] = period.split("-").map(Number)
-  const dueDate = new Date(year, month - 1, obligation.dueDay)
+  const dueDate = buildSafeDate(year, month - 1, obligation.dueDay)
   const adjustedDueDate = adjustForWeekend(dueDate, obligation.weekendRule)
 
   return {
@@ -107,7 +107,7 @@ export function generateInstallmentForPeriod(
   period: string, // formato: "2025-01"
 ): Installment {
   const [year, month] = period.split("-").map(Number)
-  const dueDate = new Date(year, month - 1, installment.dueDay)
+  const dueDate = buildSafeDate(year, month - 1, installment.dueDay)
   const adjustedDueDate = adjustForWeekend(dueDate, installment.weekendRule)
 
   // Incrementa a parcela atual

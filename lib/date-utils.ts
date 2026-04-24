@@ -18,11 +18,58 @@ const fixedHolidays = [
   { month: 11, day: 25 }, // Natal
 ]
 
-// Simple holiday check (could be expanded with an API or dynamic calculation for Easter/Carnival)
+// Algoritmo de Meeus/Jones/Butcher para domingo de Páscoa (Gregoriano).
+// Retorna Date local (meia-noite) do domingo de Páscoa do ano informado.
+const calculateEaster = (year: number): Date => {
+  const a = year % 19
+  const b = Math.floor(year / 100)
+  const c = year % 100
+  const d = Math.floor(b / 4)
+  const e = b % 4
+  const f = Math.floor((b + 8) / 25)
+  const g = Math.floor((b - f + 1) / 3)
+  const h = (19 * a + b - d - g + 15) % 30
+  const i = Math.floor(c / 4)
+  const k = c % 4
+  const l = (32 + 2 * e + 2 * i - h - k) % 7
+  const m = Math.floor((a + 11 * h + 22 * l) / 451)
+  const month = Math.floor((h + l - 7 * m + 114) / 31) - 1 // 0-indexed
+  const day = ((h + l - 7 * m + 114) % 31) + 1
+  return new Date(year, month, day)
+}
+
+const easterCache = new Map<number, Date>()
+const getEaster = (year: number): Date => {
+  const cached = easterCache.get(year)
+  if (cached) return cached
+  const computed = calculateEaster(year)
+  easterCache.set(year, computed)
+  return computed
+}
+
+const addDays = (date: Date, days: number): Date => {
+  const next = new Date(date)
+  next.setDate(next.getDate() + days)
+  return next
+}
+
+const sameYmd = (a: Date, b: Date): boolean =>
+  a.getFullYear() === b.getFullYear() &&
+  a.getMonth() === b.getMonth() &&
+  a.getDate() === b.getDate()
+
 export const isHoliday = (date: Date): boolean => {
   const month = date.getMonth()
   const day = date.getDate()
-  return fixedHolidays.some((h) => h.month === month && h.day === day)
+  if (fixedHolidays.some((h) => h.month === month && h.day === day)) return true
+
+  const easter = getEaster(date.getFullYear())
+  // Feriados móveis nacionais derivados da Páscoa
+  if (sameYmd(date, addDays(easter, -48))) return true // Segunda de Carnaval
+  if (sameYmd(date, addDays(easter, -47))) return true // Terça de Carnaval
+  if (sameYmd(date, addDays(easter, -2))) return true  // Sexta-feira Santa
+  if (sameYmd(date, addDays(easter, 60))) return true  // Corpus Christi
+  return false
 }
 
 export const isWeekendOrHoliday = (date: Date): boolean => {
@@ -50,6 +97,16 @@ export const adjustForWeekend = (date: Date, rule: WeekendRule): Date => {
   return adjusted
 }
 
+/**
+ * Constrói uma Date "segura": se o dia pedido não existir no mês (ex: 31 em
+ * fevereiro), usa o último dia válido do mês em vez de fazer overflow para o
+ * mês seguinte (que é o comportamento padrão do construtor de Date).
+ */
+export const buildSafeDate = (year: number, monthZeroBased: number, day: number): Date => {
+  const lastDayOfMonth = new Date(year, monthZeroBased + 1, 0).getDate()
+  return new Date(year, monthZeroBased, Math.min(day, lastDayOfMonth))
+}
+
 export const calculateDueDate = (
   dueDay: number,
   dueMonth: number | undefined,
@@ -61,21 +118,23 @@ export const calculateDueDate = (
 
   if (frequency === "annual" && dueMonth) {
     // Annual obligation with specific month
-    dueDate = new Date(referenceDate.getFullYear(), dueMonth - 1, dueDay)
+    dueDate = buildSafeDate(referenceDate.getFullYear(), dueMonth - 1, dueDay)
     if (dueDate < referenceDate) {
-      dueDate.setFullYear(dueDate.getFullYear() + 1)
+      dueDate = buildSafeDate(dueDate.getFullYear() + 1, dueMonth - 1, dueDay)
     }
   } else if (frequency === "quarterly" && dueMonth) {
     // Quarterly obligation
-    dueDate = new Date(referenceDate.getFullYear(), dueMonth - 1, dueDay)
+    dueDate = buildSafeDate(referenceDate.getFullYear(), dueMonth - 1, dueDay)
     while (dueDate < referenceDate) {
-      dueDate.setMonth(dueDate.getMonth() + 3)
+      const next = new Date(dueDate.getFullYear(), dueDate.getMonth() + 3, 1)
+      dueDate = buildSafeDate(next.getFullYear(), next.getMonth(), dueDay)
     }
   } else {
     // Monthly or custom
-    dueDate = new Date(referenceDate.getFullYear(), referenceDate.getMonth(), dueDay)
+    dueDate = buildSafeDate(referenceDate.getFullYear(), referenceDate.getMonth(), dueDay)
     if (dueDate < referenceDate) {
-      dueDate.setMonth(dueDate.getMonth() + 1)
+      const next = new Date(dueDate.getFullYear(), dueDate.getMonth() + 1, 1)
+      dueDate = buildSafeDate(next.getFullYear(), next.getMonth(), dueDay)
     }
   }
 

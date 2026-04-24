@@ -1,5 +1,7 @@
 "use client"
+import { useState } from "react"
 import { Button } from "@/components/ui/button"
+import { ConfirmDialog, type ConfirmState } from "@/components/ui/confirm-dialog"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import {
@@ -30,6 +32,7 @@ type ObligationKanbanProps = {
 }
 
 export function ObligationKanban({ obligations, clients, taxes, onUpdate, onEdit, onView }: ObligationKanbanProps) {
+  const [confirmState, setConfirmState] = useState<ConfirmState>(null)
   const pendingObligations = obligations.filter((o) => o.status === "pending")
   const inProgressObligations = obligations.filter((o) => o.status === "in_progress")
   const completedObligations = obligations.filter((o) => o.status === "completed")
@@ -64,10 +67,16 @@ export function ObligationKanban({ obligations, clients, taxes, onUpdate, onEdit
   }
 
   const handleDelete = (id: string) => {
-    if (confirm("⚠️ Tem certeza que deseja excluir esta obrigação?\n\nEsta ação não pode ser desfeita.")) {
-      deleteObligation(id)
-      onUpdate()
-    }
+    setConfirmState({
+      title: "Excluir obrigação",
+      description: "Esta ação não pode ser desfeita.",
+      confirmLabel: "Excluir",
+      destructive: true,
+      onConfirm: () => {
+        deleteObligation(id)
+        onUpdate()
+      },
+    })
   }
 
   const getPriorityColor = (priority: string) => {
@@ -200,6 +209,8 @@ export function ObligationKanban({ obligations, clients, taxes, onUpdate, onEdit
   }
 
   return (
+    <>
+    <ConfirmDialog state={confirmState} onClose={() => setConfirmState(null)} />
     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
       <div>
         <h3 className="font-semibold text-lg mb-2">Pendentes</h3>
@@ -220,5 +231,6 @@ export function ObligationKanban({ obligations, clients, taxes, onUpdate, onEdit
         ))}
       </div>
     </div>
+    </>
   )
 }

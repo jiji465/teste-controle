@@ -51,6 +51,7 @@ export function ObligationForm({ obligation, clients, taxes, open, onOpenChange,
       clientId: "",
       taxId: "none",
       dueDay: 10,
+      competencyMonth: "",
       frequency: "monthly",
       recurrence: "monthly",
       recurrenceInterval: 1,
@@ -76,6 +77,7 @@ export function ObligationForm({ obligation, clients, taxes, open, onOpenChange,
           taxId: obligation.taxId || "none",
           dueDay: obligation.dueDay,
           dueMonth: obligation.dueMonth,
+          competencyMonth: obligation.competencyMonth || "",
           frequency: obligation.frequency || "monthly",
           recurrence: obligation.recurrence || "monthly",
           recurrenceInterval: obligation.recurrenceInterval || 1,
@@ -99,6 +101,7 @@ export function ObligationForm({ obligation, clients, taxes, open, onOpenChange,
           clientId: "",
           taxId: "none",
           dueDay: 10,
+          competencyMonth: "",
           frequency: "monthly",
           recurrence: "monthly",
           recurrenceInterval: 1,
@@ -134,6 +137,7 @@ export function ObligationForm({ obligation, clients, taxes, open, onOpenChange,
       taxId: data.taxId === "none" || !data.taxId ? undefined : data.taxId,
       dueDay: Number(data.dueDay),
       dueMonth: data.dueMonth ? Number(data.dueMonth) : undefined,
+      competencyMonth: data.competencyMonth || undefined,
       frequency: data.frequency as any,
       recurrence: data.recurrence as any,
       recurrenceInterval: data.recurrenceInterval,
@@ -217,7 +221,7 @@ export function ObligationForm({ obligation, clients, taxes, open, onOpenChange,
                   <FormItem>
                     <FormLabel>Nome da Obrigação *</FormLabel>
                     <FormControl>
-                      <Input placeholder="Ex: DCTF, EFD-ICMS, SPED Fiscal" {...field} />
+                      <Input autoFocus placeholder="Ex: DCTF, EFD-ICMS, SPED Fiscal" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -483,6 +487,23 @@ export function ObligationForm({ obligation, clients, taxes, open, onOpenChange,
             {/* Vencimentos */}
             <div className="space-y-4 border-t pt-4">
               <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Vencimentos</h3>
+
+              <FormField
+                control={form.control}
+                name="competencyMonth"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Mês de competência</FormLabel>
+                    <FormControl>
+                      <Input type="month" {...field} value={field.value || ""} />
+                    </FormControl>
+                    <p className="text-xs text-muted-foreground">
+                      Mês-base do fato gerador. Ex: a DCTF de competência <strong>jan/2026</strong> vence em fevereiro.
+                    </p>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
 
               <div className="grid sm:grid-cols-3 gap-4">
                 <FormField
