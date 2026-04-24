@@ -1,12 +1,17 @@
 "use client"
 
-import { useState } from "react"
+import { forwardRef, useImperativeHandle, useMemo, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
+import { Checkbox } from "@/components/ui/checkbox"
+import { Label } from "@/components/ui/label"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { BulkActionsBar } from "@/components/bulk-actions-bar"
+import { ConfirmDialog, type ConfirmState } from "@/components/ui/confirm-dialog"
 import { ObligationForm } from "./obligation-form"
 import { ObligationDetails } from "./obligation-details"
 import {
@@ -14,7 +19,6 @@ import {
   Pencil,
   Trash2,
   Search,
-  Plus,
   CheckCircle2,
   PlayCircle,
   Eye,
@@ -22,11 +26,14 @@ import {
   AlertTriangle,
   ArrowUpDown,
   Clock,
+  RotateCcw,
 } from "lucide-react"
-import type { ObligationWithDetails, Client, Tax } from "@/lib/types"
+import type { ObligationWithDetails, Client, Tax, Priority } from "@/lib/types"
 import { saveObligation, deleteObligation } from "@/features/obligations/services"
 import { formatDate, isOverdue } from "@/lib/date-utils"
 import { getRecurrenceDescription } from "@/lib/recurrence-utils"
+import { matchesText } from "@/lib/utils"
+import { toast } from "sonner"
 
 type ObligationListProps = {
   obligations: ObligationWithDetails[]
@@ -35,9 +42,36 @@ type ObligationListProps = {
   onUpdate: () => void
 }
 
-export function ObligationList({ obligations, clients, taxes, onUpdate }: ObligationListProps) {
+export type ObligationListHandle = {
+  openNewForm: () => void
+}
+
+type BulkEditForm = {
+  assignedTo: string
+  priority: "" | Priority
+  status: "" | "pending" | "in_progress" | "completed"
+  dueDay: string
+  weekendRule: "" | "postpone" | "anticipate" | "keep"
+  competencyMonth: string
+}
+
+const EMPTY_BULK_FORM: BulkEditForm = {
+  assignedTo: "",
+  priority: "",
+  status: "",
+  dueDay: "",
+  weekendRule: "",
+  competencyMonth: "",
+}
+
+export const ObligationList = forwardRef<ObligationListHandle, ObligationListProps>(function ObligationList(
+  { obligations, clients, taxes, onUpdate }: ObligationListProps,
+  ref,
+) {
   const [search, setSearch] = useState("")
   const [clientFilter, setClientFilter] = useState<string>("all")
+  const [priorityFilter, setPriorityFilter] = useState<string>("all")
+  const [assigneeFilter, setAssigneeFilter] = useState<string>("all")
   const [editingObligation, setEditingObligation] = useState<ObligationWithDetails | undefined>()
   const [viewingObligation, setViewingObligation] = useState<ObligationWithDetails | undefined>()
   const [isFormOpen, setIsFormOpen] = useState(false)
@@ -45,16 +79,43 @@ export function ObligationList({ obligations, clients, taxes, onUpdate }: Obliga
   const [showFilters, setShowFilters] = useState(false)
   const [sortBy, setSortBy] = useState<"dueDate" | "client" | "status">("dueDate")
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc")
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [bulkEditOpen, setBulkEditOpen] = useState(false)
+  const [bulkForm, setBulkForm] = useState<BulkEditForm>(EMPTY_BULK_FORM)
+  const [bulkLoading, setBulkLoading] = useState(false)
+  const [confirmState, setConfirmState] = useState<ConfirmState>(null)
+
+  const assignees = useMemo(() => {
+    const set = new Set<string>()
+    obligations.forEach((o) => o.assignedTo && set.add(o.assignedTo))
+    return [...set].sort((a, b) => a.localeCompare(b))
+  }, [obligations])
+
+  const activeFilterCount =
+    (clientFilter !== "all" ? 1 : 0) +
+    (priorityFilter !== "all" ? 1 : 0) +
+    (assigneeFilter !== "all" ? 1 : 0)
 
   const filteredObligations = obligations.filter((obl) => {
-    const matchesSearch =
-      obl.name.toLowerCase().includes(search.toLowerCase()) ||
-      obl.client.name.toLowerCase().includes(search.toLowerCase()) ||
-      obl.tax?.name?.toLowerCase().includes(search.toLowerCase())
-
-    const matchesClient = clientFilter === "all" || obl.clientId === clientFilter
-
-    return matchesSearch && matchesClient
+    if (search.trim()) {
+      const q = search.trim()
+      const textHit =
+        matchesText(obl.name, q) ||
+        matchesText(obl.client.name, q) ||
+        matchesText(obl.client.tradeName, q) ||
+        matchesText(obl.tax?.name, q) ||
+        matchesText(obl.description, q) ||
+        matchesText(obl.protocol, q) ||
+        matchesText(obl.assignedTo, q) ||
+        matchesText(obl.notes, q) ||
+        matchesText(obl.competencyMonth, q) ||
+        (obl.tags ?? []).some((t) => matchesText(t, q))
+      if (!textHit) return false
+    }
+    if (clientFilter !== "all" && obl.clientId !== clientFilter) return false
+    if (priorityFilter !== "all" && obl.priority !== priorityFilter) return false
+    if (assigneeFilter !== "all" && obl.assignedTo !== assigneeFilter) return false
+    return true
   })
 
   const sortedObligations = [...filteredObligations].sort((a, b) => {
@@ -74,14 +135,235 @@ export function ObligationList({ obligations, clients, taxes, onUpdate }: Obliga
 
   const handleSave = (obligation: any) => {
     saveObligation(obligation)
+    toast.success("Obrigação salva com sucesso")
     onUpdate()
     setEditingObligation(undefined)
   }
 
   const handleDelete = (id: string) => {
-    if (confirm("⚠️ Tem certeza que deseja excluir esta obrigação?\n\nEsta ação não pode ser desfeita.")) {
-      deleteObligation(id)
+    setConfirmState({
+      title: "Excluir obrigação",
+      description: "Tem certeza que deseja excluir esta obrigação? Esta ação não pode ser desfeita.",
+      confirmLabel: "Excluir",
+      destructive: true,
+      onConfirm: async () => {
+        try {
+          await deleteObligation(id)
+          toast.success("Obrigação excluída")
+          onUpdate()
+        } catch (error) {
+          toast.error("Erro ao excluir obrigação")
+          console.error("[obligations] delete error:", error)
+        }
+      },
+    })
+  }
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const clearSelection = () => setSelectedIds(new Set())
+
+  const selectedList = useMemo(
+    () => obligations.filter((o) => selectedIds.has(o.id)),
+    [obligations, selectedIds],
+  )
+
+  const handleBulkComplete = () => {
+    if (selectedIds.size === 0) return
+    setConfirmState({
+      title: `Concluir ${selectedIds.size} obrigações`,
+      description: `Marcar ${selectedIds.size} obrigações como concluídas?`,
+      confirmLabel: "Concluir",
+      onConfirm: async () => {
+        setBulkLoading(true)
+        try {
+          const now = new Date().toISOString()
+          await Promise.all(
+            selectedList
+              .filter((o) => o.status !== "completed")
+              .map((o) =>
+                saveObligation({
+                  ...o,
+                  status: "completed",
+                  completedAt: now,
+                  realizationDate: now.split("T")[0],
+                  completedBy: "Contador",
+                  history: [
+                    ...(o.history || []),
+                    { id: crypto.randomUUID(), action: "completed", description: "Concluída via ação em lote", timestamp: now },
+                  ],
+                }),
+              ),
+          )
+          toast.success(`${selectedIds.size} obrigações concluídas`)
+          clearSelection()
+          onUpdate()
+        } finally {
+          setBulkLoading(false)
+        }
+      },
+    })
+  }
+
+  const handleBulkReopen = () => {
+    if (selectedIds.size === 0) return
+    setConfirmState({
+      title: `Reabrir ${selectedIds.size} obrigações`,
+      description: `Volta para "Pendente" e limpa a data de conclusão.`,
+      confirmLabel: "Reabrir",
+      onConfirm: async () => {
+        setBulkLoading(true)
+        try {
+          const now = new Date().toISOString()
+          const targets = selectedList.filter((o) => o.status === "completed")
+          await Promise.all(
+            targets.map((o) =>
+              saveObligation({
+                ...o,
+                status: "pending",
+                completedAt: undefined,
+                completedBy: undefined,
+                realizationDate: undefined,
+                history: [
+                  ...(o.history || []),
+                  { id: crypto.randomUUID(), action: "status_changed", description: "Reaberta via ação em lote", timestamp: now },
+                ],
+              }),
+            ),
+          )
+          toast.success(`${targets.length} obrigações reabertas`)
+          clearSelection()
+          onUpdate()
+        } finally {
+          setBulkLoading(false)
+        }
+      },
+    })
+  }
+
+  const handleBulkInProgress = () => {
+    if (selectedIds.size === 0) return
+    setConfirmState({
+      title: `Iniciar ${selectedIds.size} obrigações`,
+      description: `Marcar ${selectedIds.size} obrigações como "Em andamento"?`,
+      confirmLabel: "Iniciar",
+      onConfirm: async () => {
+        setBulkLoading(true)
+        try {
+          const now = new Date().toISOString()
+          const targets = selectedList.filter((o) => o.status !== "in_progress")
+          await Promise.all(
+            targets.map((o) =>
+              saveObligation({
+                ...o,
+                status: "in_progress",
+                completedAt: undefined,
+                completedBy: undefined,
+                history: [
+                  ...(o.history || []),
+                  { id: crypto.randomUUID(), action: "status_changed", description: "Marcada como em andamento via lote", timestamp: now },
+                ],
+              }),
+            ),
+          )
+          toast.success(`${targets.length} obrigações em andamento`)
+          clearSelection()
+          onUpdate()
+        } finally {
+          setBulkLoading(false)
+        }
+      },
+    })
+  }
+
+  const handleBulkDelete = () => {
+    if (selectedIds.size === 0) return
+    setConfirmState({
+      title: `Excluir ${selectedIds.size} obrigações`,
+      description: "Esta ação não pode ser desfeita.",
+      confirmLabel: "Excluir",
+      destructive: true,
+      onConfirm: async () => {
+        setBulkLoading(true)
+        try {
+          await Promise.all(Array.from(selectedIds).map((id) => deleteObligation(id)))
+          toast.success(`${selectedIds.size} obrigações excluídas`)
+          clearSelection()
+          onUpdate()
+        } finally {
+          setBulkLoading(false)
+        }
+      },
+    })
+  }
+
+  const openBulkEdit = () => {
+    setBulkForm(EMPTY_BULK_FORM)
+    setBulkEditOpen(true)
+  }
+
+  const handleBulkEditApply = async () => {
+    if (selectedIds.size === 0) return
+    const { assignedTo, priority, status, dueDay, weekendRule, competencyMonth } = bulkForm
+    const dueDayNum = dueDay ? Number(dueDay) : null
+    if (dueDayNum !== null && (Number.isNaN(dueDayNum) || dueDayNum < 1 || dueDayNum > 31)) {
+      toast.error("Dia do vencimento deve estar entre 1 e 31")
+      return
+    }
+    if (competencyMonth && !/^\d{4}-\d{2}$/.test(competencyMonth)) {
+      toast.error("Mês de competência inválido (use formato AAAA-MM)")
+      return
+    }
+    if (!assignedTo && !priority && !status && !dueDayNum && !weekendRule && !competencyMonth) {
+      toast.info("Preencha pelo menos um campo para aplicar")
+      return
+    }
+    setBulkLoading(true)
+    try {
+      const now = new Date().toISOString()
+      const changes: string[] = []
+      if (assignedTo) changes.push(`responsável: ${assignedTo}`)
+      if (priority) changes.push(`prioridade: ${priority}`)
+      if (status) changes.push(`status: ${status}`)
+      if (dueDayNum) changes.push(`dia do vencimento: ${dueDayNum}`)
+      if (weekendRule) changes.push(`regra fim de semana: ${weekendRule}`)
+      if (competencyMonth) changes.push(`competência: ${competencyMonth}`)
+      const description = `Edição em lote — ${changes.join(", ")}`
+
+      await Promise.all(
+        selectedList.map((o) => {
+          const updated: ObligationWithDetails = { ...o }
+          if (assignedTo) updated.assignedTo = assignedTo
+          if (priority) updated.priority = priority as Priority
+          if (status) updated.status = status
+          if (dueDayNum) updated.dueDay = dueDayNum
+          if (weekendRule) updated.weekendRule = weekendRule
+          if (competencyMonth) updated.competencyMonth = competencyMonth
+          updated.history = [
+            ...(o.history || []),
+            {
+              id: crypto.randomUUID(),
+              action: "updated",
+              description,
+              timestamp: now,
+            },
+          ]
+          return saveObligation(updated)
+        }),
+      )
+      toast.success(`${selectedIds.size} obrigações atualizadas`)
+      setBulkEditOpen(false)
+      clearSelection()
       onUpdate()
+    } finally {
+      setBulkLoading(false)
     }
   }
 
@@ -141,6 +423,8 @@ export function ObligationList({ obligations, clients, taxes, onUpdate }: Obliga
     setEditingObligation(undefined)
     setIsFormOpen(true)
   }
+
+  useImperativeHandle(ref, () => ({ openNewForm: handleNew }), [])
 
   const getRelativeDate = (dateString: string) => {
     const date = new Date(dateString)
@@ -236,47 +520,66 @@ export function ObligationList({ obligations, clients, taxes, onUpdate }: Obliga
 
   return (
     <div className="space-y-4">
+      <ConfirmDialog state={confirmState} onClose={() => setConfirmState(null)} />
       <div className="flex items-center justify-between gap-4 flex-wrap">
-        <div className="relative flex-1 max-w-sm">
+        <div className="relative flex-1 min-w-[280px]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
           <Input
-            placeholder="Buscar obrigações..."
+            placeholder="Nome, cliente, imposto, descrição, protocolo, responsável, competência, tags…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="pl-9"
           />
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={() => setShowFilters(!showFilters)}>
-            <Filter className="size-4 mr-2" />
-            Filtros
-            {clientFilter !== "all" && (
-              <Badge variant="secondary" className="ml-2 size-5 rounded-full p-0 flex items-center justify-center">
-                1
-              </Badge>
-            )}
-          </Button>
-          <Button onClick={handleNew}>
-            <Plus className="size-4 mr-2" />
-            Nova Obrigação
-          </Button>
-        </div>
+        <Button variant="outline" onClick={() => setShowFilters(!showFilters)}>
+          <Filter className="size-4 mr-2" />
+          Filtros
+          {activeFilterCount > 0 && (
+            <Badge variant="secondary" className="ml-2 size-5 rounded-full p-0 flex items-center justify-center">
+              {activeFilterCount}
+            </Badge>
+          )}
+        </Button>
       </div>
 
       {showFilters && (
-        <div className="grid sm:grid-cols-2 gap-4 p-4 border rounded-lg bg-muted/50">
+        <div className="grid sm:grid-cols-3 gap-4 p-4 border rounded-lg bg-muted/50">
           <div className="grid gap-2">
             <label className="text-sm font-medium">Cliente</label>
             <Select value={clientFilter} onValueChange={setClientFilter}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
+              <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Todos os clientes</SelectItem>
                 {clients.map((client) => (
-                  <SelectItem key={client.id} value={client.id}>
-                    {client.name}
-                  </SelectItem>
+                  <SelectItem key={client.id} value={client.id}>{client.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="grid gap-2">
+            <label className="text-sm font-medium">Prioridade</label>
+            <Select value={priorityFilter} onValueChange={setPriorityFilter}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todas</SelectItem>
+                <SelectItem value="urgent">Urgente</SelectItem>
+                <SelectItem value="high">Alta</SelectItem>
+                <SelectItem value="medium">Média</SelectItem>
+                <SelectItem value="low">Baixa</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="grid gap-2">
+            <label className="text-sm font-medium">Responsável</label>
+            <Select value={assigneeFilter} onValueChange={setAssigneeFilter}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos</SelectItem>
+                {assignees.length === 0 && (
+                  <SelectItem value="__none__" disabled>(nenhum responsável atribuído)</SelectItem>
+                )}
+                {assignees.map((a) => (
+                  <SelectItem key={a} value={a}>{a}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -284,10 +587,39 @@ export function ObligationList({ obligations, clients, taxes, onUpdate }: Obliga
         </div>
       )}
 
+      <BulkActionsBar
+        selectedCount={selectedIds.size}
+        onClear={clearSelection}
+        actions={[
+          { label: "Concluir", icon: <CheckCircle2 className="size-3.5" />, tone: "success", onClick: handleBulkComplete, disabled: bulkLoading },
+          { label: "Em andamento", icon: <PlayCircle className="size-3.5" />, onClick: handleBulkInProgress, disabled: bulkLoading },
+          { label: "Reabrir", icon: <RotateCcw className="size-3.5" />, onClick: handleBulkReopen, disabled: bulkLoading },
+          { label: "Editar", icon: <Pencil className="size-3.5" />, onClick: openBulkEdit, disabled: bulkLoading },
+          { label: "Excluir", icon: <Trash2 className="size-3.5" />, tone: "destructive", onClick: handleBulkDelete, disabled: bulkLoading },
+        ]}
+      />
+
+
       <div className="border rounded-lg">
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead className="w-10">
+                <Checkbox
+                  checked={
+                    sortedObligations.length > 0 &&
+                    sortedObligations.every((o) => selectedIds.has(o.id))
+                  }
+                  onCheckedChange={(checked) => {
+                    if (checked) {
+                      setSelectedIds(new Set(sortedObligations.map((o) => o.id)))
+                    } else {
+                      clearSelection()
+                    }
+                  }}
+                  aria-label="Selecionar todas"
+                />
+              </TableHead>
               <TableHead>Obrigação</TableHead>
               <TableHead>
                 <Button variant="ghost" size="sm" onClick={() => toggleSort("client")} className="-ml-3">
@@ -315,20 +647,45 @@ export function ObligationList({ obligations, clients, taxes, onUpdate }: Obliga
           <TableBody>
             {sortedObligations.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
-                  Nenhuma obrigação encontrada
+                <TableCell colSpan={8} className="py-12">
+                  <div className="flex flex-col items-center justify-center text-center gap-2">
+                    <div className="size-12 rounded-full bg-muted flex items-center justify-center mb-1">
+                      <CheckCircle2 className="size-6 text-muted-foreground" />
+                    </div>
+                    <p className="font-medium">Nenhuma obrigação encontrada</p>
+                    <p className="text-sm text-muted-foreground max-w-md">
+                      {search || clientFilter !== "all" || priorityFilter !== "all" || assigneeFilter !== "all"
+                        ? "Tente ajustar a busca ou os filtros."
+                        : "Cadastre a primeira obrigação clicando no botão abaixo."}
+                    </p>
+                    {!search && clientFilter === "all" && priorityFilter === "all" && assigneeFilter === "all" && (
+                      <Button onClick={handleNew} className="mt-2 gap-2">
+                        Nova Obrigação
+                      </Button>
+                    )}
+                  </div>
                 </TableCell>
               </TableRow>
             ) : (
               sortedObligations.map((obligation) => (
                 <TableRow
                   key={obligation.id}
+                  data-state={selectedIds.has(obligation.id) ? "selected" : undefined}
                   className={
-                    isOverdue(obligation.calculatedDueDate) && obligation.status !== "completed"
-                      ? "bg-red-50/50 dark:bg-red-950/10"
-                      : ""
+                    selectedIds.has(obligation.id)
+                      ? "bg-primary/5"
+                      : isOverdue(obligation.calculatedDueDate) && obligation.status !== "completed"
+                        ? "bg-red-50/50 dark:bg-red-950/10"
+                        : ""
                   }
                 >
+                  <TableCell onClick={(e) => e.stopPropagation()}>
+                    <Checkbox
+                      checked={selectedIds.has(obligation.id)}
+                      onCheckedChange={() => toggleSelect(obligation.id)}
+                      aria-label={`Selecionar ${obligation.name}`}
+                    />
+                  </TableCell>
                   <TableCell>
                     <div className="space-y-1">
                       <div className="flex items-center gap-2">
@@ -377,7 +734,12 @@ export function ObligationList({ obligations, clients, taxes, onUpdate }: Obliga
                       <div className="text-xs text-muted-foreground">
                         {getRelativeDate(obligation.calculatedDueDate)}
                       </div>
-                      {obligation.recurrence && obligation.recurrence !== "none" && (
+                      {obligation.competencyMonth && (
+                        <div className="text-[10px] text-muted-foreground">
+                          Competência: <span className="font-mono">{obligation.competencyMonth}</span>
+                        </div>
+                      )}
+                      {obligation.recurrence && (
                         <Badge variant="secondary" className="text-xs">
                           {getRecurrenceDescription(obligation)}
                         </Badge>
@@ -429,6 +791,125 @@ export function ObligationList({ obligations, clients, taxes, onUpdate }: Obliga
       {viewingObligation && (
         <ObligationDetails obligation={viewingObligation} open={isDetailsOpen} onOpenChange={setIsDetailsOpen} />
       )}
+
+      <Dialog open={bulkEditOpen} onOpenChange={setBulkEditOpen}>
+        <DialogContent className="sm:max-w-[480px]">
+          <DialogHeader>
+            <DialogTitle>Editar {selectedIds.size} obrigações em lote</DialogTitle>
+            <DialogDescription>
+              Preencha apenas os campos que deseja alterar. Os demais ficam como estão.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-2">
+            <div className="grid gap-2">
+              <Label htmlFor="bulk-assigned">Responsável</Label>
+              <Input
+                id="bulk-assigned"
+                placeholder="Ex: João Silva"
+                value={bulkForm.assignedTo}
+                onChange={(e) => setBulkForm((f) => ({ ...f, assignedTo: e.target.value }))}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label>Prioridade</Label>
+              <Select
+                value={bulkForm.priority || "keep"}
+                onValueChange={(v) => setBulkForm((f) => ({ ...f, priority: v === "keep" ? "" : (v as Priority) }))}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="keep">(não alterar)</SelectItem>
+                  <SelectItem value="low">Baixa</SelectItem>
+                  <SelectItem value="medium">Média</SelectItem>
+                  <SelectItem value="high">Alta</SelectItem>
+                  <SelectItem value="urgent">Urgente</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid gap-2">
+              <Label>Status</Label>
+              <Select
+                value={bulkForm.status || "keep"}
+                onValueChange={(v) =>
+                  setBulkForm((f) => ({ ...f, status: v === "keep" ? "" : (v as BulkEditForm["status"]) }))
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="keep">(não alterar)</SelectItem>
+                  <SelectItem value="pending">Pendente</SelectItem>
+                  <SelectItem value="in_progress">Em Andamento</SelectItem>
+                  <SelectItem value="completed">Concluída</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="border-t pt-3 space-y-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Vencimento e competência</p>
+              <div className="grid gap-2">
+                <Label htmlFor="bulk-competency">Mês de competência</Label>
+                <Input
+                  id="bulk-competency"
+                  type="month"
+                  value={bulkForm.competencyMonth}
+                  onChange={(e) => setBulkForm((f) => ({ ...f, competencyMonth: e.target.value }))}
+                />
+                <p className="text-[11px] text-muted-foreground">
+                  Move as obrigações para outro mês/ano de competência. Ex: <strong>2026-02</strong> = fevereiro/2026.
+                </p>
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="bulk-due-day">Dia do vencimento (1-31)</Label>
+                <Input
+                  id="bulk-due-day"
+                  type="number"
+                  min={1}
+                  max={31}
+                  placeholder="Ex: 20 (deixe em branco para manter)"
+                  value={bulkForm.dueDay}
+                  onChange={(e) => setBulkForm((f) => ({ ...f, dueDay: e.target.value }))}
+                />
+                <p className="text-[11px] text-muted-foreground">
+                  Dia 31 em meses sem 31 será ajustado para o último dia automaticamente.
+                </p>
+              </div>
+            </div>
+            <div className="grid gap-2">
+              <Label>Se cair em fim de semana / feriado</Label>
+              <Select
+                value={bulkForm.weekendRule || "__keep__"}
+                onValueChange={(v) =>
+                  setBulkForm((f) => ({
+                    ...f,
+                    weekendRule: v === "__keep__" ? "" : (v as BulkEditForm["weekendRule"]),
+                  }))
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__keep__">(não alterar)</SelectItem>
+                  <SelectItem value="postpone">Postergar p/ próximo útil</SelectItem>
+                  <SelectItem value="anticipate">Antecipar p/ útil anterior</SelectItem>
+                  <SelectItem value="keep">Manter na data</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setBulkEditOpen(false)} disabled={bulkLoading}>
+              Cancelar
+            </Button>
+            <Button onClick={handleBulkEditApply} disabled={bulkLoading}>
+              Aplicar em {selectedIds.size}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
-}
+})

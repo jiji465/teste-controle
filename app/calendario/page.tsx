@@ -1,11 +1,12 @@
 "use client"
 
-import { useEffect, useState, useMemo } from "react"
+import { useMemo } from "react"
 import { Navigation } from "@/components/navigation"
 import { FiscalCalendar } from "@/components/fiscal-calendar"
 import { useData } from "@/contexts/data-context"
 import { getObligationsWithDetails } from "@/lib/dashboard-utils"
-import { adjustForWeekend } from "@/lib/date-utils"
+import { adjustForWeekend, buildSafeDate } from "@/lib/date-utils"
+import type { InstallmentWithDetails } from "@/lib/types"
 
 export default function CalendarioPage() {
   const { obligations: rawObligations, taxes, installments: rawInstallments, clients, isLoading } = useData()
@@ -15,25 +16,24 @@ export default function CalendarioPage() {
     return getObligationsWithDetails(rawObligations, clients, taxes)
   }, [rawObligations, clients, taxes, isLoading])
 
-  const installments = useMemo(() => {
+  const installments = useMemo<InstallmentWithDetails[]>(() => {
     if (isLoading || !clients.length) return []
-    return rawInstallments.map((inst) => {
-      const client = clients.find((c) => c.id === inst.clientId)!
-      const tax = inst.taxId ? taxes.find((t) => t.id === inst.taxId) : undefined
-
-      // Calculate due date for current installment
-      const firstDue = new Date(inst.firstDueDate)
-      const monthsToAdd = inst.currentInstallment - 1
-      const dueDate = new Date(firstDue.getFullYear(), firstDue.getMonth() + monthsToAdd, inst.dueDay)
-      const adjustedDueDate = adjustForWeekend(dueDate, inst.weekendRule)
-
-      return {
-        ...inst,
-        client,
-        tax,
-        calculatedDueDate: adjustedDueDate.toISOString(),
-      }
-    })
+    return rawInstallments
+      .filter((inst) => clients.some((c) => c.id === inst.clientId))
+      .map((inst) => {
+        const client = clients.find((c) => c.id === inst.clientId)!
+        const tax = inst.taxId ? taxes.find((t) => t.id === inst.taxId) : undefined
+        const firstDue = new Date(inst.firstDueDate)
+        const monthsToAdd = inst.currentInstallment - 1
+        const dueDate = buildSafeDate(firstDue.getFullYear(), firstDue.getMonth() + monthsToAdd, inst.dueDay)
+        const adjusted = adjustForWeekend(dueDate, inst.weekendRule)
+        return {
+          ...inst,
+          client,
+          tax,
+          calculatedDueDate: adjusted.toISOString(),
+        }
+      })
   }, [rawInstallments, clients, taxes, isLoading])
 
   return (
@@ -41,14 +41,19 @@ export default function CalendarioPage() {
       <Navigation />
       <main className="container mx-auto px-4 py-8">
         <div className="space-y-6">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight">Calendário</h1>
-            <p className="text-muted-foreground mt-2">
-              Visualize os vencimentos de obrigações, impostos e parcelamentos
+          <div className="space-y-2">
+            <h1 className="text-4xl font-bold tracking-tight text-balance">Calendário</h1>
+            <p className="text-lg text-muted-foreground">
+              Vencimentos de obrigações, impostos e parcelamentos em um só lugar
             </p>
           </div>
 
-          <FiscalCalendar obligations={obligations} />
+          <FiscalCalendar
+            obligations={obligations}
+            taxes={taxes}
+            installments={installments}
+            clients={clients}
+          />
         </div>
       </main>
     </div>

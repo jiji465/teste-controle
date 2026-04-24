@@ -33,16 +33,25 @@ export function OperationHub({ obligations, onUpdate, currentPeriod }: Operation
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [isAssignDialogOpen, setIsAssignDialogOpen] = useState(false)
   const [analystName, setAnalystName] = useState("")
+  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set())
+  const CATEGORY_VISIBLE_LIMIT = 8
 
   const isLocked = useMemo(() => lockedPeriods.includes(currentPeriod), [lockedPeriods, currentPeriod])
-  
+
+  // Só obrigações cuja competência bate com o período selecionado.
+  // Sem competencyMonth NÃO aparecem (são considerados itens "soltos").
+  const periodObligations = useMemo(
+    () => obligations.filter((o) => o.competencyMonth === currentPeriod),
+    [obligations, currentPeriod],
+  )
+
   const stats = useMemo(() => {
-    const total = obligations.length
-    const completed = obligations.filter(o => o.status === 'completed').length
-    const inProgress = obligations.filter(o => o.status === 'in_progress').length
-    const pending = obligations.filter(o => o.status === 'pending').length
-    const overdue = obligations.filter(o => o.status !== 'completed' && new Date(o.calculatedDueDate) < new Date()).length
-    
+    const total = periodObligations.length
+    const completed = periodObligations.filter(o => o.status === 'completed').length
+    const inProgress = periodObligations.filter(o => o.status === 'in_progress').length
+    const pending = periodObligations.filter(o => o.status === 'pending').length
+    const overdue = periodObligations.filter(o => o.status !== 'completed' && new Date(o.calculatedDueDate) < new Date()).length
+
     return {
       total,
       completed,
@@ -51,17 +60,17 @@ export function OperationHub({ obligations, onUpdate, currentPeriod }: Operation
       overdue,
       percent: total > 0 ? Math.round((completed / total) * 100) : 0
     }
-  }, [obligations])
+  }, [periodObligations])
 
   const categories = useMemo(() => {
-    const cats = {
-      federal: obligations.filter(o => o.category === 'federal'),
-      estatual: obligations.filter(o => o.category === 'estadual'),
-      municipal: obligations.filter(o => o.category === 'municipal'),
-      trabalhista: obligations.filter(o => o.category === 'trabalhista' || o.category === 'folha')
+    return {
+      SPED: periodObligations.filter(o => o.category === 'sped'),
+      'Guias de Imposto': periodObligations.filter(o => o.category === 'tax_guide'),
+      'Certidões': periodObligations.filter(o => o.category === 'certificate'),
+      'Declarações': periodObligations.filter(o => o.category === 'declaration'),
+      'Outras': periodObligations.filter(o => o.category === 'other'),
     }
-    return cats
-  }, [obligations])
+  }, [periodObligations])
 
   const handleBulkComplete = () => {
     if (selectedIds.length === 0 || isLocked) return
@@ -232,18 +241,31 @@ export function OperationHub({ obligations, onUpdate, currentPeriod }: Operation
           </div>
         </div>
 
+        {periodObligations.length === 0 && (
+          <div className="text-center py-12 px-6 border-2 border-dashed rounded-lg bg-muted/20">
+            <p className="font-medium text-sm">Nenhuma obrigação para a competência <span className="font-mono">{currentPeriod}</span></p>
+            <p className="text-xs text-muted-foreground mt-1">
+              Cadastre obrigações com mês de competência <strong>{currentPeriod}</strong> ou volte para o mês atual no seletor de período.
+            </p>
+          </div>
+        )}
+
         <div className="space-y-3">
-          {Object.entries(categories).map(([cat, items]) => (
-            items.length > 0 && (
+          {Object.entries(categories).map(([cat, items]) => {
+            if (items.length === 0) return null
+            const isExpanded = expandedCategories.has(cat)
+            const visibleItems = isExpanded ? items : items.slice(0, CATEGORY_VISIBLE_LIMIT)
+            const hiddenCount = items.length - visibleItems.length
+            return (
               <div key={cat} className="space-y-2">
                 <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-muted-foreground mb-1 px-1">
                   <span>{cat}</span>
                   <div className="h-px bg-border flex-1" />
                   <span>{items.filter(i => i.status === 'completed').length}/{items.length}</span>
                 </div>
-                
+
                 <div className="grid gap-2">
-                  {items.map(obl => (
+                  {visibleItems.map(obl => (
                     <div 
                       key={obl.id} 
                       className={`
@@ -303,10 +325,27 @@ export function OperationHub({ obligations, onUpdate, currentPeriod }: Operation
                       </div>
                     </div>
                   ))}
+                  {hiddenCount > 0 && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="w-full text-xs text-muted-foreground hover:text-foreground"
+                      onClick={() =>
+                        setExpandedCategories((prev) => {
+                          const next = new Set(prev)
+                          if (next.has(cat)) next.delete(cat)
+                          else next.add(cat)
+                          return next
+                        })
+                      }
+                    >
+                      {isExpanded ? "Mostrar menos" : `Ver mais ${hiddenCount} itens`}
+                    </Button>
+                  )}
                 </div>
               </div>
             )
-          ))}
+          })}
         </div>
       </Card>
 

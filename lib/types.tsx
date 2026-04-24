@@ -25,23 +25,35 @@ export const TAX_REGIME_COLORS: Record<TaxRegime, string> = {
 // ─── Cliente ─────────────────────────────────────────────────────────────────
 export type Client = {
   id: string
-  name: string
+  name: string              // Razão social
+  tradeName?: string        // Nome fantasia
   cnpj: string
   email: string
   phone: string
   status: "active" | "inactive"
   taxRegime?: TaxRegime
-  businessActivity?: string
-  ie?: string // Inscrição Estadual
-  im?: string // Inscrição Municipal
+  businessActivity?: string // Categoria interna (servicos/comercio/industria/misto) para templates
+  cnaeCode?: string         // CNAE oficial (7 dígitos) — vem da Receita
+  cnaeDescription?: string  // Descrição do CNAE oficial
+  ie?: string               // Inscrição Estadual
+  im?: string               // Inscrição Municipal
   notes?: string
   createdAt: string
 }
 
 // ─── Imposto ──────────────────────────────────────────────────────────────────
+export type TaxScope = "federal" | "estadual" | "municipal"
+
+export const TAX_SCOPE_LABELS: Record<TaxScope, string> = {
+  federal: "Federal",
+  estadual: "Estadual",
+  municipal: "Municipal",
+}
+
 export type Tax = {
   id: string
   name: string
+  scope?: TaxScope
   description?: string
   federalTaxCode?: string
   dueDay?: number // Dia do vencimento do imposto (1-31)
@@ -88,6 +100,8 @@ export type Certificate = {
 
 export type ObligationCategory = "sped" | "tax_guide" | "certificate" | "declaration" | "other"
 
+export type ObligationSource = "manual" | "template" | "tax"
+
 export type Obligation = {
   id: string
   name: string
@@ -97,6 +111,8 @@ export type Obligation = {
   taxId?: string
   dueDay: number
   dueMonth?: number
+  /** Mês-base de competência (formato "YYYY-MM"). Ex: "2026-01" = janeiro/2026. */
+  competencyMonth?: string
   frequency: "monthly" | "quarterly" | "annual" | "custom"
   recurrence: RecurrenceType
   recurrenceInterval?: number
@@ -118,6 +134,9 @@ export type Obligation = {
   parentObligationId?: string
   generatedFor?: string
   tags?: string[]
+  /** Origem da obrigação. "tax" indica que foi gerada a partir de um imposto via template. */
+  source?: ObligationSource
+  templateId?: string
 }
 
 export type Installment = {

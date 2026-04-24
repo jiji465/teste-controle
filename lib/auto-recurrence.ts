@@ -17,6 +17,7 @@ import {
   generateTaxForPeriod,
   generateInstallmentForPeriod,
 } from "./recurrence-engine"
+import { buildSafeDate } from "./date-utils"
 
 export async function checkAndGenerateRecurrences(): Promise<void> {
   const now = new Date()
@@ -33,8 +34,6 @@ export async function checkAndGenerateRecurrences(): Promise<void> {
   if (!shouldGenerateRecurrence(now)) {
     return
   }
-
-  console.log("[v0] Iniciando geração automática de recorrências para", currentPeriod)
 
   try {
     const { calculateNextDueDate } = await import("./recurrence-utils")
@@ -59,7 +58,7 @@ export async function checkAndGenerateRecurrences(): Promise<void> {
         // For simplicity, we just use the recurrence engine
         const period = inst.generatedFor || `${new Date(inst.createdAt).getFullYear()}-${String(new Date(inst.createdAt).getMonth() + 1).padStart(2, "0")}`
         const [year, month] = period.split("-").map(Number)
-        const dueDate = new Date(year, month - 1, inst.dueDay || 1)
+        const dueDate = buildSafeDate(year, month - 1, inst.dueDay || 1)
         if (dueDate > latestDueDate) {
           latestDueDate = dueDate
           latestInstance = inst
@@ -81,7 +80,6 @@ export async function checkAndGenerateRecurrences(): Promise<void> {
         if (!alreadyGenerated) {
           const newObligation = generateObligationForPeriod(obligation, nextPeriod)
           await saveObligation(newObligation)
-          console.log("[v0] Obrigação gerada:", newObligation.name, "para", nextPeriod)
         }
       }
     }
@@ -97,7 +95,6 @@ export async function checkAndGenerateRecurrences(): Promise<void> {
       if (!alreadyGenerated) {
         const newTax = generateTaxForPeriod(tax, currentPeriod)
         await saveTax(newTax)
-        console.log("[v0] Imposto gerado:", newTax.name, "para", currentPeriod)
       }
     }
 
@@ -108,18 +105,9 @@ export async function checkAndGenerateRecurrences(): Promise<void> {
     for (const installment of installmentsToGenerate) {
       const newInstallment = generateInstallmentForPeriod(installment, currentPeriod)
       await saveInstallment(newInstallment)
-      console.log(
-        "[v0] Parcela gerada:",
-        newInstallment.name,
-        `${newInstallment.currentInstallment}/${newInstallment.installmentCount}`,
-        "para",
-        currentPeriod,
-      )
     }
 
-    // Atualiza a data da última verificação
     setLastRecurrenceCheck(today)
-    console.log("[v0] Geração automática de recorrências concluída")
   } catch (error) {
     console.error("Erro ao gerar recorrências:", error)
   }

@@ -49,6 +49,7 @@ export function TaxForm({ tax, open, onOpenChange, onSave }: TaxFormProps) {
     resolver: zodResolver(taxSchema),
     defaultValues: {
       name: "",
+      scope: undefined,
       description: "",
       federalTaxCode: "",
       dueDay: undefined,
@@ -72,6 +73,7 @@ export function TaxForm({ tax, open, onOpenChange, onSave }: TaxFormProps) {
         form.reset({
           id: tax.id,
           name: tax.name,
+          scope: tax.scope,
           description: tax.description || "",
           federalTaxCode: tax.federalTaxCode || "",
           dueDay: tax.dueDay,
@@ -94,6 +96,7 @@ export function TaxForm({ tax, open, onOpenChange, onSave }: TaxFormProps) {
       } else {
         form.reset({
           name: "",
+          scope: undefined,
           description: "",
           federalTaxCode: "",
           dueDay: undefined,
@@ -118,6 +121,7 @@ export function TaxForm({ tax, open, onOpenChange, onSave }: TaxFormProps) {
     const taxData: Tax = {
       id: data.id || crypto.randomUUID(),
       name: data.name,
+      scope: data.scope,
       description: data.description || undefined,
       federalTaxCode: data.federalTaxCode || undefined,
       dueDay: data.dueDay && data.dueDay > 0 ? Number(data.dueDay) : undefined,
@@ -207,7 +211,7 @@ export function TaxForm({ tax, open, onOpenChange, onSave }: TaxFormProps) {
                   <FormItem>
                     <FormLabel>Nome do Imposto / Obrigação *</FormLabel>
                     <FormControl>
-                      <Input placeholder="Ex: ICMS, ISS, IRPJ, DCTF, EFD-REINF" {...field} />
+                      <Input autoFocus placeholder="Ex: ICMS, ISS, IRPJ, DCTF, EFD-REINF" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -217,13 +221,22 @@ export function TaxForm({ tax, open, onOpenChange, onSave }: TaxFormProps) {
               <div className="grid sm:grid-cols-2 gap-4">
                 <FormField
                   control={form.control}
-                  name="description"
+                  name="scope"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Descrição</FormLabel>
-                      <FormControl>
-                        <Textarea placeholder="Descreva o imposto..." rows={2} {...field} />
-                      </FormControl>
+                      <FormLabel>Esfera</FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value}>
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Selecione a esfera" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="federal">Federal</SelectItem>
+                          <SelectItem value="estadual">Estadual</SelectItem>
+                          <SelectItem value="municipal">Municipal</SelectItem>
+                        </SelectContent>
+                      </Select>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -234,7 +247,7 @@ export function TaxForm({ tax, open, onOpenChange, onSave }: TaxFormProps) {
                   name="federalTaxCode"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Código Federal (DARF/GPS)</FormLabel>
+                      <FormLabel>Código DARF / GPS / GARE</FormLabel>
                       <FormControl>
                         <Input placeholder="Ex: 1234" {...field} />
                       </FormControl>
@@ -243,6 +256,20 @@ export function TaxForm({ tax, open, onOpenChange, onSave }: TaxFormProps) {
                   )}
                 />
               </div>
+
+              <FormField
+                control={form.control}
+                name="description"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Descrição</FormLabel>
+                    <FormControl>
+                      <Textarea placeholder="Descreva o imposto..." rows={2} {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
             </div>
 
             {/* Regimes Tributários Aplicáveis */}

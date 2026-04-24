@@ -1,16 +1,23 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
 import { Checkbox } from "@/components/ui/checkbox"
-import { ScrollArea } from "@/components/ui/scroll-area"
-import { CheckCircle2, FileText, Receipt, BookOpen, Loader2, Sparkles } from "lucide-react"
-import { getCustomTemplates, type ObligationTemplate, type BusinessActivity, type CustomTemplatePackage } from "@/lib/obligation-templates"
-import type { TaxRegime } from "@/lib/types"
+import { CheckCircle2, FileText, Receipt, Loader2, Sparkles, Layers } from "lucide-react"
+import Link from "next/link"
+import {
+  getCustomTemplates,
+  type ObligationTemplate,
+  type BusinessActivity,
+  type CustomTemplatePackage,
+  type TemplateItem,
+  getApplicableTaxesForClient,
+  taxToTemplateItem,
+  BUSINESS_ACTIVITY_LABELS,
+} from "@/lib/obligation-templates"
+import type { Tax, TaxRegime } from "@/lib/types"
 import { TAX_REGIME_LABELS, TAX_REGIME_COLORS } from "@/lib/types"
-import { BUSINESS_ACTIVITY_LABELS } from "@/lib/obligation-templates"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
 type Props = {
@@ -19,22 +26,9 @@ type Props = {
   clientName: string
   regime: TaxRegime
   activity: BusinessActivity
-  systemTemplates: ObligationTemplate[]
-  onConfirm: (selected: ObligationTemplate[]) => Promise<void>
-}
-
-const CATEGORY_LABELS: Record<string, string> = {
-  tax_guide: "Guia de Imposto",
-  declaration: "Declaração",
-  sped: "SPED / Escrituração",
-  certificate: "Certidão",
-  other: "Outros",
-}
-
-const CATEGORY_ICONS: Record<string, React.ReactNode> = {
-  tax_guide: <Receipt className="size-3.5" />,
-  declaration: <FileText className="size-3.5" />,
-  sped: <BookOpen className="size-3.5" />,
+  /** Todos os impostos cadastrados. O dialog filtra os aplicáveis ao regime. */
+  taxes?: Tax[]
+  onConfirm: (selected: TemplateItem[]) => Promise<void>
 }
 
 const FREQ_LABELS: Record<string, string> = {
@@ -51,36 +45,62 @@ const PRIORITY_COLORS: Record<string, string> = {
   low: "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300",
 }
 
-export function TemplateApplyDialog({ open, onOpenChange, clientName, regime, activity, systemTemplates, onConfirm }: Props) {
+const itemKey = (item: TemplateItem): string => item.sourceTaxId ?? `tpl:${item.name}`
+
+export function TemplateApplyDialog({
+  open,
+  onOpenChange,
+  clientName,
+  regime,
+  activity,
+  taxes = [],
+  onConfirm,
+}: Props) {
   const [customPackages, setCustomPackages] = useState<CustomTemplatePackage[]>([])
-  const [activePackageId, setActivePackageId] = useState<string>("system")
+  const [activePackageId, setActivePackageId] = useState<string>("")
   const [loading, setLoading] = useState(false)
 
-  // Determine current templates based on selection
-  const currentTemplates = activePackageId === "system" 
-    ? systemTemplates 
-    : customPackages.find(p => p.id === activePackageId)?.obligations || []
+  useEffect(() => {
+    if (!open) return
+    const packages = getCustomTemplates()
+    setCustomPackages(packages)
+    setActivePackageId(packages[0]?.id ?? "")
+  }, [open])
 
-  const [selected, setSelected] = useState<Set<string>>(new Set(currentTemplates.map(t => t.name)))
+  const baseTemplates: ObligationTemplate[] = useMemo(() => {
+    if (!activePackageId) return []
+    return customPackages.find((p) => p.id === activePackageId)?.obligations || []
+  }, [activePackageId, customPackages])
 
-  // Load custom packages and reset selection when package changes
-  import("react").then(React => {
-    React.useEffect(() => {
-      if (open) {
-        setCustomPackages(getCustomTemplates())
-      }
-    }, [open])
+  const applicableTaxItems: TemplateItem[] = useMemo(() => {
+    return getApplicableTaxesForClient(regime, taxes).map(taxToTemplateItem)
+  }, [regime, taxes])
 
-    React.useEffect(() => {
-      setSelected(new Set(currentTemplates.map(t => t.name)))
-    }, [activePackageId, currentTemplates.length]) // Only depend on length to avoid infinite loops if reference changes
-  })
+  const allItems: TemplateItem[] = useMemo(() => {
+    const seenNames = new Set<string>()
+    const merged: TemplateItem[] = []
+    for (const t of baseTemplates) {
+      seenNames.add(t.name.toLowerCase())
+      merged.push({ ...t })
+    }
+    // Evita duplicar quando o template do sistema já cobre o nome do imposto
+    for (const t of applicableTaxItems) {
+      if (!seenNames.has(t.name.toLowerCase())) merged.push(t)
+    }
+    return merged
+  }, [baseTemplates, applicableTaxItems])
 
-  const toggle = (name: string) => {
-    setSelected(prev => {
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+
+  useEffect(() => {
+    setSelected(new Set(allItems.map(itemKey)))
+  }, [allItems])
+
+  const toggle = (key: string) => {
+    setSelected((prev) => {
       const next = new Set(prev)
-      if (next.has(name)) next.delete(name)
-      else next.add(name)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
       return next
     })
   }
@@ -88,7 +108,7 @@ export function TemplateApplyDialog({ open, onOpenChange, clientName, regime, ac
   const handleConfirm = async () => {
     setLoading(true)
     try {
-      const chosen = currentTemplates.filter(t => selected.has(t.name))
+      const chosen = allItems.filter((t) => selected.has(itemKey(t)))
       await onConfirm(chosen)
       onOpenChange(false)
     } finally {
@@ -96,12 +116,10 @@ export function TemplateApplyDialog({ open, onOpenChange, clientName, regime, ac
     }
   }
 
-  // Group by category
-  const grouped = currentTemplates.reduce((acc, t) => {
-    if (!acc[t.category]) acc[t.category] = []
-    acc[t.category].push(t)
-    return acc
-  }, {} as Record<string, ObligationTemplate[]>)
+  // Seção 1: TODOS os itens de imposto/guia (categoria tax_guide), independente da origem
+  // Seção 2: TODOS os demais (declarações, sped, obrigações acessórias)
+  const impostoItems = allItems.filter((t) => t.category === "tax_guide")
+  const obrigacaoItems = allItems.filter((t) => t.category !== "tax_guide")
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -112,9 +130,9 @@ export function TemplateApplyDialog({ open, onOpenChange, clientName, regime, ac
               <Sparkles className="size-4 text-primary" />
             </div>
             <div>
-              <DialogTitle>Template de Obrigações</DialogTitle>
+              <DialogTitle>Aplicar Template</DialogTitle>
               <DialogDescription>
-                Selecione quais obrigações aplicar para <strong>{clientName}</strong>
+                Impostos vão para <strong>/impostos</strong>, obrigações vão para <strong>/obrigações</strong>. Selecione o que aplicar para <strong>{clientName}</strong>.
               </DialogDescription>
             </div>
           </div>
@@ -128,81 +146,80 @@ export function TemplateApplyDialog({ open, onOpenChange, clientName, regime, ac
           </div>
         </DialogHeader>
 
-        <div className="px-6 py-3 bg-muted/30 border-b flex items-center justify-between">
-          <span className="text-sm font-medium">Pacote Base:</span>
-          <Select value={activePackageId} onValueChange={setActivePackageId}>
-            <SelectTrigger className="w-[300px] h-8 text-xs">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="system">
-                Padrão ({TAX_REGIME_LABELS[regime]} - {BUSINESS_ACTIVITY_LABELS[activity]})
-              </SelectItem>
-              {customPackages.map(pkg => (
-                <SelectItem key={pkg.id} value={pkg.id}>
-                  {pkg.name} ({pkg.obligations.length} obrigações)
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+        {customPackages.length > 0 && (
+          <div className="px-6 py-3 bg-muted/30 border-b flex items-center justify-between">
+            <span className="text-sm font-medium">Template:</span>
+            <Select value={activePackageId} onValueChange={setActivePackageId}>
+              <SelectTrigger className="w-[300px] h-8 text-xs">
+                <SelectValue placeholder="Selecione um template" />
+              </SelectTrigger>
+              <SelectContent>
+                {customPackages.map((pkg) => (
+                  <SelectItem key={pkg.id} value={pkg.id}>
+                    {pkg.name} ({pkg.obligations.length} itens)
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
 
         <div className="flex items-center justify-between px-6 py-2 border-b text-sm">
-          <span className="text-muted-foreground">{selected.size} de {currentTemplates.length} selecionadas</span>
+          <span className="text-muted-foreground">
+            {selected.size} de {allItems.length} selecionados
+          </span>
           <div className="flex gap-2">
-            <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setSelected(new Set(currentTemplates.map(t => t.name)))}>
-              Marcar todas
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 text-xs"
+              onClick={() => setSelected(new Set(allItems.map(itemKey)))}
+            >
+              Marcar todos
             </Button>
             <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setSelected(new Set())}>
-              Desmarcar todas
+              Desmarcar todos
             </Button>
           </div>
         </div>
 
-        <ScrollArea className="flex-1 pr-3">
-          <div className="space-y-4 py-2">
-            {Object.entries(grouped).map(([category, items]) => (
-              <div key={category}>
-                <div className="flex items-center gap-1.5 mb-2">
-                  <span className="text-muted-foreground">{CATEGORY_ICONS[category]}</span>
-                  <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                    {CATEGORY_LABELS[category] || category} ({items.length})
-                  </h4>
-                </div>
-                <div className="space-y-1.5">
-                  {items.map(t => (
-                    <label
-                      key={t.name}
-                      className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
-                        selected.has(t.name)
-                          ? "border-primary/40 bg-primary/5"
-                          : "border-border hover:border-muted-foreground/30 opacity-60"
-                      }`}
-                    >
-                      <Checkbox
-                        checked={selected.has(t.name)}
-                        onCheckedChange={() => toggle(t.name)}
-                        className="mt-0.5"
-                      />
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-medium text-sm">{t.name}</span>
-                          <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${PRIORITY_COLORS[t.priority]}`}>
-                            {t.priority === "urgent" ? "Urgente" : t.priority === "high" ? "Alta" : t.priority === "medium" ? "Média" : "Baixa"}
-                          </span>
-                          <span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
-                            {FREQ_LABELS[t.frequency]} · Dia {t.dueDay}
-                          </span>
-                        </div>
-                        <p className="text-xs text-muted-foreground mt-0.5 truncate">{t.description}</p>
-                      </div>
-                    </label>
-                  ))}
-                </div>
+        <div className="flex-1 min-h-0 overflow-y-auto px-6">
+          {allItems.length === 0 ? (
+            <div className="flex flex-col items-center justify-center text-center py-12 gap-3">
+              <div className="size-12 rounded-full bg-muted flex items-center justify-center">
+                <Layers className="size-6 text-muted-foreground" />
               </div>
-            ))}
+              <div>
+                <p className="font-medium">Nada para aplicar ainda</p>
+                <p className="text-sm text-muted-foreground max-w-sm mt-1">
+                  Crie um template em <Link href="/templates" className="text-primary underline">Meus Templates</Link> ou cadastre impostos com regimes aplicáveis.
+                </p>
+              </div>
+            </div>
+          ) : (
+          <div className="space-y-4 py-2">
+            {impostoItems.length > 0 && (
+              <Section
+                title="Impostos / Guias a Recolher"
+                icon={<Receipt className="size-3.5" />}
+                subtitle={`${impostoItems.filter(t => t.sourceTaxId).length} vinculados ao cadastro de impostos`}
+                items={impostoItems}
+                selected={selected}
+                onToggle={toggle}
+              />
+            )}
+            {obrigacaoItems.length > 0 && (
+              <Section
+                title="Obrigações Acessórias"
+                icon={<FileText className="size-3.5" />}
+                items={obrigacaoItems}
+                selected={selected}
+                onToggle={toggle}
+              />
+            )}
           </div>
-        </ScrollArea>
+          )}
+        </div>
 
         <DialogFooter className="border-t pt-4">
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={loading}>
@@ -210,13 +227,83 @@ export function TemplateApplyDialog({ open, onOpenChange, clientName, regime, ac
           </Button>
           <Button onClick={handleConfirm} disabled={loading || selected.size === 0}>
             {loading ? (
-              <><Loader2 className="size-4 mr-2 animate-spin" /> Criando...</>
+              <>
+                <Loader2 className="size-4 mr-2 animate-spin" /> Aplicando...
+              </>
             ) : (
-              <><CheckCircle2 className="size-4 mr-2" /> Criar {selected.size} Obrigações</>
+              <>
+                <CheckCircle2 className="size-4 mr-2" />
+                {(() => {
+                  const chosen = allItems.filter((t) => selected.has(itemKey(t)))
+                  const taxCount = chosen.filter((t) => t.category === "tax_guide").length
+                  const oblCount = chosen.length - taxCount
+                  if (taxCount > 0 && oblCount > 0) return `Aplicar ${taxCount} imposto${taxCount > 1 ? "s" : ""} + ${oblCount} obrigaç${oblCount > 1 ? "ões" : "ão"}`
+                  if (taxCount > 0) return `Aplicar ${taxCount} imposto${taxCount > 1 ? "s" : ""}`
+                  return `Aplicar ${oblCount} obrigaç${oblCount > 1 ? "ões" : "ão"}`
+                })()}
+              </>
             )}
           </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  )
+}
+
+type SectionProps = {
+  title: string
+  subtitle?: string
+  icon?: React.ReactNode
+  items: TemplateItem[]
+  selected: Set<string>
+  onToggle: (key: string) => void
+}
+
+function Section({ title, subtitle, icon, items, selected, onToggle }: SectionProps) {
+  return (
+    <div>
+      <div className="flex items-center gap-1.5 mb-2">
+        <span className="text-muted-foreground">{icon}</span>
+        <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+          {title} ({items.length})
+        </h4>
+        {subtitle && <span className="text-[10px] text-muted-foreground ml-1">· {subtitle}</span>}
+      </div>
+      <div className="space-y-1.5">
+        {items.map((t) => {
+          const key = itemKey(t)
+          const isSelected = selected.has(key)
+          return (
+            <label
+              key={key}
+              className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
+                isSelected
+                  ? "border-primary/40 bg-primary/5"
+                  : "border-border hover:border-muted-foreground/30 opacity-60"
+              }`}
+            >
+              <Checkbox checked={isSelected} onCheckedChange={() => onToggle(key)} className="mt-0.5" />
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="font-medium text-sm">{t.name}</span>
+                  {t.sourceTaxId && (
+                    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
+                      vinculado ao imposto
+                    </span>
+                  )}
+                  <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${PRIORITY_COLORS[t.priority]}`}>
+                    {t.priority === "urgent" ? "Urgente" : t.priority === "high" ? "Alta" : t.priority === "medium" ? "Média" : "Baixa"}
+                  </span>
+                  <span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+                    {FREQ_LABELS[t.frequency]} · Dia {t.dueDay}
+                  </span>
+                </div>
+                <p className="text-xs text-muted-foreground mt-0.5 truncate">{t.description}</p>
+              </div>
+            </label>
+          )
+        })}
+      </div>
+    </div>
   )
 }

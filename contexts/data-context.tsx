@@ -3,6 +3,7 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from "react"
 import type { Client, Tax, Obligation, Installment } from "@/lib/types"
 import { getClients, getTaxes, getObligations, getInstallments } from "@/lib/supabase/database"
+import { seedDefaultTemplates } from "@/lib/obligation-templates"
 
 interface DataContextType {
   clients: Client[]
@@ -62,6 +63,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     setIsMounted(true)
+    seedDefaultTemplates()
     refreshData()
   }, [])
 

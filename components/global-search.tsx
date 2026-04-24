@@ -65,7 +65,7 @@ export function GlobalSearch({
     const matchedTaxes = taxes.filter(
       (t) =>
         t.name.toLowerCase().includes(searchTerm) ||
-        t.description.toLowerCase().includes(searchTerm) ||
+        t.description?.toLowerCase().includes(searchTerm) ||
         t.federalTaxCode?.toLowerCase().includes(searchTerm),
     )
 

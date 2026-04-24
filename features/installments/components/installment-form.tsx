@@ -6,9 +6,9 @@ import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Switch } from "@/components/ui/switch"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import {
   Form,
@@ -29,6 +29,13 @@ interface InstallmentFormProps {
   onOpenChange: (open: boolean) => void
   onSave: () => void
 }
+
+const SectionHeader = ({ title, description }: { title: string; description?: string }) => (
+  <div className="space-y-1">
+    <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{title}</h3>
+    {description && <p className="text-xs text-muted-foreground">{description}</p>}
+  </div>
+)
 
 export function InstallmentForm({ installment, open, onOpenChange, onSave }: InstallmentFormProps) {
   const [clients, setClients] = useState<Client[]>([])
@@ -72,65 +79,63 @@ export function InstallmentForm({ installment, open, onOpenChange, onSave }: Ins
   }, [])
 
   useEffect(() => {
-    if (open) {
-      if (installment) {
-        form.reset({
-          id: installment.id,
-          name: installment.name,
-          description: installment.description || "",
-          clientId: installment.clientId,
-          taxId: installment.taxId || "none",
-          installmentCount: installment.installmentCount,
-          currentInstallment: installment.currentInstallment,
-          dueDay: installment.dueDay,
-          firstDueDate: installment.firstDueDate,
-          weekendRule: installment.weekendRule,
-          status: installment.status,
-          priority: installment.priority,
-          assignedTo: installment.assignedTo || "",
-          protocol: installment.protocol || "",
-          notes: installment.notes || "",
-          tags: installment.tags || [],
-          paymentMethod: installment.paymentMethod || "",
-          referenceNumber: installment.referenceNumber || "",
-          autoGenerate: installment.autoGenerate,
-          recurrence: installment.recurrence || "monthly",
-          recurrenceInterval: installment.recurrenceInterval || 1,
-          totalAmount: installment.totalAmount,
-          installmentAmount: installment.installmentAmount,
-          realizationDate: installment.realizationDate || "",
-          createdAt: installment.createdAt,
-        })
-      } else {
-        form.reset({
-          name: "",
-          description: "",
-          clientId: "",
-          taxId: "none",
-          installmentCount: 1,
-          currentInstallment: 1,
-          dueDay: 10,
-          firstDueDate: "",
-          weekendRule: "postpone",
-          status: "pending",
-          priority: "medium",
-          assignedTo: "",
-          protocol: "",
-          notes: "",
-          tags: [],
-          paymentMethod: "",
-          referenceNumber: "",
-          autoGenerate: true,
-          recurrence: "monthly",
-          recurrenceInterval: 1,
-          totalAmount: undefined,
-          installmentAmount: undefined,
-        })
-      }
+    if (!open) return
+    if (installment) {
+      form.reset({
+        id: installment.id,
+        name: installment.name,
+        description: installment.description || "",
+        clientId: installment.clientId,
+        taxId: installment.taxId || "none",
+        installmentCount: installment.installmentCount,
+        currentInstallment: installment.currentInstallment,
+        dueDay: installment.dueDay,
+        firstDueDate: installment.firstDueDate,
+        weekendRule: installment.weekendRule,
+        status: installment.status,
+        priority: installment.priority,
+        assignedTo: installment.assignedTo || "",
+        protocol: installment.protocol || "",
+        notes: installment.notes || "",
+        tags: installment.tags || [],
+        paymentMethod: installment.paymentMethod || "",
+        referenceNumber: installment.referenceNumber || "",
+        autoGenerate: installment.autoGenerate,
+        recurrence: installment.recurrence || "monthly",
+        recurrenceInterval: installment.recurrenceInterval || 1,
+        totalAmount: installment.totalAmount,
+        installmentAmount: installment.installmentAmount,
+        realizationDate: installment.realizationDate || "",
+        createdAt: installment.createdAt,
+      })
+    } else {
+      form.reset({
+        name: "",
+        description: "",
+        clientId: "",
+        taxId: "none",
+        installmentCount: 1,
+        currentInstallment: 1,
+        dueDay: 10,
+        firstDueDate: "",
+        weekendRule: "postpone",
+        status: "pending",
+        priority: "medium",
+        assignedTo: "",
+        protocol: "",
+        notes: "",
+        tags: [],
+        paymentMethod: "",
+        referenceNumber: "",
+        autoGenerate: true,
+        recurrence: "monthly",
+        recurrenceInterval: 1,
+        totalAmount: undefined,
+        installmentAmount: undefined,
+      })
     }
   }, [installment, open, form])
 
-  // Auto-calculate installment amount whenever totalAmount or count changes
   const handleTotalAmountChange = (total: number | undefined, count: number | undefined) => {
     if (total && count && count > 0) {
       const perInstallment = Number((total / count).toFixed(2))
@@ -178,50 +183,50 @@ export function InstallmentForm({ installment, open, onOpenChange, onSave }: Ins
     onOpenChange(false)
   }
 
-  const priorityIcons = {
-    low: <TrendingUp className="h-4 w-4" />,
-    medium: <AlertCircle className="h-4 w-4" />,
-    high: <Flame className="h-4 w-4" />,
-    urgent: <Zap className="h-4 w-4" />,
-  }
-
   const isCustomRecurrence = form.watch("recurrence") === "custom"
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>{installment ? "Editar Parcelamento" : "Novo Parcelamento"}</DialogTitle>
-          <DialogDescription>Gerencie parcelamentos de impostos e obrigações fiscais</DialogDescription>
-        </DialogHeader>
+      <DialogContent className="sm:max-w-[720px] max-h-[90vh] flex flex-col p-0 gap-0">
+        <div className="px-6 py-4 border-b">
+          <DialogHeader>
+            <DialogTitle>{installment ? "Editar Parcelamento" : "Novo Parcelamento"}</DialogTitle>
+            <DialogDescription>Controle de parcelas de impostos e obrigações fiscais</DialogDescription>
+          </DialogHeader>
+        </div>
 
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6 py-4">
-            {/* Informações Básicas */}
-            <div className="space-y-4">
-              <h3 className="text-sm font-semibold text-foreground">Informações Básicas</h3>
-              <div className="grid gap-4 md:grid-cols-2">
-                <FormField
-                  control={form.control}
-                  name="name"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Nome do Parcelamento *</FormLabel>
-                      <FormControl>
-                        <Input {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+          <form
+            id="installment-form"
+            onSubmit={form.handleSubmit(onSubmit)}
+            className="flex-1 min-h-0 overflow-y-auto px-6 py-5 space-y-8"
+          >
+            {/* 1. Dados básicos */}
+            <section className="space-y-4">
+              <SectionHeader title="Dados básicos" />
 
+              <FormField
+                control={form.control}
+                name="name"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Nome do parcelamento *</FormLabel>
+                    <FormControl>
+                      <Input autoFocus placeholder="Ex: PERT INSS 2025 — Empresa X" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <div className="grid gap-4 sm:grid-cols-2">
                 <FormField
                   control={form.control}
                   name="clientId"
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Cliente *</FormLabel>
-                      <Select onValueChange={field.onChange} defaultValue={field.value} value={field.value}>
+                      <Select onValueChange={field.onChange} value={field.value}>
                         <FormControl>
                           <SelectTrigger>
                             <SelectValue placeholder="Selecione o cliente" />
@@ -229,9 +234,31 @@ export function InstallmentForm({ installment, open, onOpenChange, onSave }: Ins
                         </FormControl>
                         <SelectContent>
                           {clients.map((client) => (
-                            <SelectItem key={client.id} value={client.id}>
-                              {client.name}
-                            </SelectItem>
+                            <SelectItem key={client.id} value={client.id}>{client.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="taxId"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Imposto vinculado</FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value}>
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Opcional" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="none">Nenhum</SelectItem>
+                          {taxes.map((tax) => (
+                            <SelectItem key={tax.id} value={tax.id}>{tax.name}</SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
@@ -248,107 +275,28 @@ export function InstallmentForm({ installment, open, onOpenChange, onSave }: Ins
                   <FormItem>
                     <FormLabel>Descrição</FormLabel>
                     <FormControl>
-                      <Textarea rows={2} {...field} />
+                      <Textarea rows={2} placeholder="Detalhe curto sobre o parcelamento" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
               />
+            </section>
 
-              <FormField
-                control={form.control}
-                name="taxId"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Imposto Relacionado</FormLabel>
-                    <Select onValueChange={field.onChange} defaultValue={field.value} value={field.value}>
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Selecione o imposto (opcional)" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        <SelectItem value="none">Nenhum</SelectItem>
-                        {taxes.map((tax) => (
-                          <SelectItem key={tax.id} value={tax.id}>
-                            {tax.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
+            {/* 2. Parcelas e valores */}
+            <section className="space-y-4">
+              <SectionHeader
+                title="Parcelas e valores"
+                description="Informe o total e a quantidade — o valor por parcela é calculado automaticamente."
               />
-            </div>
 
-            {/* Valores do Parcelamento */}
-            <div className="space-y-4 border-t pt-4">
-              <h3 className="text-sm font-semibold text-foreground">Valores</h3>
-              <div className="grid gap-4 md:grid-cols-2">
-                <FormField
-                  control={form.control}
-                  name="totalAmount"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Valor Total (R$)</FormLabel>
-                      <FormControl>
-                        <Input
-                          type="number"
-                          step="0.01"
-                          min={0}
-                          placeholder="0,00"
-                          value={field.value || ""}
-                          onChange={(e) =>
-                            handleTotalAmountChange(
-                              e.target.value ? Number(e.target.value) : undefined,
-                              form.getValues("installmentCount")
-                            )
-                          }
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="installmentAmount"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Valor da Parcela (R$)</FormLabel>
-                      <FormControl>
-                        <Input
-                          type="number"
-                          step="0.01"
-                          min={0}
-                          placeholder="Calculado automaticamente"
-                          {...field}
-                          value={field.value || ""}
-                          onChange={(e) => field.onChange(e.target.value ? Number(e.target.value) : undefined)}
-                        />
-                      </FormControl>
-                      <DialogDescription className="text-xs">
-                        Calculado automaticamente ao preencher valor total e n° de parcelas
-                      </DialogDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
-            </div>
-
-            {/* Controle de Parcelas */}
-            <div className="space-y-4 border-t pt-4">
-              <h3 className="text-sm font-semibold text-foreground">Controle de Parcelas</h3>
-              <div className="grid gap-4 md:grid-cols-3">
+              <div className="grid gap-4 sm:grid-cols-2">
                 <FormField
                   control={form.control}
                   name="installmentCount"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Quantidade de Parcelas *</FormLabel>
+                      <FormLabel>Qtd. de parcelas *</FormLabel>
                       <FormControl>
                         <Input
                           type="number"
@@ -371,7 +319,7 @@ export function InstallmentForm({ installment, open, onOpenChange, onSave }: Ins
                   name="currentInstallment"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Parcela Atual *</FormLabel>
+                      <FormLabel>Parcela atual *</FormLabel>
                       <FormControl>
                         <Input type="number" min={1} max={form.getValues("installmentCount")} {...field} />
                       </FormControl>
@@ -379,48 +327,87 @@ export function InstallmentForm({ installment, open, onOpenChange, onSave }: Ins
                     </FormItem>
                   )}
                 />
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <FormField
+                  control={form.control}
+                  name="totalAmount"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Valor total (R$)</FormLabel>
+                      <FormControl>
+                        <Input
+                          type="number"
+                          step="0.01"
+                          min={0}
+                          placeholder="0,00"
+                          value={field.value || ""}
+                          onChange={(e) =>
+                            handleTotalAmountChange(
+                              e.target.value ? Number(e.target.value) : undefined,
+                              form.getValues("installmentCount"),
+                            )
+                          }
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
 
                 <FormField
                   control={form.control}
-                  name="paymentMethod"
+                  name="installmentAmount"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Forma de Pagamento</FormLabel>
+                      <FormLabel>Valor por parcela (R$)</FormLabel>
                       <FormControl>
-                        <Input placeholder="Ex: Boleto, Débito Automático" {...field} />
+                        <Input
+                          type="number"
+                          step="0.01"
+                          min={0}
+                          placeholder="Auto-preenchido"
+                          {...field}
+                          value={field.value || ""}
+                          onChange={(e) => field.onChange(e.target.value ? Number(e.target.value) : undefined)}
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
               </div>
-            </div>
 
-            {/* Recorrência Automática */}
-            <div className="space-y-4 border-t pt-4">
-              <h3 className="text-sm font-semibold text-foreground">Recorrência Automática</h3>
-              <div className="grid gap-4 md:grid-cols-3">
+              <FormField
+                control={form.control}
+                name="paymentMethod"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Forma de pagamento</FormLabel>
+                    <FormControl>
+                      <Input placeholder="Ex: Boleto, Débito automático, PIX" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </section>
+
+            {/* 3. Datas e vencimento */}
+            <section className="space-y-4">
+              <SectionHeader title="Datas e vencimento" />
+
+              <div className="grid gap-4 sm:grid-cols-2">
                 <FormField
                   control={form.control}
-                  name="autoGenerate"
+                  name="firstDueDate"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Gerar Automaticamente</FormLabel>
-                      <Select
-                        onValueChange={(value) => field.onChange(value === "yes")}
-                        defaultValue={field.value ? "yes" : "no"}
-                        value={field.value ? "yes" : "no"}
-                      >
-                        <FormControl>
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          <SelectItem value="yes">Sim</SelectItem>
-                          <SelectItem value="no">Não</SelectItem>
-                        </SelectContent>
-                      </Select>
+                      <FormLabel>Primeiro vencimento *</FormLabel>
+                      <FormControl>
+                        <Input type="date" {...field} />
+                      </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -428,11 +415,27 @@ export function InstallmentForm({ installment, open, onOpenChange, onSave }: Ins
 
                 <FormField
                   control={form.control}
+                  name="dueDay"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Dia do vencimento *</FormLabel>
+                      <FormControl>
+                        <Input type="number" min={1} max={31} {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <FormField
+                  control={form.control}
                   name="recurrence"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Tipo de Recorrência *</FormLabel>
-                      <Select onValueChange={field.onChange} defaultValue={field.value} value={field.value}>
+                      <FormLabel>Recorrência *</FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value}>
                         <FormControl>
                           <SelectTrigger>
                             <SelectValue />
@@ -452,72 +455,22 @@ export function InstallmentForm({ installment, open, onOpenChange, onSave }: Ins
                   )}
                 />
 
-                {isCustomRecurrence && (
-                  <FormField
-                    control={form.control}
-                    name="recurrenceInterval"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Intervalo (meses)</FormLabel>
-                        <FormControl>
-                          <Input type="number" min={1} {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                )}
-              </div>
-            </div>
-
-            {/* Vencimentos */}
-            <div className="space-y-4 border-t pt-4">
-              <h3 className="text-sm font-semibold text-foreground">Vencimentos</h3>
-              <div className="grid gap-4 md:grid-cols-3">
-                <FormField
-                  control={form.control}
-                  name="firstDueDate"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Primeiro Vencimento *</FormLabel>
-                      <FormControl>
-                        <Input type="date" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="dueDay"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Dia de Vencimento *</FormLabel>
-                      <FormControl>
-                        <Input type="number" min={1} max={31} {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
                 <FormField
                   control={form.control}
                   name="weekendRule"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Regra de Final de Semana/Feriado *</FormLabel>
-                      <Select onValueChange={field.onChange} defaultValue={field.value} value={field.value}>
+                      <FormLabel>Se cair em fim de semana / feriado *</FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value}>
                         <FormControl>
                           <SelectTrigger>
                             <SelectValue />
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          <SelectItem value="postpone">Postergar (próximo dia útil)</SelectItem>
-                          <SelectItem value="anticipate">Antecipar (dia útil anterior)</SelectItem>
-                          <SelectItem value="keep">Manter (mesmo dia)</SelectItem>
+                          <SelectItem value="postpone">Postergar p/ próximo útil</SelectItem>
+                          <SelectItem value="anticipate">Antecipar p/ útil anterior</SelectItem>
+                          <SelectItem value="keep">Manter na data</SelectItem>
                         </SelectContent>
                       </Select>
                       <FormMessage />
@@ -525,19 +478,54 @@ export function InstallmentForm({ installment, open, onOpenChange, onSave }: Ins
                   )}
                 />
               </div>
-            </div>
 
-            {/* Gestão e Controle */}
-            <div className="space-y-4 border-t pt-4">
-              <h3 className="text-sm font-semibold text-foreground">Gestão e Controle</h3>
-              <div className="grid gap-4 md:grid-cols-3">
+              {isCustomRecurrence && (
+                <FormField
+                  control={form.control}
+                  name="recurrenceInterval"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Intervalo personalizado (meses)</FormLabel>
+                      <FormControl>
+                        <Input type="number" min={1} {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
+
+              <FormField
+                control={form.control}
+                name="autoGenerate"
+                render={({ field }) => (
+                  <FormItem className="flex items-center justify-between rounded-lg border p-3">
+                    <div className="space-y-0.5">
+                      <FormLabel className="text-sm">Gerar próxima parcela automaticamente</FormLabel>
+                      <p className="text-xs text-muted-foreground">
+                        Quando a parcela atual for concluída, o sistema cria a seguinte.
+                      </p>
+                    </div>
+                    <FormControl>
+                      <Switch checked={field.value} onCheckedChange={field.onChange} />
+                    </FormControl>
+                  </FormItem>
+                )}
+              />
+            </section>
+
+            {/* 4. Gestão */}
+            <section className="space-y-4">
+              <SectionHeader title="Gestão e responsável" />
+
+              <div className="grid gap-4 sm:grid-cols-2">
                 <FormField
                   control={form.control}
                   name="priority"
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Prioridade *</FormLabel>
-                      <Select onValueChange={field.onChange} defaultValue={field.value} value={field.value}>
+                      <Select onValueChange={field.onChange} value={field.value}>
                         <FormControl>
                           <SelectTrigger>
                             <SelectValue />
@@ -545,28 +533,16 @@ export function InstallmentForm({ installment, open, onOpenChange, onSave }: Ins
                         </FormControl>
                         <SelectContent>
                           <SelectItem value="low">
-                            <div className="flex items-center gap-2">
-                              {priorityIcons.low}
-                              <span>Baixa</span>
-                            </div>
+                            <div className="flex items-center gap-2"><TrendingUp className="size-4" /> Baixa</div>
                           </SelectItem>
                           <SelectItem value="medium">
-                            <div className="flex items-center gap-2">
-                              {priorityIcons.medium}
-                              <span>Média</span>
-                            </div>
+                            <div className="flex items-center gap-2"><AlertCircle className="size-4" /> Média</div>
                           </SelectItem>
                           <SelectItem value="high">
-                            <div className="flex items-center gap-2">
-                              {priorityIcons.high}
-                              <span>Alta</span>
-                            </div>
+                            <div className="flex items-center gap-2"><Flame className="size-4" /> Alta</div>
                           </SelectItem>
                           <SelectItem value="urgent">
-                            <div className="flex items-center gap-2">
-                              {priorityIcons.urgent}
-                              <span>Urgente</span>
-                            </div>
+                            <div className="flex items-center gap-2"><Zap className="size-4" /> Urgente</div>
                           </SelectItem>
                         </SelectContent>
                       </Select>
@@ -582,7 +558,23 @@ export function InstallmentForm({ installment, open, onOpenChange, onSave }: Ins
                     <FormItem>
                       <FormLabel>Responsável</FormLabel>
                       <FormControl>
-                        <Input placeholder="Nome do responsável" {...field} />
+                        <Input placeholder="Nome de quem cuida desse parcelamento" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <FormField
+                  control={form.control}
+                  name="protocol"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Protocolo / nº do processo</FormLabel>
+                      <FormControl>
+                        <Input placeholder="Ex: 12345.000123/2025-01" {...field} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -591,60 +583,49 @@ export function InstallmentForm({ installment, open, onOpenChange, onSave }: Ins
 
                 <FormField
                   control={form.control}
-                  name="protocol"
+                  name="referenceNumber"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Protocolo/Número</FormLabel>
+                      <FormLabel>Nº de referência</FormLabel>
                       <FormControl>
-                        <Input placeholder="Número do protocolo" {...field} />
+                        <Input placeholder="Código de barras, linha digitável…" {...field} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
               </div>
+            </section>
 
-              <FormField
-                control={form.control}
-                name="referenceNumber"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Número de Referência</FormLabel>
-                    <FormControl>
-                      <Input placeholder="Código de barras, linha digitável, etc." {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
-
-            {/* Informações Adicionais */}
-            <div className="space-y-4 border-t pt-4">
-              <h3 className="text-sm font-semibold text-foreground">Informações Adicionais</h3>
+            {/* 5. Observações */}
+            <section className="space-y-4">
+              <SectionHeader title="Observações" />
               <FormField
                 control={form.control}
                 name="notes"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Observações</FormLabel>
                     <FormControl>
-                      <Textarea rows={3} placeholder="Observações adicionais sobre o parcelamento" {...field} />
+                      <Textarea rows={3} placeholder="Anotações livres sobre o parcelamento" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
               />
-            </div>
-
-            <DialogFooter className="mt-4">
-              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-                Cancelar
-              </Button>
-              <Button type="submit">Salvar Parcelamento</Button>
-            </DialogFooter>
+            </section>
           </form>
         </Form>
+
+        <div className="px-6 py-4 border-t bg-muted/10">
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+              Cancelar
+            </Button>
+            <Button type="submit" form="installment-form">
+              Salvar parcelamento
+            </Button>
+          </DialogFooter>
+        </div>
       </DialogContent>
     </Dialog>
   )

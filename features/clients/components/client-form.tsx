@@ -28,9 +28,11 @@ import type { Client, TaxRegime } from "@/lib/types"
 import { TAX_REGIME_LABELS } from "@/lib/types"
 import { clientSchema, type ClientFormData } from "@/features/clients/schemas"
 import { TemplateApplyDialog } from "@/components/template-apply-dialog"
-import { type BusinessActivity, BUSINESS_ACTIVITY_LABELS, getTemplateForClient, type ObligationTemplate } from "@/lib/obligation-templates"
-import { saveObligation } from "@/features/obligations/services"
-import { lookupCNPJ } from "@/lib/cnpj-service"
+import { type BusinessActivity, BUSINESS_ACTIVITY_LABELS, type TemplateItem } from "@/lib/obligation-templates"
+import { useData } from "@/contexts/data-context"
+import { applyTemplateToClient, summarizeApplyResult } from "@/lib/template-applier"
+import { lookupCNPJ, CNPJLookupError } from "@/lib/cnpj-service"
+import { inferBusinessActivityFromCNAE } from "@/lib/cnae-mapping"
 import { Search, Loader2 } from "lucide-react"
 import { toast } from "sonner"
 
@@ -48,11 +50,12 @@ type ClientFormProps = {
   client?: Client
   open: boolean
   onOpenChange: (open: boolean) => void
-  onSave: (client: Client) => void
+  onSave: (client: Client) => void | Promise<void>
   onObligationsCreated?: () => void
 }
 
 export function ClientForm({ client, open, onOpenChange, onSave, onObligationsCreated }: ClientFormProps) {
+  const { taxes } = useData()
   const [pendingClient, setPendingClient] = useState<Client | null>(null)
   const [pendingActivity, setPendingActivity] = useState<BusinessActivity | null>(null)
   const [templateOpen, setTemplateOpen] = useState(false)
@@ -62,6 +65,7 @@ export function ClientForm({ client, open, onOpenChange, onSave, onObligationsCr
     resolver: zodResolver(clientSchema),
     defaultValues: {
       name: "",
+      tradeName: "",
       cnpj: "",
       email: "",
       phone: "",
@@ -70,6 +74,8 @@ export function ClientForm({ client, open, onOpenChange, onSave, onObligationsCr
       im: "",
       notes: "",
       businessActivity: undefined,
+      cnaeCode: "",
+      cnaeDescription: "",
     },
   })
 
@@ -80,11 +86,15 @@ export function ClientForm({ client, open, onOpenChange, onSave, onObligationsCr
         form.reset({
           id: client.id,
           name: client.name,
+          tradeName: client.tradeName || "",
           cnpj: client.cnpj,
           email: client.email || "",
           phone: client.phone || "",
           status: client.status,
           taxRegime: client.taxRegime,
+          businessActivity: client.businessActivity,
+          cnaeCode: client.cnaeCode || "",
+          cnaeDescription: client.cnaeDescription || "",
           ie: client.ie || "",
           im: client.im || "",
           notes: client.notes || "",
@@ -93,12 +103,15 @@ export function ClientForm({ client, open, onOpenChange, onSave, onObligationsCr
       } else {
         form.reset({
           name: "",
+          tradeName: "",
           cnpj: "",
           email: "",
           phone: "",
           status: "active",
           taxRegime: undefined,
           businessActivity: undefined,
+          cnaeCode: "",
+          cnaeDescription: "",
           ie: "",
           im: "",
           notes: "",
@@ -107,23 +120,30 @@ export function ClientForm({ client, open, onOpenChange, onSave, onObligationsCr
     }
   }, [client, open, form])
 
-  const onSubmit = (data: ClientFormData) => {
+  const onSubmit = async (data: ClientFormData) => {
     const clientData: Client = {
       id: data.id || crypto.randomUUID(),
       name: data.name,
+      tradeName: data.tradeName || undefined,
       cnpj: data.cnpj,
       email: data.email || "",
       phone: data.phone || "",
       status: data.status,
       taxRegime: data.taxRegime as TaxRegime | undefined,
       businessActivity: data.businessActivity,
+      cnaeCode: data.cnaeCode || undefined,
+      cnaeDescription: data.cnaeDescription || undefined,
       ie: data.ie || undefined,
       im: data.im || undefined,
       notes: data.notes || undefined,
       createdAt: data.createdAt || new Date().toISOString(),
     }
-    onSave(clientData)
-    // For new clients with regime + activity, offer template
+    try {
+      await onSave(clientData)
+    } catch {
+      // Erro tratado no caller (toast). Mantém o form aberto.
+      return
+    }
     const isNew = !data.id
     if (isNew && data.taxRegime && data.businessActivity) {
       setPendingClient(clientData)
@@ -134,49 +154,14 @@ export function ClientForm({ client, open, onOpenChange, onSave, onObligationsCr
     }
   }
 
-  const handleTemplateConfirm = async (templates: ObligationTemplate[]) => {
+  const handleTemplateConfirm = async (templates: TemplateItem[]) => {
     if (!pendingClient) return
-    const now = new Date().toISOString()
-    
-    // Buscar obrigações existentes para não duplicar
-    const { getObligations } = await import("@/lib/supabase/database")
-    const existingObligations = await getObligations()
-    const clientExistingNames = existingObligations
-      .filter(o => o.clientId === pendingClient.id)
-      .map(o => o.name)
-
-    const templatesToApply = templates.filter(t => !clientExistingNames.includes(t.name))
-
-    if (templatesToApply.length < templates.length) {
-      toast.info(`${templates.length - templatesToApply.length} obrigações já existiam e foram ignoradas.`)
+    const result = await applyTemplateToClient(pendingClient, templates)
+    const summary = summarizeApplyResult(result)
+    if (summary) toast.success(summary)
+    if (result.obligationsSkipped > 0) {
+      toast.info(`${result.obligationsSkipped} obrigaç${result.obligationsSkipped > 1 ? "ões já existiam" : "ão já existia"} e foi ignorada`)
     }
-
-    if (templatesToApply.length > 0) {
-      await Promise.all(
-        templatesToApply.map(t =>
-          saveObligation({
-            id: crypto.randomUUID(),
-            name: t.name,
-            description: t.description,
-            category: t.category,
-            clientId: pendingClient.id,
-            dueDay: t.dueDay,
-            frequency: t.frequency,
-            recurrence: t.recurrence,
-            weekendRule: t.weekendRule,
-            status: "pending",
-            priority: t.priority,
-            autoGenerate: true,
-            createdAt: now,
-            history: [],
-            tags: [],
-            attachments: [],
-          })
-        )
-      )
-      toast.success(`${templatesToApply.length} obrigações criadas com sucesso!`)
-    }
-    
     onObligationsCreated?.()
     setPendingClient(null)
     setPendingActivity(null)
@@ -203,9 +188,23 @@ export function ClientForm({ client, open, onOpenChange, onSave, onObligationsCr
                 name="name"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Nome / Razão Social *</FormLabel>
+                    <FormLabel>Razão Social *</FormLabel>
                     <FormControl>
-                      <Input placeholder="Empresa Ltda." {...field} />
+                      <Input autoFocus placeholder="Empresa Ltda." {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="tradeName"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Nome Fantasia</FormLabel>
+                    <FormControl>
+                      <Input placeholder="Como a empresa é conhecida" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -236,16 +235,30 @@ export function ClientForm({ client, open, onOpenChange, onSave, onObligationsCr
                           setIsSearching(true)
                           try {
                             const data = await lookupCNPJ(field.value)
-                            if (data) {
-                              form.setValue("name", data.nome)
-                              form.setValue("email", data.email)
-                              form.setValue("phone", data.telefone)
-                              toast.success("Dados encontrados com sucesso!")
-                            } else {
-                              toast.error("CNPJ não encontrado.")
+                            if (!data) {
+                              toast.error("CNPJ não encontrado na base da Receita.")
+                              return
                             }
+                            if (data.nome) form.setValue("name", data.nome)
+                            if (data.fantasia && !form.getValues("tradeName")) form.setValue("tradeName", data.fantasia)
+                            if (data.email && !form.getValues("email")) form.setValue("email", data.email)
+                            if (data.telefone && !form.getValues("phone")) form.setValue("phone", data.telefone)
+                            if (data.cnaeCode) form.setValue("cnaeCode", data.cnaeCode)
+                            if (data.cnaeDescription) form.setValue("cnaeDescription", data.cnaeDescription)
+                            if (!form.getValues("businessActivity")) {
+                              const inferred = inferBusinessActivityFromCNAE(data.cnaeCode)
+                              if (inferred) form.setValue("businessActivity", inferred)
+                            }
+                            const suffix = data.situacao && data.situacao !== "ATIVA"
+                              ? ` (situação: ${data.situacao.toLowerCase()})`
+                              : ""
+                            toast.success(`Dados importados${suffix}`)
                           } catch (error) {
-                            toast.error("Erro ao buscar CNPJ.")
+                            if (error instanceof CNPJLookupError) {
+                              toast.error(error.message)
+                            } else {
+                              toast.error("Erro ao buscar CNPJ.")
+                            }
                           } finally {
                             setIsSearching(false)
                           }
@@ -342,6 +355,18 @@ export function ClientForm({ client, open, onOpenChange, onSave, onObligationsCr
                 />
               </div>
 
+              {form.watch("cnaeCode") && (
+                <div className="flex items-start gap-2 rounded-md border bg-muted/40 px-3 py-2 text-xs">
+                  <span className="font-mono font-semibold text-muted-foreground">CNAE</span>
+                  <div className="flex-1">
+                    <span className="font-mono">{form.watch("cnaeCode")}</span>
+                    {form.watch("cnaeDescription") && (
+                      <span className="text-muted-foreground"> · {form.watch("cnaeDescription")}</span>
+                    )}
+                  </div>
+                </div>
+              )}
+
               <div className="grid sm:grid-cols-2 gap-3">
                 <FormField
                   control={form.control}
@@ -434,7 +459,7 @@ export function ClientForm({ client, open, onOpenChange, onSave, onObligationsCr
         clientName={pendingClient.name}
         regime={pendingClient.taxRegime!}
         activity={pendingActivity}
-        systemTemplates={getTemplateForClient(pendingClient.taxRegime!, pendingActivity)}
+        taxes={taxes}
         onConfirm={handleTemplateConfirm}
       />
     )}
