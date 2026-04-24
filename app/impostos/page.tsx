@@ -18,6 +18,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { BulkActionsBar } from "@/components/bulk-actions-bar"
+import { ExportButton } from "@/components/export-button"
+import type { ExportColumn } from "@/lib/export-utils"
 import { saveTax, deleteTax } from "@/lib/supabase/database"
 import { getObligationsWithDetails } from "@/lib/dashboard-utils"
 import { matchesText } from "@/lib/utils"
@@ -276,6 +278,18 @@ export default function ImpostosPage() {
   const completedTaxes = searchedTaxes.filter((t) => t.status === "completed")
   const overdueTaxes = searchedTaxes.filter((t) => t.status === "overdue")
 
+  const taxExportColumns: ExportColumn<Tax>[] = [
+    { header: "Nome", width: 24, accessor: (t) => t.name },
+    { header: "Esfera", width: 12, accessor: (t) => t.scope ?? "" },
+    { header: "Código", width: 10, accessor: (t) => t.federalTaxCode ?? "" },
+    { header: "Dia venc.", width: 10, accessor: (t) => t.dueDay ?? "" },
+    { header: "Regimes", width: 28, accessor: (t) => (t.applicableRegimes ?? []).map((r) => TAX_REGIME_LABELS[r as TaxRegime]).join(", ") },
+    { header: "Status", width: 12, accessor: (t) => statusLabel(t.status) },
+    { header: "Prioridade", width: 10, accessor: (t) => priorityLabel(t.priority) },
+    { header: "Responsável", width: 16, accessor: (t) => t.assignedTo ?? "" },
+    { header: "Concluído em", width: 14, accessor: (t) => (t.completedAt ? new Date(t.completedAt) : "") },
+  ]
+
   const getFilteredTaxes = () => {
     switch (activeTab) {
       case "pending":
@@ -343,6 +357,13 @@ export default function ImpostosPage() {
                   <span className="text-xs">⌘</span>K
                 </kbd>
               </Button>
+              <ExportButton
+                filenamePrefix="impostos"
+                pdfTitle="Relatório de Impostos"
+                sheetName="Impostos"
+                columns={taxExportColumns}
+                rows={searchedTaxes}
+              />
               <Button onClick={handleNew}>
                 <Plus className="size-4 mr-2" />
                 Novo Imposto
@@ -479,7 +500,83 @@ export default function ImpostosPage() {
                 ]}
               />
               <Card className="p-6">
-                <div className="border rounded-lg">
+                {/* Mobile: cards (até md) */}
+                <div className="md:hidden space-y-2">
+                  {getFilteredTaxes().length === 0 ? (
+                    <div className="border rounded-lg py-8 text-center text-sm text-muted-foreground">
+                      Nenhum imposto encontrado
+                    </div>
+                  ) : (
+                    getFilteredTaxes().map((tax) => (
+                      <div
+                        key={tax.id}
+                        className={`border rounded-lg p-3 space-y-2 ${
+                          selectedIds.has(tax.id) ? "bg-primary/5 border-primary/40" : "bg-card"
+                        }`}
+                      >
+                        <div className="flex items-start gap-2">
+                          <Checkbox
+                            checked={selectedIds.has(tax.id)}
+                            onCheckedChange={() => toggleSelect(tax.id)}
+                            className="mt-0.5"
+                          />
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-medium text-sm">{tax.name}</span>
+                              {tax.scope && (
+                                <Badge variant="outline" className="text-[10px] py-0 px-1.5">
+                                  {tax.scope === "federal" ? "Federal" : tax.scope === "estadual" ? "Estadual" : "Municipal"}
+                                </Badge>
+                              )}
+                            </div>
+                            {tax.description && (
+                              <p className="text-xs text-muted-foreground truncate">{tax.description}</p>
+                            )}
+                          </div>
+                          {getStatusBadge(tax.status, tax.completedAt)}
+                        </div>
+
+                        <div className="ml-6 grid grid-cols-2 gap-2 text-xs">
+                          <div>
+                            <span className="text-muted-foreground">Vence:</span>{" "}
+                            <span className="font-medium">{tax.dueDay ? `Dia ${tax.dueDay}` : "—"}</span>
+                          </div>
+                          {tax.applicableRegimes && tax.applicableRegimes.length > 0 && (
+                            <div className="col-span-2 flex flex-wrap gap-1">
+                              {tax.applicableRegimes.map((r) => (
+                                <span key={r} className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${TAX_REGIME_COLORS[r]}`}>
+                                  {TAX_REGIME_LABELS[r]}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="ml-6 flex flex-wrap gap-1.5">
+                          {tax.status === "pending" && (
+                            <Button size="sm" variant="outline" onClick={() => handleStartTax(tax)} className="h-7 text-xs gap-1">
+                              <PlayCircle className="size-3" /> Iniciar
+                            </Button>
+                          )}
+                          {tax.status === "in_progress" && (
+                            <Button size="sm" variant="outline" onClick={() => handleCompleteTax(tax)} className="h-7 text-xs gap-1">
+                              <CheckCircle2 className="size-3" /> Concluir
+                            </Button>
+                          )}
+                          <Button size="sm" variant="ghost" onClick={() => handleEdit(tax)} className="h-7 text-xs gap-1">
+                            <Pencil className="size-3" /> Editar
+                          </Button>
+                          <Button size="sm" variant="ghost" onClick={() => handleDelete(tax.id)} className="h-7 text-xs gap-1 text-destructive">
+                            <Trash2 className="size-3" />
+                          </Button>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+
+                {/* Desktop: tabela (md+) */}
+                <div className="border rounded-lg hidden md:block">
                   <Table>
                     <TableHeader>
                       <TableRow>
@@ -673,4 +770,24 @@ export default function ImpostosPage() {
       </Dialog>
     </div>
   )
+}
+
+function statusLabel(s: string): string {
+  switch (s) {
+    case "pending": return "Pendente"
+    case "in_progress": return "Em andamento"
+    case "completed": return "Concluído"
+    case "overdue": return "Atrasado"
+    default: return s
+  }
+}
+
+function priorityLabel(p: string): string {
+  switch (p) {
+    case "urgent": return "Urgente"
+    case "high": return "Alta"
+    case "medium": return "Média"
+    case "low": return "Baixa"
+    default: return p
+  }
 }

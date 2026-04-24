@@ -25,6 +25,18 @@ export default function TemplatesPage() {
   useEffect(() => {
     seedDefaultTemplates()
     loadTemplates()
+
+    // Sync remoto: migra do localStorage uma vez + puxa última versão do Supabase
+    void (async () => {
+      const { migrateLocalTemplatesToSupabase, getCustomTemplatesAsync } = await import("@/features/templates/services")
+      const result = await migrateLocalTemplatesToSupabase()
+      if (result.migrated > 0) {
+        toast.success(`${result.migrated} template${result.migrated > 1 ? "s" : ""} sincronizado${result.migrated > 1 ? "s" : ""} com a nuvem`)
+      }
+      // Re-carrega depois do pull para refletir mudanças feitas em outro dispositivo
+      await getCustomTemplatesAsync()
+      loadTemplates()
+    })()
   }, [])
 
   const handleOpenForm = (template?: CustomTemplatePackage) => {

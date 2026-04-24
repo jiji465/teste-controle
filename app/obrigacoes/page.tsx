@@ -5,18 +5,20 @@ import { Navigation } from "@/components/navigation"
 import { useUrlState } from "@/hooks/use-url-state"
 import { ObligationList, type ObligationListHandle } from "@/features/obligations/components/obligation-list"
 import { GlobalSearch } from "@/components/global-search"
+import { ExportDialog } from "@/components/export-dialog"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { getObligationsWithDetails } from "@/lib/dashboard-utils"
 import { buildSafeDate } from "@/lib/date-utils"
-import { CheckCircle2, Clock, PlayCircle, AlertTriangle, Search, Plus } from "lucide-react"
+import { CheckCircle2, Clock, PlayCircle, AlertTriangle, Search, Plus, Download } from "lucide-react"
 import { useData } from "@/contexts/data-context"
 
 export default function ObligacoesPage() {
   const { obligations: rawObligations, clients, taxes, refreshData } = useData()
   const [activeTab, setActiveTab] = useUrlState("tab")
   const [searchOpen, setSearchOpen] = useState(false)
+  const [exportOpen, setExportOpen] = useState(false)
   const listRef = useRef<ObligationListHandle>(null)
 
   const obligations = useMemo(
@@ -83,6 +85,10 @@ export default function ObligacoesPage() {
                 <kbd className="pointer-events-none hidden h-5 select-none items-center gap-1 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium opacity-100 sm:flex">
                   <span className="text-xs">⌘</span>K
                 </kbd>
+              </Button>
+              <Button variant="outline" onClick={() => setExportOpen(true)} className="gap-2">
+                <Download className="size-4" />
+                <span className="hidden sm:inline">Exportar</span>
               </Button>
               <Button onClick={() => listRef.current?.openNewForm()}>
                 <Plus className="size-4 mr-2" />
@@ -165,6 +171,13 @@ export default function ObligacoesPage() {
         clients={clients}
         taxes={taxes}
         obligations={obligations}
+      />
+
+      <ExportDialog
+        open={exportOpen}
+        onOpenChange={setExportOpen}
+        obligations={obligations}
+        clients={clients}
       />
     </div>
   )

@@ -476,12 +476,12 @@ export function TaxForm({ tax, open, onOpenChange, onSave }: TaxFormProps) {
                   name="recurrenceEndDate"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Data Final (Opcional)</FormLabel>
+                      <FormLabel>Gerar até (Opcional)</FormLabel>
                       <FormControl>
                         <Input type="date" {...field} />
                       </FormControl>
                       <DialogDescription>
-                        Deixe em branco para recorrência indefinida
+                        A partir desta data o sistema para de gerar. Se em branco, gera até <strong>12 meses adiante</strong>.
                       </DialogDescription>
                       <FormMessage />
                     </FormItem>

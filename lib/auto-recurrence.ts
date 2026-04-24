@@ -44,18 +44,26 @@ export async function checkAndGenerateRecurrences(): Promise<void> {
       (o) => o.autoGenerate && !o.parentObligationId, // Apenas obrigações originais
     )
 
+    // Cap de segurança: nunca gera mais que 12 meses adiante do mês atual,
+    // mesmo que recurrenceEndDate seja distante. Evita explodir o banco com
+    // obrigações futuras que ainda nem foram revisadas.
+    const MAX_MONTHS_AHEAD = 12
+    const horizon = new Date(now.getFullYear(), now.getMonth() + MAX_MONTHS_AHEAD, 1)
+
     for (const obligation of obligationsToGenerate) {
+      // Cap explícito definido pelo usuário no formulário
+      const userEndDate = obligation.recurrenceEndDate
+        ? new Date(obligation.recurrenceEndDate)
+        : null
+
       // Find all generated instances for this obligation
       const instances = obligations.filter((o) => o.parentObligationId === obligation.id || o.id === obligation.id)
-      
+
       // Find the latest due date among all instances
       let latestInstance = instances[0]
       let latestDueDate = new Date(0)
-      
+
       for (const inst of instances) {
-        // Need to calculate the due date properly, since it might not be saved directly on the DB object
-        // but we can use the creation date / generatedFor as a proxy, or calculate it.
-        // For simplicity, we just use the recurrence engine
         const period = inst.generatedFor || `${new Date(inst.createdAt).getFullYear()}-${String(new Date(inst.createdAt).getMonth() + 1).padStart(2, "0")}`
         const [year, month] = period.split("-").map(Number)
         const dueDate = buildSafeDate(year, month - 1, inst.dueDay || 1)
@@ -65,12 +73,14 @@ export async function checkAndGenerateRecurrences(): Promise<void> {
         }
       }
 
-      // Check if the latest due date is older than the current period (or current month)
       const nextDate = calculateNextDueDate(obligation, latestDueDate)
-      
-      // If the next calculated due date is in the current month or earlier, we generate it
+
+      // Para de gerar se passou do cap do usuário ou do cap de segurança
+      if (userEndDate && nextDate > userEndDate) continue
+      if (nextDate > horizon) continue
+
       const nextPeriod = `${nextDate.getFullYear()}-${String(nextDate.getMonth() + 1).padStart(2, "0")}`
-      
+
       if (nextPeriod <= currentPeriod) {
         // Verify it doesn't already exist
         const alreadyGenerated = obligations.some(
@@ -84,21 +94,25 @@ export async function checkAndGenerateRecurrences(): Promise<void> {
       }
     }
 
-    // Gerar impostos recorrentes
+    // Gerar impostos recorrentes (com cap por recurrenceEndDate)
     const taxes = await getTaxes()
-    const taxesToGenerate = taxes.filter((t) => t.dueDay !== undefined)
+    const [curYear, curMonth] = currentPeriod.split("-").map(Number)
+    const currentPeriodStart = buildSafeDate(curYear, curMonth - 1, 1)
+    const taxesToGenerate = taxes.filter((t) => {
+      if (t.dueDay === undefined) return false
+      if (t.recurrenceEndDate && new Date(t.recurrenceEndDate) < currentPeriodStart) return false
+      return true
+    })
 
     for (const tax of taxesToGenerate) {
-      // Verifica se já existe um imposto gerado para este período
       const alreadyGenerated = taxes.some((t) => t.name === tax.name && t.createdAt.startsWith(currentPeriod))
-
       if (!alreadyGenerated) {
         const newTax = generateTaxForPeriod(tax, currentPeriod)
         await saveTax(newTax)
       }
     }
 
-    // Gerar parcelas recorrentes
+    // Gerar parcelas recorrentes (já tem cap natural via installmentCount)
     const installments = await getInstallments()
     const installmentsToGenerate = installments.filter((i) => i.autoGenerate && i.currentInstallment < i.installmentCount)
 

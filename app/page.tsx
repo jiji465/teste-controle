@@ -26,15 +26,69 @@ import { getCurrentPeriod } from "@/lib/recurrence-engine"
 import { TrendingUp, CalendarIcon, AlertCircle, CreditCard, Activity, Lock, Unlock } from "lucide-react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import { ConfirmDialog, type ConfirmState } from "@/components/ui/confirm-dialog"
 import { adjustForWeekend } from "@/lib/date-utils"
-import type { DashboardStats } from "@/lib/types"
+import { saveObligation } from "@/features/obligations/services"
+import type { DashboardStats, ObligationWithDetails } from "@/lib/types"
 import { useData } from "@/contexts/data-context"
+import { CheckCircle2 } from "lucide-react"
+import { toast } from "sonner"
 
 export default function DashboardPage() {
   const { clients, taxes, obligations: rawObligations, installments, lockedPeriods, isLoading, refreshData, togglePeriodLock } = useData()
   const [stats, setStats] = useState<DashboardStats | null>(null)
   const [isMounted, setIsMounted] = useState(false)
+  const [confirmState, setConfirmState] = useState<ConfirmState>(null)
   const searchParams = useSearchParams()
+
+  const completeObligation = async (obl: ObligationWithDetails, e?: React.MouseEvent) => {
+    e?.preventDefault()
+    e?.stopPropagation()
+    const now = new Date().toISOString()
+    await saveObligation({
+      ...obl,
+      status: "completed",
+      completedAt: now,
+      realizationDate: now.split("T")[0],
+      completedBy: "Contador",
+      history: [
+        ...(obl.history || []),
+        { id: crypto.randomUUID(), action: "completed", description: "Concluída pelo Dashboard", timestamp: now },
+      ],
+    })
+    toast.success(`${obl.name} concluída`)
+    await refreshData()
+  }
+
+  const completeAllOverdue = (overdueList: ObligationWithDetails[]) => {
+    if (overdueList.length === 0) return
+    setConfirmState({
+      title: `Concluir ${overdueList.length} obrigações atrasadas`,
+      description: "Marca todas como concluídas hoje. Útil para fechar pendências em lote no fim do dia.",
+      confirmLabel: "Concluir todas",
+      onConfirm: async () => {
+        const now = new Date().toISOString()
+        await Promise.all(
+          overdueList.map((obl) =>
+            saveObligation({
+              ...obl,
+              status: "completed",
+              completedAt: now,
+              realizationDate: now.split("T")[0],
+              completedBy: "Contador",
+              history: [
+                ...(obl.history || []),
+                { id: crypto.randomUUID(), action: "completed", description: "Conclusão em lote pelo Dashboard", timestamp: now },
+              ],
+            }),
+          ),
+        )
+        toast.success(`${overdueList.length} obrigações concluídas`)
+        await refreshData()
+      },
+    })
+  }
 
   const currentPeriod = useMemo(() => {
     const fromUrl = searchParams.get("period")
@@ -105,6 +159,7 @@ export default function DashboardPage() {
 
   return (
     <div className="min-h-screen bg-background">
+      <ConfirmDialog state={confirmState} onClose={() => setConfirmState(null)} />
       <Navigation />
       <main className="container mx-auto px-4 py-8">
         <div className="space-y-8">
@@ -116,26 +171,54 @@ export default function DashboardPage() {
           {(criticalAlerts.length > 0 || criticalInstallments.length > 0) && (
             <Card className="border-red-500/50 bg-red-50 dark:bg-red-950/20">
               <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-red-700 dark:text-red-400">
-                  <AlertCircle className="size-5" />
-                  Alertas Críticos
-                </CardTitle>
-                <CardDescription>Clique em um item para abrir a obrigação ou parcelamento</CardDescription>
+                <div className="flex items-start justify-between gap-3 flex-wrap">
+                  <div>
+                    <CardTitle className="flex items-center gap-2 text-red-700 dark:text-red-400">
+                      <AlertCircle className="size-5" />
+                      Alertas Críticos
+                    </CardTitle>
+                    <CardDescription>Clique no ✓ para concluir direto, ou no item para abrir</CardDescription>
+                  </div>
+                  {criticalAlerts.length > 1 && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="bg-background"
+                      onClick={() => completeAllOverdue(criticalAlerts)}
+                    >
+                      <CheckCircle2 className="size-4 mr-2" />
+                      Concluir todas ({criticalAlerts.length})
+                    </Button>
+                  )}
+                </div>
               </CardHeader>
               <CardContent>
                 <div className="space-y-2">
                   {criticalAlerts.slice(0, 3).map((obl) => (
-                    <Link
+                    <div
                       key={obl.id}
-                      href={`/obrigacoes?clientId=${obl.clientId}&obligationId=${obl.id}&tab=overdue`}
-                      className="flex items-center justify-between p-2 bg-background rounded-lg hover:bg-muted/60 transition-colors cursor-pointer"
+                      className="flex items-center justify-between p-2 bg-background rounded-lg hover:bg-muted/60 transition-colors group"
                     >
-                      <div>
-                        <p className="font-medium">{obl.name}</p>
-                        <p className="text-sm text-muted-foreground">{obl.client.name}</p>
+                      <Link
+                        href={`/obrigacoes?clientId=${obl.clientId}&obligationId=${obl.id}&tab=overdue`}
+                        className="flex-1 min-w-0"
+                      >
+                        <p className="font-medium truncate">{obl.name}</p>
+                        <p className="text-sm text-muted-foreground truncate">{obl.client.name}</p>
+                      </Link>
+                      <div className="flex items-center gap-2 ml-2 shrink-0">
+                        <Badge className="bg-red-600">{obl.status === "overdue" ? "Atrasada" : "Vence hoje"}</Badge>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="size-8 text-green-600 hover:text-green-700 hover:bg-green-100 dark:hover:bg-green-950/40 opacity-60 group-hover:opacity-100 transition-opacity"
+                          onClick={(e) => completeObligation(obl, e)}
+                          title="Marcar como concluída"
+                        >
+                          <CheckCircle2 className="size-4" />
+                        </Button>
                       </div>
-                      <Badge className="bg-red-600">{obl.status === "overdue" ? "Atrasada" : "Vence hoje"}</Badge>
-                    </Link>
+                    </div>
                   ))}
                   {criticalInstallments.slice(0, 2).map((inst) => {
                     const client = clients.find((c) => c.id === inst.clientId)

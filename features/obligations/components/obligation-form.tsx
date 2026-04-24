@@ -472,11 +472,13 @@ export function ObligationForm({ obligation, clients, taxes, open, onOpenChange,
                   name="recurrenceEndDate"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Data Final (Opcional)</FormLabel>
+                      <FormLabel>Gerar até (Opcional)</FormLabel>
                       <FormControl>
                         <Input type="date" {...field} />
                       </FormControl>
-                      <DialogDescription>Deixe em branco para recorrência indefinida</DialogDescription>
+                      <DialogDescription>
+                        A partir desta data o sistema para de gerar novas instâncias. Se em branco, gera até <strong>12 meses adiante</strong> (cap de segurança).
+                      </DialogDescription>
                       <FormMessage />
                     </FormItem>
                   )}

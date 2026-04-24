@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
@@ -15,7 +15,12 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog"
 import { Download, FileSpreadsheet, FileText, File } from "lucide-react"
-import type { ExportFormat, ObligationWithDetails, Client } from "@/lib/types"
+import type { ObligationWithDetails, Client } from "@/lib/types"
+import { TAX_REGIME_LABELS } from "@/lib/types"
+import { exportToXlsx, exportToPdf, exportToCsv, timestampFilename, type ExportColumn } from "@/lib/export-utils"
+import { toast } from "sonner"
+
+type ExportFmt = "xlsx" | "csv" | "pdf"
 
 type ExportDialogProps = {
   open: boolean
@@ -25,121 +30,82 @@ type ExportDialogProps = {
 }
 
 export function ExportDialog({ open, onOpenChange, obligations, clients }: ExportDialogProps) {
-  const [format, setFormat] = useState<ExportFormat>("excel")
+  const [format, setFormat] = useState<ExportFmt>("xlsx")
   const [includeCompleted, setIncludeCompleted] = useState(true)
   const [dateStart, setDateStart] = useState("")
   const [dateEnd, setDateEnd] = useState("")
   const [selectedClient, setSelectedClient] = useState<string>("all")
 
-  const handleExport = () => {
-    let filteredData = obligations
-
-    // Filter by client
-    if (selectedClient !== "all") {
-      filteredData = filteredData.filter((o) => o.clientId === selectedClient)
-    }
-
-    // Filter by completion status
-    if (!includeCompleted) {
-      filteredData = filteredData.filter((o) => o.status !== "completed")
-    }
-
-    // Filter by date range
+  const filteredData = useMemo(() => {
+    let data = obligations
+    if (selectedClient !== "all") data = data.filter((o) => o.clientId === selectedClient)
+    if (!includeCompleted) data = data.filter((o) => o.status !== "completed")
     if (dateStart && dateEnd) {
-      filteredData = filteredData.filter((o) => {
-        const dueDate = new Date(o.calculatedDueDate)
-        return dueDate >= new Date(dateStart) && dueDate <= new Date(dateEnd)
+      const s = new Date(dateStart)
+      const e = new Date(dateEnd)
+      data = data.filter((o) => {
+        const due = new Date(o.calculatedDueDate)
+        return due >= s && due <= e
       })
     }
+    return data
+  }, [obligations, selectedClient, includeCompleted, dateStart, dateEnd])
 
-    // Generate export based on format
-    if (format === "csv") {
-      exportToCSV(filteredData)
-    } else if (format === "excel") {
-      exportToExcel(filteredData)
-    } else if (format === "pdf") {
-      exportToPDF(filteredData)
+  const columns: ExportColumn<ObligationWithDetails>[] = [
+    { header: "Obrigação", width: 32, accessor: (o) => o.name },
+    { header: "Cliente", width: 30, accessor: (o) => o.client.name },
+    { header: "CNPJ", width: 18, accessor: (o) => o.client.cnpj || "" },
+    { header: "Regime", width: 18, accessor: (o) => (o.client.taxRegime ? TAX_REGIME_LABELS[o.client.taxRegime] : "") },
+    { header: "Vencimento", width: 12, accessor: (o) => new Date(o.calculatedDueDate) },
+    { header: "Status", width: 12, accessor: (o) => statusLabel(o.status) },
+    { header: "Prioridade", width: 10, accessor: (o) => priorityLabel(o.priority) },
+    { header: "Responsável", width: 16, accessor: (o) => o.assignedTo || "" },
+    { header: "Concluída em", width: 14, accessor: (o) => (o.completedAt ? new Date(o.completedAt) : "") },
+  ]
+
+  const handleExport = () => {
+    if (filteredData.length === 0) {
+      toast.error("Nenhuma obrigação encontrada com esses filtros")
+      return
     }
 
-    onOpenChange(false)
-  }
+    const filename = timestampFilename("obrigacoes")
+    const subtitleParts: string[] = []
+    if (selectedClient !== "all") {
+      const c = clients.find((x) => x.id === selectedClient)
+      if (c) subtitleParts.push(`Cliente: ${c.name}`)
+    }
+    if (dateStart && dateEnd) subtitleParts.push(`Período: ${formatBR(dateStart)} → ${formatBR(dateEnd)}`)
+    if (!includeCompleted) subtitleParts.push("Sem concluídas")
+    const subtitle = subtitleParts.length > 0 ? subtitleParts.join("  ·  ") : undefined
 
-  const exportToCSV = (data: ObligationWithDetails[]) => {
-    const headers = ["Nome", "Cliente", "Status", "Prioridade", "Vencimento", "Responsável", "Valor"]
-    const rows = data.map((o) => [
-      o.name,
-      o.client.name,
-      o.status,
-      o.priority,
-      new Date(o.calculatedDueDate).toLocaleDateString("pt-BR"),
-      o.assignedTo || "-",
-      o.amount ? `R$ ${o.amount.toFixed(2)}` : "-",
-    ])
-
-    const csvContent = [headers, ...rows].map((row) => row.join(",")).join("\n")
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" })
-    const link = document.createElement("a")
-    link.href = URL.createObjectURL(blob)
-    link.download = `obrigacoes_${new Date().toISOString().split("T")[0]}.csv`
-    link.click()
-  }
-
-  const exportToExcel = (data: ObligationWithDetails[]) => {
-    // Simulated Excel export (in real app, use a library like xlsx)
-    const content = `
-      <table>
-        <thead>
-          <tr>
-            <th>Nome</th>
-            <th>Cliente</th>
-            <th>Status</th>
-            <th>Prioridade</th>
-            <th>Vencimento</th>
-            <th>Responsável</th>
-            <th>Valor</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${data
-            .map(
-              (o) => `
-            <tr>
-              <td>${o.name}</td>
-              <td>${o.client.name}</td>
-              <td>${o.status}</td>
-              <td>${o.priority}</td>
-              <td>${new Date(o.calculatedDueDate).toLocaleDateString("pt-BR")}</td>
-              <td>${o.assignedTo || "-"}</td>
-              <td>${o.amount ? `R$ ${o.amount.toFixed(2)}` : "-"}</td>
-            </tr>
-          `,
-            )
-            .join("")}
-        </tbody>
-      </table>
-    `
-    const blob = new Blob([content], { type: "application/vnd.ms-excel" })
-    const link = document.createElement("a")
-    link.href = URL.createObjectURL(blob)
-    link.download = `obrigacoes_${new Date().toISOString().split("T")[0]}.xls`
-    link.click()
-  }
-
-  const exportToPDF = (data: ObligationWithDetails[]) => {
-    // Simulated PDF export (in real app, use a library like jsPDF)
-    alert("Exportação para PDF será implementada com biblioteca jsPDF")
-  }
-
-  const getFormatIcon = (fmt: ExportFormat) => {
-    switch (fmt) {
-      case "excel":
-        return <FileSpreadsheet className="size-4" />
-      case "pdf":
-        return <FileText className="size-4" />
-      case "csv":
-        return <File className="size-4" />
+    try {
+      if (format === "xlsx") {
+        exportToXlsx({ filename, sheetName: "Obrigações", columns, rows: filteredData })
+      } else if (format === "csv") {
+        exportToCsv({ filename, columns, rows: filteredData })
+      } else {
+        exportToPdf({
+          filename,
+          title: "Relatório de Obrigações",
+          subtitle,
+          columns,
+          rows: filteredData,
+        })
+      }
+      toast.success(`${filteredData.length} registros exportados`)
+      onOpenChange(false)
+    } catch (err) {
+      console.error("[export]", err)
+      toast.error("Falha ao gerar arquivo. Tente outro formato.")
     }
   }
+
+  const fmtIcon = format === "xlsx"
+    ? <FileSpreadsheet className="size-4" />
+    : format === "pdf"
+      ? <FileText className="size-4" />
+      : <File className="size-4" />
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -147,52 +113,42 @@ export function ExportDialog({ open, onOpenChange, obligations, clients }: Expor
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Download className="size-5" />
-            Exportar Dados
+            Exportar Obrigações
           </DialogTitle>
-          <DialogDescription>Configure as opções de exportação dos dados</DialogDescription>
+          <DialogDescription>Configure os filtros e o formato do arquivo</DialogDescription>
         </DialogHeader>
+
         <div className="space-y-4 py-4">
           <div className="grid gap-2">
-            <Label htmlFor="format">Formato de Exportação</Label>
-            <Select value={format} onValueChange={(value) => setFormat(value as ExportFormat)}>
+            <Label htmlFor="format">Formato</Label>
+            <Select value={format} onValueChange={(v) => setFormat(v as ExportFmt)}>
               <SelectTrigger id="format">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="excel">
-                  <div className="flex items-center gap-2">
-                    {getFormatIcon("excel")}
-                    Excel (.xls)
-                  </div>
-                </SelectItem>
-                <SelectItem value="csv">
-                  <div className="flex items-center gap-2">
-                    {getFormatIcon("csv")}
-                    CSV (.csv)
-                  </div>
+                <SelectItem value="xlsx">
+                  <div className="flex items-center gap-2"><FileSpreadsheet className="size-4" /> Excel (.xlsx)</div>
                 </SelectItem>
                 <SelectItem value="pdf">
-                  <div className="flex items-center gap-2">
-                    {getFormatIcon("pdf")}
-                    PDF (.pdf)
-                  </div>
+                  <div className="flex items-center gap-2"><FileText className="size-4" /> PDF (.pdf)</div>
+                </SelectItem>
+                <SelectItem value="csv">
+                  <div className="flex items-center gap-2"><File className="size-4" /> CSV (.csv)</div>
                 </SelectItem>
               </SelectContent>
             </Select>
           </div>
 
           <div className="grid gap-2">
-            <Label htmlFor="client">Filtrar por Cliente</Label>
+            <Label htmlFor="client">Cliente</Label>
             <Select value={selectedClient} onValueChange={setSelectedClient}>
               <SelectTrigger id="client">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Todos os clientes</SelectItem>
-                {clients.map((client) => (
-                  <SelectItem key={client.id} value={client.id}>
-                    {client.name}
-                  </SelectItem>
+                {clients.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -200,39 +156,63 @@ export function ExportDialog({ open, onOpenChange, obligations, clients }: Expor
 
           <div className="grid sm:grid-cols-2 gap-4">
             <div className="grid gap-2">
-              <Label htmlFor="dateStart">Data Inicial</Label>
+              <Label htmlFor="dateStart">De</Label>
               <Input id="dateStart" type="date" value={dateStart} onChange={(e) => setDateStart(e.target.value)} />
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="dateEnd">Data Final</Label>
+              <Label htmlFor="dateEnd">Até</Label>
               <Input id="dateEnd" type="date" value={dateEnd} onChange={(e) => setDateEnd(e.target.value)} />
             </div>
           </div>
 
           <div className="flex items-center justify-between py-2 px-3 rounded-lg bg-muted/50">
             <div className="space-y-0.5">
-              <Label htmlFor="includeCompleted">Incluir Concluídas</Label>
-              <p className="text-xs text-muted-foreground">Exportar obrigações já concluídas</p>
+              <Label htmlFor="includeCompleted">Incluir concluídas</Label>
+              <p className="text-xs text-muted-foreground">Exportar também obrigações já entregues</p>
             </div>
             <Switch id="includeCompleted" checked={includeCompleted} onCheckedChange={setIncludeCompleted} />
           </div>
 
           <div className="p-3 bg-blue-50 dark:bg-blue-950/20 rounded-lg border border-blue-200 dark:border-blue-800">
             <p className="text-sm text-blue-900 dark:text-blue-100">
-              <strong>{obligations.length}</strong> obrigações serão exportadas com os filtros atuais
+              <strong>{filteredData.length}</strong> obrigaç{filteredData.length === 1 ? "ão será exportada" : "ões serão exportadas"} com os filtros atuais
             </p>
           </div>
         </div>
+
         <DialogFooter>
-          <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-            Cancelar
-          </Button>
-          <Button onClick={handleExport} className="gap-2">
-            <Download className="size-4" />
-            Exportar
+          <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
+          <Button onClick={handleExport} className="gap-2" disabled={filteredData.length === 0}>
+            {fmtIcon}
+            Exportar {format.toUpperCase()}
           </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
   )
+}
+
+function statusLabel(s: string): string {
+  switch (s) {
+    case "pending": return "Pendente"
+    case "in_progress": return "Em andamento"
+    case "completed": return "Concluída"
+    case "overdue": return "Atrasada"
+    default: return s
+  }
+}
+
+function priorityLabel(p: string): string {
+  switch (p) {
+    case "urgent": return "Urgente"
+    case "high": return "Alta"
+    case "medium": return "Média"
+    case "low": return "Baixa"
+    default: return p
+  }
+}
+
+function formatBR(isoDate: string): string {
+  const [y, m, d] = isoDate.split("-")
+  return `${d}/${m}/${y}`
 }

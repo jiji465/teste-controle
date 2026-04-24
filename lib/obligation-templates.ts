@@ -180,6 +180,11 @@ export type CustomTemplatePackage = {
 
 const CUSTOM_TEMPLATES_KEY = "fiscal_custom_templates"
 
+// Persistência: localStorage (síncrono, fonte de verdade local) +
+// Supabase em background via features/templates/services.ts (durabilidade
+// + sync entre dispositivos). Os callers continuam usando estas funções
+// síncronas; o sync remoto roda fire-and-forget.
+
 export const getCustomTemplates = (): CustomTemplatePackage[] => {
   if (typeof window === "undefined") return []
   const data = localStorage.getItem(CUSTOM_TEMPLATES_KEY)
@@ -195,11 +200,14 @@ export const saveCustomTemplate = (pkg: CustomTemplatePackage): void => {
     templates.push(pkg)
   }
   localStorage.setItem(CUSTOM_TEMPLATES_KEY, JSON.stringify(templates))
+  // Sincroniza no Supabase sem bloquear a UI
+  void import("@/features/templates/services").then((m) => m.saveCustomTemplateAsync(pkg))
 }
 
 export const deleteCustomTemplate = (id: string): void => {
   const templates = getCustomTemplates().filter((t) => t.id !== id)
   localStorage.setItem(CUSTOM_TEMPLATES_KEY, JSON.stringify(templates))
+  void import("@/features/templates/services").then((m) => m.deleteCustomTemplateAsync(id))
 }
 
 /**

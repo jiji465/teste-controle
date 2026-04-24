@@ -11,6 +11,8 @@ import { Label } from "@/components/ui/label"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Navigation } from "@/components/navigation"
 import { ConfirmDialog, type ConfirmState } from "@/components/ui/confirm-dialog"
+import { ExportButton } from "@/components/export-button"
+import type { ExportColumn } from "@/lib/export-utils"
 import { useUrlState } from "@/hooks/use-url-state"
 import { InstallmentForm } from "@/features/installments/components/installment-form"
 import { BulkActionsBar } from "@/components/bulk-actions-bar"
@@ -118,6 +120,19 @@ export default function ParcelamentosPage() {
       return true
     })
   }, [installments, searchTerm, statusFilter, clientFilter, priorityFilter, clients, taxes])
+
+  const installmentExportColumns: ExportColumn<Installment>[] = [
+    { header: "Nome", width: 28, accessor: (i) => i.name },
+    { header: "Cliente", width: 28, accessor: (i) => getClientName(i.clientId) },
+    { header: "Imposto", width: 18, accessor: (i) => getTaxName(i.taxId) },
+    { header: "Parcela", width: 12, accessor: (i) => `${i.currentInstallment}/${i.installmentCount}` },
+    { header: "Valor parcela", width: 14, accessor: (i) => i.installmentAmount ?? "" },
+    { header: "1º vencimento", width: 14, accessor: (i) => new Date(i.firstDueDate) },
+    { header: "Próx. venc.", width: 14, accessor: (i) => calculateDueDate(i) },
+    { header: "Status", width: 12, accessor: (i) => statusLabel(getStatus(i)) },
+    { header: "Prioridade", width: 10, accessor: (i) => priorityLabel(i.priority) },
+    { header: "Responsável", width: 16, accessor: (i) => i.assignedTo ?? "" },
+  ]
 
   const statusCounts = useMemo(() => {
     const counts = {
@@ -400,6 +415,13 @@ export default function ParcelamentosPage() {
                   <span className="text-xs">⌘</span>K
                 </kbd>
               </Button>
+              <ExportButton
+                filenamePrefix="parcelamentos"
+                pdfTitle="Relatório de Parcelamentos"
+                sheetName="Parcelamentos"
+                columns={installmentExportColumns}
+                rows={filteredInstallments}
+              />
               <Button
                 onClick={() => {
                   setSelectedInstallment(undefined)
@@ -512,7 +534,87 @@ export default function ParcelamentosPage() {
             ]}
           />
 
-          <div className="rounded-lg border bg-card">
+          {/* Mobile: cards (até md) */}
+          <div className="md:hidden space-y-2">
+            {filteredInstallments.length === 0 ? (
+              <div className="rounded-lg border py-8 text-center text-sm text-muted-foreground">
+                Nenhum parcelamento encontrado
+              </div>
+            ) : (
+              filteredInstallments.map((installment) => {
+                const status = getStatus(installment)
+                const dueDate = calculateDueDate(installment)
+                return (
+                  <div
+                    key={installment.id}
+                    className={`rounded-lg border p-3 space-y-2 ${
+                      selectedIds.has(installment.id)
+                        ? "bg-primary/5 border-primary/40"
+                        : status === "overdue"
+                          ? "bg-destructive/5 border-destructive/30"
+                          : "bg-card"
+                    }`}
+                  >
+                    <div className="flex items-start gap-2">
+                      <Checkbox
+                        checked={selectedIds.has(installment.id)}
+                        onCheckedChange={() => toggleSelect(installment.id)}
+                        className="mt-0.5"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-sm">{installment.name}</p>
+                        <p className="text-xs text-muted-foreground truncate">
+                          {getClientName(installment.clientId)}
+                        </p>
+                      </div>
+                      {getStatusBadge(installment)}
+                    </div>
+
+                    <div className="ml-6 grid grid-cols-2 gap-2 text-xs">
+                      <div>
+                        <span className="text-muted-foreground">Parcela:</span>{" "}
+                        <span className="font-medium">{installment.currentInstallment}/{installment.installmentCount}</span>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">Vence:</span>{" "}
+                        <span className="font-mono font-medium">{formatDate(dueDate)}</span>
+                      </div>
+                      {installment.installmentAmount != null && (
+                        <div className="col-span-2">
+                          <span className="text-muted-foreground">Valor:</span>{" "}
+                          <span className="font-medium">
+                            {new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(installment.installmentAmount)}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="ml-6 flex flex-wrap gap-1.5">
+                      {status === "pending" && (
+                        <Button size="sm" variant="outline" onClick={() => handleStartInstallment(installment)} className="h-7 text-xs gap-1">
+                          <Play className="h-3 w-3" /> Iniciar
+                        </Button>
+                      )}
+                      {(status === "pending" || status === "in_progress") && (
+                        <Button size="sm" variant="outline" onClick={() => handleCompleteInstallment(installment)} className="h-7 text-xs gap-1">
+                          <CheckCircle2 className="h-3 w-3" /> Concluir
+                        </Button>
+                      )}
+                      <Button size="sm" variant="ghost" onClick={() => handleEdit(installment)} className="h-7 text-xs gap-1">
+                        <Pencil className="h-3 w-3" /> Editar
+                      </Button>
+                      <Button size="sm" variant="ghost" onClick={() => handleDelete(installment.id)} className="h-7 text-xs gap-1 text-destructive">
+                        <Trash2 className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  </div>
+                )
+              })
+            )}
+          </div>
+
+          {/* Desktop: tabela (md+) */}
+          <div className="rounded-lg border bg-card hidden md:block">
           <Table>
             <TableHeader>
               <TableRow>
@@ -724,4 +826,24 @@ export default function ParcelamentosPage() {
       </Dialog>
     </div>
   )
+}
+
+function statusLabel(s: string): string {
+  switch (s) {
+    case "pending": return "Pendente"
+    case "in_progress": return "Em andamento"
+    case "completed": return "Concluído"
+    case "overdue": return "Atrasado"
+    default: return s
+  }
+}
+
+function priorityLabel(p: string): string {
+  switch (p) {
+    case "urgent": return "Urgente"
+    case "high": return "Alta"
+    case "medium": return "Média"
+    case "low": return "Baixa"
+    default: return p
+  }
 }

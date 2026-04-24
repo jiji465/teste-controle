@@ -600,7 +600,97 @@ export const ObligationList = forwardRef<ObligationListHandle, ObligationListPro
       />
 
 
-      <div className="border rounded-lg">
+      {/* Mobile: cards (até md) */}
+      <div className="md:hidden space-y-2">
+        {sortedObligations.length === 0 ? (
+          <div className="border rounded-lg py-12 text-center">
+            <div className="size-12 rounded-full bg-muted flex items-center justify-center mx-auto mb-2">
+              <CheckCircle2 className="size-6 text-muted-foreground" />
+            </div>
+            <p className="font-medium">Nenhuma obrigação encontrada</p>
+            <p className="text-sm text-muted-foreground mt-1 max-w-sm mx-auto">
+              {search || clientFilter !== "all" || priorityFilter !== "all" || assigneeFilter !== "all"
+                ? "Ajuste a busca ou os filtros."
+                : "Cadastre a primeira pelo botão acima."}
+            </p>
+          </div>
+        ) : (
+          sortedObligations.map((obligation) => {
+            const overdue = isOverdue(obligation.calculatedDueDate) && obligation.status !== "completed"
+            return (
+              <div
+                key={obligation.id}
+                className={`border rounded-lg p-3 space-y-2 ${
+                  selectedIds.has(obligation.id)
+                    ? "bg-primary/5 border-primary/40"
+                    : overdue ? "bg-red-50/50 dark:bg-red-950/10 border-red-200 dark:border-red-900" : "bg-card"
+                }`}
+              >
+                <div className="flex items-start gap-2">
+                  <Checkbox
+                    checked={selectedIds.has(obligation.id)}
+                    onCheckedChange={() => toggleSelect(obligation.id)}
+                    className="mt-0.5"
+                  />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-medium text-sm">{obligation.name}</span>
+                      {obligation.priority && obligation.priority !== "medium" && (
+                        <Badge variant="outline" className={
+                          obligation.priority === "urgent" ? "border-red-500 text-red-700 text-[10px]"
+                          : obligation.priority === "high" ? "border-orange-500 text-orange-700 text-[10px]"
+                          : "border-blue-500 text-blue-700 text-[10px]"
+                        }>
+                          {obligation.priority === "urgent" ? "Urgente" : obligation.priority === "high" ? "Alta" : "Baixa"}
+                        </Badge>
+                      )}
+                    </div>
+                    <p className="text-xs text-muted-foreground truncate">{obligation.client.name}</p>
+                  </div>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="icon" className="size-7">
+                        <MoreVertical className="size-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onClick={() => handleView(obligation)}>
+                        <Eye className="size-4 mr-2" /> Ver detalhes
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => handleEdit(obligation)}>
+                        <Pencil className="size-4 mr-2" /> Editar
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => handleDelete(obligation.id)} className="text-destructive">
+                        <Trash2 className="size-4 mr-2" /> Excluir
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+
+                <div className="flex items-center justify-between gap-2 ml-6">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {getStatusBadge(obligation)}
+                    {obligation.tax && (
+                      <Badge variant="outline" className="text-[10px]">{obligation.tax.name}</Badge>
+                    )}
+                  </div>
+                  <div className="text-right">
+                    <div className="font-mono text-xs font-medium">{formatDate(obligation.calculatedDueDate)}</div>
+                    <div className="text-[10px] text-muted-foreground">{getRelativeDate(obligation.calculatedDueDate)}</div>
+                  </div>
+                </div>
+
+                <div className="ml-6">
+                  <QuickActionButtons obligation={obligation} />
+                </div>
+              </div>
+            )
+          })
+        )}
+      </div>
+
+      {/* Desktop: tabela (md+) */}
+      <div className="border rounded-lg hidden md:block">
         <Table>
           <TableHeader>
             <TableRow>
