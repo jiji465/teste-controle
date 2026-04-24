@@ -12,12 +12,13 @@ import { BulkActionsBar } from "@/components/bulk-actions-bar"
 import { ConfirmDialog, type ConfirmState } from "@/components/ui/confirm-dialog"
 import { ClientForm } from "./client-form"
 import { MoreVertical, Pencil, Trash2, Search, Plus, Building2, Sparkles, Filter, CheckCircle2, XCircle } from "lucide-react"
-import type { Client, TaxRegime } from "@/lib/types"
+import type { Client, Tax, TaxRegime } from "@/lib/types"
 import { TAX_REGIME_LABELS, TAX_REGIME_COLORS } from "@/lib/types"
 import { saveClient, deleteClient, DuplicateClientError } from "@/features/clients/services"
 import { TemplateApplyDialog } from "@/components/template-apply-dialog"
 import { type TemplateItem, type BusinessActivity, BUSINESS_ACTIVITY_LABELS } from "@/lib/obligation-templates"
 import { saveObligation } from "@/features/obligations/services"
+import { saveTax } from "@/features/taxes/services"
 import { useData } from "@/contexts/data-context"
 import { toast } from "sonner"
 import { matchesText, matchesCnpj } from "@/lib/utils"
@@ -177,52 +178,109 @@ export function ClientList({ clients, onUpdate }: ClientListProps) {
     setIsFormOpen(true)
   }
 
-  const handleApplyTemplate = async (templates: TemplateItem[]) => {
+  const handleApplyTemplate = async (templatesSelected: TemplateItem[]) => {
     if (!templateClient) return
     const now = new Date().toISOString()
-    const { toast } = await import("sonner")
+    const regime = templateClient.taxRegime
+
+    // Separar por categoria: tax_guide vai para Impostos, resto vai para Obrigações
+    const taxItems = templatesSelected.filter((t) => t.category === "tax_guide")
+    const obligationItems = templatesSelected.filter((t) => t.category !== "tax_guide")
 
     const { getObligations } = await import("@/lib/supabase/database")
     const existingObligations = await getObligations()
     const existingForClient = existingObligations.filter((o) => o.clientId === templateClient.id)
-    const existingNames = new Set(existingForClient.map((o) => o.name.toLowerCase()))
-    const existingTaxIds = new Set(existingForClient.map((o) => o.taxId).filter(Boolean) as string[])
+    const existingObligationNames = new Set(existingForClient.map((o) => o.name.toLowerCase()))
 
-    const templatesToApply = templates.filter((t) => {
-      if (t.sourceTaxId && existingTaxIds.has(t.sourceTaxId)) return false
-      return !existingNames.has(t.name.toLowerCase())
-    })
-
-    if (templatesToApply.length < templates.length) {
-      toast.info(`${templates.length - templatesToApply.length} obrigações já existiam e foram ignoradas.`)
+    const existingTaxByName = new Map<string, Tax>()
+    const existingTaxById = new Map<string, Tax>()
+    for (const tx of taxes) {
+      existingTaxByName.set(tx.name.toLowerCase(), tx)
+      existingTaxById.set(tx.id, tx)
     }
 
-    if (templatesToApply.length > 0) {
-      await Promise.all(
-        templatesToApply.map((t) =>
-          saveObligation({
-            id: crypto.randomUUID(),
-            name: t.name,
-            description: t.description,
-            category: t.category,
-            clientId: templateClient.id,
-            taxId: t.sourceTaxId,
-            dueDay: t.dueDay,
-            frequency: t.frequency,
-            recurrence: t.recurrence,
-            weekendRule: t.weekendRule,
-            status: "pending",
-            priority: t.priority,
-            autoGenerate: true,
-            source: t.sourceTaxId ? "tax" : "template",
-            createdAt: now,
-            history: [],
-            tags: [],
-            attachments: [],
-          }),
-        ),
-      )
-      toast.success(`${templatesToApply.length} obrigações criadas com sucesso!`)
+    // ── 1. Processar IMPOSTOS (criar novos ou atualizar applicableRegimes) ──────
+    let taxesCreated = 0
+    let taxesUpdated = 0
+    const taxesToSave: Tax[] = []
+
+    for (const item of taxItems) {
+      const linkedTax = item.sourceTaxId ? existingTaxById.get(item.sourceTaxId) : existingTaxByName.get(item.name.toLowerCase())
+
+      if (linkedTax) {
+        // Imposto já existe — apenas garante que o regime do cliente está em applicableRegimes
+        if (regime) {
+          const regimes = linkedTax.applicableRegimes ?? []
+          if (regimes.length > 0 && !regimes.includes(regime)) {
+            taxesToSave.push({ ...linkedTax, applicableRegimes: [...regimes, regime] })
+            taxesUpdated++
+          }
+        }
+      } else {
+        // Imposto novo (item de template tax_guide sem correspondência)
+        taxesToSave.push({
+          id: crypto.randomUUID(),
+          name: item.name,
+          description: item.description,
+          scope: item.scope,
+          dueDay: item.dueDay,
+          recurrence: item.recurrence,
+          weekendRule: item.weekendRule,
+          priority: item.priority,
+          status: "pending",
+          applicableRegimes: regime ? [regime] : [],
+          autoGenerate: true,
+          createdAt: now,
+          tags: [],
+          history: [],
+        })
+        taxesCreated++
+      }
+    }
+
+    // ── 2. Processar OBRIGAÇÕES (criar uma por cliente, deduplicando por nome) ──
+    const obligationsToCreate = obligationItems.filter((t) => !existingObligationNames.has(t.name.toLowerCase()))
+    const obligationsSkipped = obligationItems.length - obligationsToCreate.length
+
+    await Promise.all([
+      ...taxesToSave.map((t) => saveTax(t)),
+      ...obligationsToCreate.map((t) =>
+        saveObligation({
+          id: crypto.randomUUID(),
+          name: t.name,
+          description: t.description,
+          category: t.category,
+          clientId: templateClient.id,
+          taxId: t.sourceTaxId,
+          dueDay: t.dueDay,
+          frequency: t.frequency,
+          recurrence: t.recurrence,
+          weekendRule: t.weekendRule,
+          status: "pending",
+          priority: t.priority,
+          autoGenerate: true,
+          source: t.sourceTaxId ? "tax" : "template",
+          createdAt: now,
+          history: [],
+          tags: [],
+          attachments: [],
+        }),
+      ),
+    ])
+
+    // ── 3. Toast com breakdown do que aconteceu ────────────────────────────────
+    const parts: string[] = []
+    if (taxesCreated > 0) parts.push(`${taxesCreated} imposto${taxesCreated > 1 ? "s" : ""} criado${taxesCreated > 1 ? "s" : ""}`)
+    if (taxesUpdated > 0) parts.push(`${taxesUpdated} imposto${taxesUpdated > 1 ? "s" : ""} vinculado${taxesUpdated > 1 ? "s" : ""} ao regime`)
+    if (obligationsToCreate.length > 0) parts.push(`${obligationsToCreate.length} obrigaç${obligationsToCreate.length > 1 ? "ões" : "ão"} criada${obligationsToCreate.length > 1 ? "s" : ""}`)
+
+    if (parts.length > 0) {
+      toast.success(parts.join(" + "))
+    } else {
+      toast.info("Nenhum item novo: tudo já estava cadastrado")
+    }
+    if (obligationsSkipped > 0) {
+      toast.info(`${obligationsSkipped} obrigaç${obligationsSkipped > 1 ? "ões já existiam" : "ão já existia"} para este cliente e foi ignorada`)
     }
 
     setTemplateClient(null)

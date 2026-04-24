@@ -130,9 +130,9 @@ export function TemplateApplyDialog({
               <Sparkles className="size-4 text-primary" />
             </div>
             <div>
-              <DialogTitle>Template de Obrigações</DialogTitle>
+              <DialogTitle>Aplicar Template</DialogTitle>
               <DialogDescription>
-                Selecione quais itens aplicar para <strong>{clientName}</strong>
+                Impostos vão para <strong>/impostos</strong>, obrigações vão para <strong>/obrigações</strong>. Selecione o que aplicar para <strong>{clientName}</strong>.
               </DialogDescription>
             </div>
           </div>
@@ -228,11 +228,19 @@ export function TemplateApplyDialog({
           <Button onClick={handleConfirm} disabled={loading || selected.size === 0}>
             {loading ? (
               <>
-                <Loader2 className="size-4 mr-2 animate-spin" /> Criando...
+                <Loader2 className="size-4 mr-2 animate-spin" /> Aplicando...
               </>
             ) : (
               <>
-                <CheckCircle2 className="size-4 mr-2" /> Criar {selected.size} Obrigações
+                <CheckCircle2 className="size-4 mr-2" />
+                {(() => {
+                  const chosen = allItems.filter((t) => selected.has(itemKey(t)))
+                  const taxCount = chosen.filter((t) => t.category === "tax_guide").length
+                  const oblCount = chosen.length - taxCount
+                  if (taxCount > 0 && oblCount > 0) return `Aplicar ${taxCount} imposto${taxCount > 1 ? "s" : ""} + ${oblCount} obrigaç${oblCount > 1 ? "ões" : "ão"}`
+                  if (taxCount > 0) return `Aplicar ${taxCount} imposto${taxCount > 1 ? "s" : ""}`
+                  return `Aplicar ${oblCount} obrigaç${oblCount > 1 ? "ões" : "ão"}`
+                })()}
               </>
             )}
           </Button>
