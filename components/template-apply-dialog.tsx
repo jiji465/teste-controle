@@ -104,12 +104,19 @@ export function TemplateApplyDialog({
     const seenNames = new Set<string>()
     const merged: TemplateItem[] = []
     for (const t of baseTemplates) {
-      seenNames.add(t.name.toLowerCase())
+      const key = t.name.toLowerCase()
+      if (seenNames.has(key)) continue
+      seenNames.add(key)
       merged.push({ ...t })
     }
-    // Evita duplicar quando o template do sistema já cobre o nome do imposto
+    // Dedupe por nome também dentro das guias cadastradas (uma empresa pode ter
+    // várias guias com mesmo nome — uma por competência — não devem aparecer
+    // todas no diálogo de "aplicar template")
     for (const t of applicableTaxItems) {
-      if (!seenNames.has(t.name.toLowerCase())) merged.push(t)
+      const key = t.name.toLowerCase()
+      if (seenNames.has(key)) continue
+      seenNames.add(key)
+      merged.push(t)
     }
     return merged
   }, [baseTemplates, applicableTaxItems])
