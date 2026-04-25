@@ -652,7 +652,13 @@ export default function ParcelamentosPage() {
                       <p className="text-sm text-muted-foreground max-w-md">
                         Cadastre parcelamentos de impostos (REFIS, parcelamentos especiais, etc).
                       </p>
-                      <Button onClick={() => handleOpenForm()} className="mt-2 gap-2">
+                      <Button
+                        onClick={() => {
+                          setSelectedInstallment(undefined)
+                          setIsFormOpen(true)
+                        }}
+                        className="mt-2 gap-2"
+                      >
                         <Plus className="size-4" /> Novo Parcelamento
                       </Button>
                     </div>
