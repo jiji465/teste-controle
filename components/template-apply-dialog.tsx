@@ -15,8 +15,6 @@ import {
   type BusinessActivity,
   type CustomTemplatePackage,
   type TemplateItem,
-  getApplicableTaxesForClient,
-  taxToTemplateItem,
   BUSINESS_ACTIVITY_LABELS,
 } from "@/lib/obligation-templates"
 import { previewApplyTemplate, type CompetencyRange } from "@/lib/template-applier"
@@ -96,10 +94,9 @@ export function TemplateApplyDialog({
     return customPackages.find((p) => p.id === activePackageId)?.obligations || []
   }, [activePackageId, customPackages])
 
-  const applicableTaxItems: TemplateItem[] = useMemo(() => {
-    return getApplicableTaxesForClient(regime, taxes).map(taxToTemplateItem)
-  }, [regime, taxes])
-
+  // O dialog usa APENAS os itens do template selecionado.
+  // Não traz mais Guias de outros clientes do banco — cada Tax/Obrigação
+  // hoje é uma instância (com clientId + competência), não um modelo.
   const allItems: TemplateItem[] = useMemo(() => {
     const seenNames = new Set<string>()
     const merged: TemplateItem[] = []
@@ -109,17 +106,8 @@ export function TemplateApplyDialog({
       seenNames.add(key)
       merged.push({ ...t })
     }
-    // Dedupe por nome também dentro das guias cadastradas (uma empresa pode ter
-    // várias guias com mesmo nome — uma por competência — não devem aparecer
-    // todas no diálogo de "aplicar template")
-    for (const t of applicableTaxItems) {
-      const key = t.name.toLowerCase()
-      if (seenNames.has(key)) continue
-      seenNames.add(key)
-      merged.push(t)
-    }
     return merged
-  }, [baseTemplates, applicableTaxItems])
+  }, [baseTemplates])
 
   const [selected, setSelected] = useState<Set<string>>(new Set())
 
@@ -312,9 +300,8 @@ export function TemplateApplyDialog({
           <div className="space-y-4 py-2">
             {impostoItems.length > 0 && (
               <Section
-                title="Impostos / Guias a Recolher"
+                title="Guias de Imposto a Recolher"
                 icon={<Receipt className="size-3.5" />}
-                subtitle={`${impostoItems.filter(t => t.sourceTaxId).length} vinculados ao cadastro de impostos`}
                 items={impostoItems}
                 selected={selected}
                 onToggle={toggle}
@@ -399,11 +386,6 @@ function Section({ title, subtitle, icon, items, selected, onToggle }: SectionPr
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="font-medium text-sm">{t.name}</span>
-                  {t.sourceTaxId && (
-                    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
-                      vinculado ao imposto
-                    </span>
-                  )}
                   <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${PRIORITY_COLORS[t.priority]}`}>
                     {t.priority === "urgent" ? "Urgente" : t.priority === "high" ? "Alta" : t.priority === "medium" ? "Média" : "Baixa"}
                   </span>

@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { ResizableTableHead } from "@/components/ui/resizable-table-head"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Label } from "@/components/ui/label"
@@ -630,13 +631,13 @@ export default function ParcelamentosPage() {
                     aria-label="Selecionar todos"
                   />
                 </TableHead>
-                <TableHead>Nome</TableHead>
-                <TableHead>Cliente</TableHead>
-                <TableHead>Imposto</TableHead>
-                <TableHead>Parcela</TableHead>
-                <TableHead>Vencimento</TableHead>
-                <TableHead>Prioridade</TableHead>
-                <TableHead>Status</TableHead>
+                <ResizableTableHead defaultWidth={240} storageKey="parc-name">Parcelamento</ResizableTableHead>
+                <ResizableTableHead defaultWidth={240} storageKey="parc-client">Cliente</ResizableTableHead>
+                <ResizableTableHead defaultWidth={140} storageKey="parc-tax">Imposto</ResizableTableHead>
+                <ResizableTableHead defaultWidth={100} storageKey="parc-num">Parcela</ResizableTableHead>
+                <ResizableTableHead defaultWidth={140} storageKey="parc-due">Vencimento</ResizableTableHead>
+                <ResizableTableHead defaultWidth={120} storageKey="parc-prio">Prioridade</ResizableTableHead>
+                <ResizableTableHead defaultWidth={130} storageKey="parc-status">Status</ResizableTableHead>
                 <TableHead className="text-right">Ações</TableHead>
               </TableRow>
             </TableHeader>

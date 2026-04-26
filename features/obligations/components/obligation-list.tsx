@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Label } from "@/components/ui/label"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { ResizableTableHead } from "@/components/ui/resizable-table-head"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -778,27 +779,27 @@ export const ObligationList = forwardRef<ObligationListHandle, ObligationListPro
                   aria-label="Selecionar todas"
                 />
               </TableHead>
-              <TableHead>Obrigação</TableHead>
-              <TableHead>
+              <ResizableTableHead defaultWidth={280} storageKey="obrigacoes-name">Obrigação</ResizableTableHead>
+              <ResizableTableHead defaultWidth={260} storageKey="obrigacoes-client">
                 <Button variant="ghost" size="sm" onClick={() => toggleSort("client")} className="-ml-3">
                   Cliente
                   <ArrowUpDown className="ml-2 size-3" />
                 </Button>
-              </TableHead>
-              <TableHead>Regimes</TableHead>
-              <TableHead>
+              </ResizableTableHead>
+              <ResizableTableHead defaultWidth={160} storageKey="obrigacoes-regimes">Regimes</ResizableTableHead>
+              <ResizableTableHead defaultWidth={140} storageKey="obrigacoes-status">
                 <Button variant="ghost" size="sm" onClick={() => toggleSort("status")} className="-ml-3">
                   Status
                   <ArrowUpDown className="ml-2 size-3" />
                 </Button>
-              </TableHead>
-              <TableHead>
+              </ResizableTableHead>
+              <ResizableTableHead defaultWidth={180} storageKey="obrigacoes-due">
                 <Button variant="ghost" size="sm" onClick={() => toggleSort("dueDate")} className="-ml-3">
                   Vencimento
                   <ArrowUpDown className="ml-2 size-3" />
                 </Button>
-              </TableHead>
-              <TableHead>Ações Rápidas</TableHead>
+              </ResizableTableHead>
+              <ResizableTableHead defaultWidth={180} storageKey="obrigacoes-actions">Ações Rápidas</ResizableTableHead>
               <TableHead className="w-[50px]"></TableHead>
             </TableRow>
           </TableHeader>

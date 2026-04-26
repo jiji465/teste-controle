@@ -10,6 +10,7 @@ import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { ResizableTableHead } from "@/components/ui/resizable-table-head"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -802,28 +803,28 @@ export default function ImpostosPage() {
                             aria-label="Selecionar todos"
                           />
                         </TableHead>
-                        <TableHead className="w-[280px]">
+                        <ResizableTableHead defaultWidth={280} storageKey="impostos-name">
                           <Button variant="ghost" size="sm" onClick={() => toggleSort("name")} className="-ml-3">
-                            Nome <ArrowUpDown className="ml-2 size-3" />
+                            Imposto <ArrowUpDown className="ml-2 size-3" />
                           </Button>
-                        </TableHead>
-                        <TableHead className="w-[260px]">
+                        </ResizableTableHead>
+                        <ResizableTableHead defaultWidth={260} storageKey="impostos-client">
                           <Button variant="ghost" size="sm" onClick={() => toggleSort("client")} className="-ml-3">
                             Cliente <ArrowUpDown className="ml-2 size-3" />
                           </Button>
-                        </TableHead>
-                        <TableHead className="w-[160px]">Regimes</TableHead>
-                        <TableHead className="w-[180px]">
+                        </ResizableTableHead>
+                        <ResizableTableHead defaultWidth={160} storageKey="impostos-regimes">Regimes</ResizableTableHead>
+                        <ResizableTableHead defaultWidth={180} storageKey="impostos-due">
                           <Button variant="ghost" size="sm" onClick={() => toggleSort("dueDate")} className="-ml-3">
                             Vencimento <ArrowUpDown className="ml-2 size-3" />
                           </Button>
-                        </TableHead>
-                        <TableHead className="w-[140px]">
+                        </ResizableTableHead>
+                        <ResizableTableHead defaultWidth={140} storageKey="impostos-status">
                           <Button variant="ghost" size="sm" onClick={() => toggleSort("status")} className="-ml-3">
                             Status <ArrowUpDown className="ml-2 size-3" />
                           </Button>
-                        </TableHead>
-                        <TableHead className="w-[180px]">Ações Rápidas</TableHead>
+                        </ResizableTableHead>
+                        <ResizableTableHead defaultWidth={180} storageKey="impostos-actions">Ações Rápidas</ResizableTableHead>
                         <TableHead className="w-[50px]"></TableHead>
                       </TableRow>
                     </TableHeader>
