@@ -11,9 +11,12 @@ import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Plus, Trash2, Receipt, FileText } from "lucide-react"
+import { Checkbox } from "@/components/ui/checkbox"
+import { Badge } from "@/components/ui/badge"
+import { Plus, Trash2, Receipt, FileText, Sparkles, X } from "lucide-react"
 import { type CustomTemplatePackage, type ObligationTemplate } from "@/lib/obligation-templates"
 import { saveCustomTemplateAsync } from "@/features/templates/services"
+import { QuickAddItemsDialog } from "./quick-add-items-dialog"
 import { toast } from "sonner"
 import { useState } from "react"
 
@@ -112,6 +115,69 @@ export function TemplatePackageForm({ template, open, onOpenChange, onSave }: Pr
   }, [template, open, form])
 
   const [isSaving, setIsSaving] = useState(false)
+  const [quickAddOpen, setQuickAddOpen] = useState(false)
+  /** Seleção por field.id (estável) — useFieldArray rebobina índices ao remover */
+  const [selectedItemIds, setSelectedItemIds] = useState<Set<string>>(new Set())
+
+  const toggleItemSelection = (fieldId: string) => {
+    setSelectedItemIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(fieldId)) next.delete(fieldId)
+      else next.add(fieldId)
+      return next
+    })
+  }
+  const clearItemSelection = () => setSelectedItemIds(new Set())
+
+  /** Mapeia field.id -> index atual (recalcula a cada render porque índice muda) */
+  const fieldIndexById = (id: string) => fields.findIndex((f) => f.id === id)
+
+  const handleQuickAdd = (items: ObligationTemplate[]) => {
+    for (const it of items) {
+      append({
+        name: it.name,
+        description: it.description || "",
+        kind: it.category === "tax_guide" ? "tax" : "obligation",
+        scope: it.scope,
+        dueDay: it.dueDay,
+        recurrence: it.recurrence,
+        weekendRule: it.weekendRule,
+        priority: it.priority,
+      })
+    }
+    if (items.length > 0) {
+      toast.success(`${items.length} ite${items.length > 1 ? "ns adicionados" : "m adicionado"}. Não esqueça de salvar o template.`)
+    }
+  }
+
+  // Bulk apply nos itens selecionados
+  const applyToSelected = (
+    field: "priority" | "scope" | "weekendRule" | "recurrence" | "dueDay",
+    value: string | number,
+  ) => {
+    if (selectedItemIds.size === 0) return
+    const indexes = Array.from(selectedItemIds)
+      .map(fieldIndexById)
+      .filter((i) => i >= 0)
+    for (const idx of indexes) {
+      form.setValue(`obligations.${idx}.${field}` as any, value as any, { shouldDirty: true })
+    }
+    toast.success(`${indexes.length} item${indexes.length > 1 ? "s atualizados" : " atualizado"}`)
+  }
+
+  const removeSelected = () => {
+    if (selectedItemIds.size === 0) return
+    // Remove de trás pra frente pra índices não bagunçarem
+    const indexes = Array.from(selectedItemIds)
+      .map(fieldIndexById)
+      .filter((i) => i >= 0)
+      .sort((a, b) => b - a)
+    for (const idx of indexes) remove(idx)
+    toast.success(`${indexes.length} item${indexes.length > 1 ? "s removidos" : " removido"}`)
+    clearItemSelection()
+  }
+
+  const existingItemNames = new Set(form.watch("obligations").map((o) => o.name).filter(Boolean))
 
   const onSubmit = async (data: FormData) => {
     setIsSaving(true)
@@ -249,17 +315,101 @@ export function TemplatePackageForm({ template, open, onOpenChange, onSave }: Pr
               </div>
 
               <div className="space-y-4 pt-4 border-t">
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between flex-wrap gap-2">
                   <div>
                     <h3 className="text-lg font-medium">Itens do Pacote</h3>
                     <p className="text-sm text-muted-foreground">
                       Escolha se é um <strong>imposto</strong> a pagar ou uma <strong>obrigação</strong> a transmitir.
                     </p>
                   </div>
-                  <Button type="button" variant="outline" size="sm" onClick={() => append(newItem())}>
-                    <Plus className="size-4 mr-2" /> Adicionar item
-                  </Button>
+                  <div className="flex gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setQuickAddOpen(true)}
+                    >
+                      <Sparkles className="size-4 mr-2" /> Adicionar vários
+                    </Button>
+                    <Button type="button" variant="outline" size="sm" onClick={() => append(newItem())}>
+                      <Plus className="size-4 mr-2" /> Adicionar item
+                    </Button>
+                  </div>
                 </div>
+
+                {/* Bulk toolbar — aparece quando 1+ itens selecionados */}
+                {selectedItemIds.size > 0 && (
+                  <div className="flex items-center justify-between gap-3 rounded-lg border border-primary/40 bg-primary/5 p-3 sticky top-0 z-10 backdrop-blur-sm flex-wrap">
+                    <div className="flex items-center gap-2">
+                      <Badge variant="secondary" className="font-mono">
+                        {selectedItemIds.size} selecionado{selectedItemIds.size > 1 ? "s" : ""}
+                      </Badge>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={clearItemSelection}
+                        className="h-7 text-xs"
+                      >
+                        <X className="size-3 mr-1" /> Limpar
+                      </Button>
+                    </div>
+                    <div className="flex flex-wrap gap-2 items-center">
+                      <Select onValueChange={(v) => applyToSelected("priority", v)}>
+                        <SelectTrigger className="h-8 w-[140px]">
+                          <SelectValue placeholder="Prioridade" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="low">Baixa</SelectItem>
+                          <SelectItem value="medium">Média</SelectItem>
+                          <SelectItem value="high">Alta</SelectItem>
+                          <SelectItem value="urgent">Urgente</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <Select onValueChange={(v) => applyToSelected("scope", v)}>
+                        <SelectTrigger className="h-8 w-[130px]">
+                          <SelectValue placeholder="Esfera" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="federal">Federal</SelectItem>
+                          <SelectItem value="estadual">Estadual</SelectItem>
+                          <SelectItem value="municipal">Municipal</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <Select onValueChange={(v) => applyToSelected("weekendRule", v)}>
+                        <SelectTrigger className="h-8 w-[160px]">
+                          <SelectValue placeholder="Fim de semana" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="anticipate">Antecipa</SelectItem>
+                          <SelectItem value="postpone">Posterga</SelectItem>
+                          <SelectItem value="keep">Mantém</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <Select onValueChange={(v) => applyToSelected("recurrence", v)}>
+                        <SelectTrigger className="h-8 w-[140px]">
+                          <SelectValue placeholder="Recorrência" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="monthly">Mensal</SelectItem>
+                          <SelectItem value="bimonthly">Bimestral</SelectItem>
+                          <SelectItem value="quarterly">Trimestral</SelectItem>
+                          <SelectItem value="semiannual">Semestral</SelectItem>
+                          <SelectItem value="annual">Anual</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={removeSelected}
+                        className="h-8 text-destructive hover:text-destructive"
+                      >
+                        <Trash2 className="size-3.5 mr-1" /> Excluir
+                      </Button>
+                    </div>
+                  </div>
+                )}
 
                 <div className="space-y-4">
                   {fields.map((field, index) => (
@@ -268,6 +418,8 @@ export function TemplatePackageForm({ template, open, onOpenChange, onSave }: Pr
                       index={index}
                       form={form}
                       onRemove={() => remove(index)}
+                      isSelected={selectedItemIds.has(field.id)}
+                      onToggleSelect={() => toggleItemSelection(field.id)}
                     />
                   ))}
 
@@ -297,6 +449,13 @@ export function TemplatePackageForm({ template, open, onOpenChange, onSave }: Pr
             </Button>
           </DialogFooter>
         </div>
+
+        <QuickAddItemsDialog
+          open={quickAddOpen}
+          onOpenChange={setQuickAddOpen}
+          existingNames={existingItemNames}
+          onAdd={handleQuickAdd}
+        />
       </DialogContent>
     </Dialog>
   )
@@ -308,13 +467,30 @@ type ItemCardProps = {
   index: number
   form: ReturnType<typeof useForm<FormData>>
   onRemove: () => void
+  isSelected?: boolean
+  onToggleSelect?: () => void
 }
 
-function TemplateItemCard({ index, form, onRemove }: ItemCardProps) {
+function TemplateItemCard({ index, form, onRemove, isSelected, onToggleSelect }: ItemCardProps) {
   const kind = form.watch(`obligations.${index}.kind`)
 
   return (
-    <div className="p-4 border rounded-lg bg-muted/20 relative">
+    <div
+      className={`p-4 border rounded-lg relative transition-colors ${
+        isSelected ? "border-primary/50 bg-primary/5 ring-1 ring-primary/30" : "bg-muted/20"
+      }`}
+    >
+      {/* Checkbox de seleção (top-left) — só renderiza se onToggleSelect foi passado */}
+      {onToggleSelect && (
+        <div className="absolute left-3 top-3.5">
+          <Checkbox
+            checked={!!isSelected}
+            onCheckedChange={onToggleSelect}
+            aria-label="Selecionar item para edição em lote"
+          />
+        </div>
+      )}
+
       <div className="absolute right-2 top-2">
         <Button
           type="button"
@@ -328,7 +504,7 @@ function TemplateItemCard({ index, form, onRemove }: ItemCardProps) {
         </Button>
       </div>
 
-      <div className="space-y-4 pr-8">
+      <div className={`space-y-4 pr-8 ${onToggleSelect ? "pl-8" : ""}`}>
         {/* Tipo (Imposto vs Obrigação) como tabs */}
         <FormField
           control={form.control}
