@@ -40,7 +40,13 @@ import {
   RotateCcw,
   Calendar as CalendarIcon,
   ArrowUpDown,
+  Building2,
+  CalendarDays,
+  Layers,
+  Scale,
+  AlertCircle as PriorityIcon,
 } from "lucide-react"
+import { ActiveFilterChips, FilterShell, FilterField, type ActiveChip } from "@/components/filter-panel"
 import type { Tax, TaxRegime } from "@/lib/types"
 import { TAX_REGIME_LABELS, TAX_REGIME_COLORS } from "@/lib/types"
 import { useData } from "@/contexts/data-context"
@@ -599,10 +605,44 @@ export default function ImpostosPage() {
                 </Button>
               </div>
 
+              {/* Chips de filtros ativos */}
+              {(() => {
+                const chips: ActiveChip[] = []
+                if (clientFilter && clientFilter !== "all") {
+                  const c = clients.find((cl) => cl.id === clientFilter)
+                  chips.push({ label: `Cliente: ${c?.name ?? "—"}`, onRemove: () => setClientFilter("all") })
+                }
+                if (competencyFilter) {
+                  chips.push({ label: `Competência: ${competencyFilter}`, onRemove: () => setCompetencyFilter("") })
+                }
+                if (regimeFilter !== "all") {
+                  chips.push({ label: `Regime: ${TAX_REGIME_LABELS[regimeFilter as TaxRegime] ?? regimeFilter}`, onRemove: () => setRegimeFilter("all") })
+                }
+                if (scopeFilter !== "all") {
+                  const labels: Record<string, string> = { federal: "Federal", estadual: "Estadual", municipal: "Municipal" }
+                  chips.push({ label: `Esfera: ${labels[scopeFilter] ?? scopeFilter}`, onRemove: () => setScopeFilter("all") })
+                }
+                if (priorityFilter !== "all") {
+                  const labels: Record<string, string> = { urgent: "Urgente", high: "Alta", medium: "Média", low: "Baixa" }
+                  chips.push({ label: `Prioridade: ${labels[priorityFilter] ?? priorityFilter}`, onRemove: () => setPriorityFilter("all") })
+                }
+                return (
+                  <ActiveFilterChips
+                    chips={chips}
+                    onClearAll={() => {
+                      setClientFilter("all")
+                      setCompetencyFilter("")
+                      setRegimeFilter("all")
+                      setScopeFilter("all")
+                      setPriorityFilter("all")
+                    }}
+                  />
+                )
+              })()}
+
               {showFilters && (
-                <div className="grid sm:grid-cols-3 gap-4 p-4 border rounded-lg bg-muted/50">
-                  <div className="grid gap-2">
-                    <label className="text-sm font-medium">Cliente</label>
+                <FilterShell cols={3}>
+                  <FilterField icon={<Building2 className="size-3.5" />} label="Cliente" active={!!clientFilter && clientFilter !== "all"}>
                     <Select value={clientFilter || "all"} onValueChange={setClientFilter}>
                       <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
@@ -612,18 +652,16 @@ export default function ImpostosPage() {
                         ))}
                       </SelectContent>
                     </Select>
-                  </div>
-                  <div className="grid gap-2">
-                    <label className="text-sm font-medium">Mês de competência</label>
+                  </FilterField>
+                  <FilterField icon={<CalendarDays className="size-3.5" />} label="Mês de competência" active={!!competencyFilter}>
                     <Input
                       type="month"
                       value={competencyFilter || ""}
                       onChange={(e) => setCompetencyFilter(e.target.value)}
                       placeholder="Qualquer"
                     />
-                  </div>
-                  <div className="grid gap-2">
-                    <label className="text-sm font-medium">Regime tributário</label>
+                  </FilterField>
+                  <FilterField icon={<Scale className="size-3.5" />} label="Regime tributário" active={regimeFilter !== "all"}>
                     <Select value={regimeFilter} onValueChange={setRegimeFilter}>
                       <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
@@ -633,9 +671,8 @@ export default function ImpostosPage() {
                         ))}
                       </SelectContent>
                     </Select>
-                  </div>
-                  <div className="grid gap-2">
-                    <label className="text-sm font-medium">Esfera</label>
+                  </FilterField>
+                  <FilterField icon={<Layers className="size-3.5" />} label="Esfera" active={scopeFilter !== "all"}>
                     <Select value={scopeFilter} onValueChange={setScopeFilter}>
                       <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
@@ -645,9 +682,8 @@ export default function ImpostosPage() {
                         <SelectItem value="municipal">Municipal</SelectItem>
                       </SelectContent>
                     </Select>
-                  </div>
-                  <div className="grid gap-2">
-                    <label className="text-sm font-medium">Prioridade</label>
+                  </FilterField>
+                  <FilterField icon={<PriorityIcon className="size-3.5" />} label="Prioridade" active={priorityFilter !== "all"}>
                     <Select value={priorityFilter} onValueChange={setPriorityFilter}>
                       <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
@@ -658,8 +694,8 @@ export default function ImpostosPage() {
                         <SelectItem value="low">Baixa</SelectItem>
                       </SelectContent>
                     </Select>
-                  </div>
-                </div>
+                  </FilterField>
+                </FilterShell>
               )}
 
               <BulkActionsBar

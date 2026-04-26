@@ -10,6 +10,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { ResizableTableHead } from "@/components/ui/resizable-table-head"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { ActiveFilterChips, FilterShell, FilterField, type ActiveChip } from "@/components/filter-panel"
+import { Building2, AlertCircle as PriorityIcon, User, CalendarDays, Layers } from "lucide-react"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { BulkActionsBar } from "@/components/bulk-actions-bar"
 import { ConfirmDialog, type ConfirmState } from "@/components/ui/confirm-dialog"
@@ -591,10 +593,44 @@ export const ObligationList = forwardRef<ObligationListHandle, ObligationListPro
         </Button>
       </div>
 
+      {/* Chips de filtros ativos (sempre visíveis quando ha filtros) */}
+      {(() => {
+        const chips: ActiveChip[] = []
+        if (clientFilter !== "all") {
+          const c = clients.find((cl) => cl.id === clientFilter)
+          chips.push({ label: `Cliente: ${c?.name ?? "—"}`, onRemove: () => setClientFilter("all") })
+        }
+        if (priorityFilter !== "all") {
+          const labels: Record<string, string> = { urgent: "Urgente", high: "Alta", medium: "Média", low: "Baixa" }
+          chips.push({ label: `Prioridade: ${labels[priorityFilter] ?? priorityFilter}`, onRemove: () => setPriorityFilter("all") })
+        }
+        if (assigneeFilter !== "all") {
+          chips.push({ label: `Responsável: ${assigneeFilter}`, onRemove: () => setAssigneeFilter("all") })
+        }
+        if (competencyFilter) {
+          chips.push({ label: `Competência: ${competencyFilter}`, onRemove: () => setCompetencyFilter("") })
+        }
+        if (scopeFilter !== "all") {
+          const labels: Record<string, string> = { federal: "Federal", estadual: "Estadual", municipal: "Municipal" }
+          chips.push({ label: `Esfera: ${labels[scopeFilter] ?? scopeFilter}`, onRemove: () => setScopeFilter("all") })
+        }
+        return (
+          <ActiveFilterChips
+            chips={chips}
+            onClearAll={() => {
+              setClientFilter("all")
+              setPriorityFilter("all")
+              setAssigneeFilter("all")
+              setCompetencyFilter("")
+              setScopeFilter("all")
+            }}
+          />
+        )
+      })()}
+
       {showFilters && (
-        <div className="grid sm:grid-cols-3 gap-4 p-4 border rounded-lg bg-muted/50">
-          <div className="grid gap-2">
-            <label className="text-sm font-medium">Cliente</label>
+        <FilterShell cols={3}>
+          <FilterField icon={<Building2 className="size-3.5" />} label="Cliente" active={clientFilter !== "all"}>
             <Select value={clientFilter} onValueChange={setClientFilter}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
@@ -604,9 +640,8 @@ export const ObligationList = forwardRef<ObligationListHandle, ObligationListPro
                 ))}
               </SelectContent>
             </Select>
-          </div>
-          <div className="grid gap-2">
-            <label className="text-sm font-medium">Prioridade</label>
+          </FilterField>
+          <FilterField icon={<PriorityIcon className="size-3.5" />} label="Prioridade" active={priorityFilter !== "all"}>
             <Select value={priorityFilter} onValueChange={setPriorityFilter}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
@@ -617,9 +652,8 @@ export const ObligationList = forwardRef<ObligationListHandle, ObligationListPro
                 <SelectItem value="low">Baixa</SelectItem>
               </SelectContent>
             </Select>
-          </div>
-          <div className="grid gap-2">
-            <label className="text-sm font-medium">Responsável</label>
+          </FilterField>
+          <FilterField icon={<User className="size-3.5" />} label="Responsável" active={assigneeFilter !== "all"}>
             <Select value={assigneeFilter} onValueChange={setAssigneeFilter}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
@@ -632,18 +666,19 @@ export const ObligationList = forwardRef<ObligationListHandle, ObligationListPro
                 ))}
               </SelectContent>
             </Select>
-          </div>
-          <div className="grid gap-2">
-            <label className="text-sm font-medium">Mês de competência</label>
-            <Input
-              type="month"
-              value={competencyFilter}
-              onChange={(e) => setCompetencyFilter(e.target.value)}
-              placeholder="Qualquer"
-            />
-          </div>
-          <div className="grid gap-2">
-            <label className="text-sm font-medium">Esfera</label>
+          </FilterField>
+          <FilterField icon={<CalendarDays className="size-3.5" />} label="Mês de competência" active={!!competencyFilter}>
+            <div className="relative">
+              <Input
+                type="month"
+                value={competencyFilter}
+                onChange={(e) => setCompetencyFilter(e.target.value)}
+                placeholder="Qualquer"
+                className="pr-2"
+              />
+            </div>
+          </FilterField>
+          <FilterField icon={<Layers className="size-3.5" />} label="Esfera" active={scopeFilter !== "all"}>
             <Select value={scopeFilter} onValueChange={setScopeFilter}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
@@ -653,8 +688,8 @@ export const ObligationList = forwardRef<ObligationListHandle, ObligationListPro
                 <SelectItem value="municipal">Municipal</SelectItem>
               </SelectContent>
             </Select>
-          </div>
-        </div>
+          </FilterField>
+        </FilterShell>
       )}
 
       <BulkActionsBar

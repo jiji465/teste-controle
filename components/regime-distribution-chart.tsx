@@ -5,7 +5,6 @@ import {
   PieChart,
   Pie,
   Cell,
-  Tooltip,
   ResponsiveContainer,
   RadialBarChart,
   RadialBar,
@@ -202,6 +201,7 @@ function RegimeCard({ clients }: { clients: Client[] }) {
                 stroke="hsl(var(--background))"
                 strokeWidth={2}
                 cornerRadius={6}
+                isAnimationActive={false}
                 onMouseEnter={(_, i) => setActiveIdx(i)}
                 onMouseLeave={() => setActiveIdx(null)}
               >
@@ -209,23 +209,8 @@ function RegimeCard({ clients }: { clients: Client[] }) {
                   <Cell key={d.key} fill={`url(#regime-grad-${d.key})`} />
                 ))}
               </Pie>
-              <Tooltip
-                cursor={false}
-                content={({ active, payload }) => {
-                  if (!active || !payload || !payload.length) return null
-                  const p = payload[0].payload as RegimeDatum
-                  const pct = total > 0 ? Math.round((p.value / total) * 100) : 0
-                  return (
-                    <div className="rounded-md border bg-popover px-2.5 py-1.5 text-xs shadow-md">
-                      <div className="flex items-center gap-1.5">
-                        <span className="inline-block size-2 rounded-full" style={{ backgroundColor: p.color }} />
-                        <span className="font-medium">{p.name}</span>
-                      </div>
-                      <div className="mt-0.5 text-muted-foreground">{p.value} · {pct}%</div>
-                    </div>
-                  )
-                }}
-              />
+              {/* Tooltip removido — o centro + a legenda já mostram a mesma info,
+                  e o tooltip flutuando sobre o centro causava sobreposição visual. */}
             </PieChart>
           </ResponsiveContainer>
           <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
