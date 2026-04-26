@@ -15,9 +15,9 @@ export const TEMPLATE_ITEM_CATALOG: CatalogItem[] = [
   // ── Federais — Simples Nacional ────────────────────────────────────────────
   { group: "Simples Nacional", name: "DAS", description: "Documento de Arrecadação do Simples Nacional", category: "tax_guide", scope: "federal", dueDay: 20, frequency: "monthly", recurrence: "monthly", weekendRule: "anticipate", priority: "urgent" },
   { group: "Simples Nacional", name: "PGDAS-D", description: "Programa Gerador do Documento de Arrecadação - Declaração", category: "declaration", scope: "federal", dueDay: 20, frequency: "monthly", recurrence: "monthly", weekendRule: "anticipate", priority: "high" },
-  { group: "Simples Nacional", name: "DEFIS", description: "Declaração de Informações Socioeconômicas e Fiscais", category: "declaration", scope: "federal", dueDay: 31, frequency: "annual", recurrence: "annual", weekendRule: "anticipate", priority: "high" },
+  { group: "Simples Nacional", name: "DEFIS", description: "DEFIS - vence 31/03 do ano seguinte ao exercício", category: "declaration", scope: "federal", dueDay: 31, dueMonth: 3, frequency: "annual", recurrence: "annual", weekendRule: "anticipate", priority: "high" },
   { group: "Simples Nacional", name: "DAS-MEI", description: "Documento de Arrecadação do MEI", category: "tax_guide", scope: "federal", dueDay: 20, frequency: "monthly", recurrence: "monthly", weekendRule: "anticipate", priority: "urgent" },
-  { group: "Simples Nacional", name: "DASN-SIMEI", description: "Declaração Anual do Simples Nacional - MEI", category: "declaration", scope: "federal", dueDay: 31, frequency: "annual", recurrence: "annual", weekendRule: "anticipate", priority: "high" },
+  { group: "Simples Nacional", name: "DASN-SIMEI", description: "DASN-SIMEI - vence 31/05 do ano seguinte ao exercício", category: "declaration", scope: "federal", dueDay: 31, dueMonth: 5, frequency: "annual", recurrence: "annual", weekendRule: "anticipate", priority: "high" },
 
   // ── Federais — Lucro Presumido / Real ──────────────────────────────────────
   // IRPJ/CSLL: vencem ÚLTIMO DIA ÚTIL do mês seguinte (Lei 9.430/96 art. 5º).
@@ -29,7 +29,7 @@ export const TEMPLATE_ITEM_CATALOG: CatalogItem[] = [
   { group: "Lucro Presumido / Real", name: "CSLL Mensal", description: "CSLL mensal — vence último dia útil do mês seguinte", category: "tax_guide", scope: "federal", dueDay: 31, frequency: "monthly", recurrence: "monthly", weekendRule: "anticipate", priority: "high" },
   { group: "Lucro Presumido / Real", name: "PIS", description: "Programa de Integração Social", category: "tax_guide", scope: "federal", dueDay: 25, frequency: "monthly", recurrence: "monthly", weekendRule: "anticipate", priority: "high" },
   { group: "Lucro Presumido / Real", name: "COFINS", description: "Contribuição para Financiamento da Seguridade Social", category: "tax_guide", scope: "federal", dueDay: 25, frequency: "monthly", recurrence: "monthly", weekendRule: "anticipate", priority: "high" },
-  { group: "Lucro Presumido / Real", name: "DCTF", description: "Declaração de Débitos e Créditos Tributários Federais", category: "declaration", scope: "federal", dueDay: 15, frequency: "monthly", recurrence: "monthly", weekendRule: "anticipate", priority: "high" },
+  { group: "Lucro Presumido / Real", name: "DCTFWeb", description: "DCTFWeb — vence último dia útil do mês seguinte (substitui a antiga DCTF)", category: "declaration", scope: "federal", dueDay: 31, frequency: "monthly", recurrence: "monthly", weekendRule: "anticipate", priority: "high" },
   { group: "Lucro Presumido / Real", name: "EFD-Contribuições", description: "Escrituração Fiscal Digital de Contribuições", category: "sped", scope: "federal", dueDay: 10, frequency: "monthly", recurrence: "monthly", weekendRule: "anticipate", priority: "high" },
 
   // ── Federais — Genéricos / Industriais ─────────────────────────────────────

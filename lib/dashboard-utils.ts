@@ -23,6 +23,7 @@ export const getObligationsWithDetails = (
         obligation.competencyMonth,
         obligation.dueDay,
         obligation.weekendRule,
+        obligation.dueMonth, // anuais com data fixa (DEFIS=3, DASN-SIMEI=5)
       )
       const calculatedDueDate = (
         fromCompetency ??

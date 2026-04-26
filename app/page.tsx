@@ -113,7 +113,7 @@ export default function DashboardPage() {
   const filteredTaxes = useMemo(() => {
     if (isLoading) return []
     return taxes.filter((t) => {
-      const date = calculateDueDateFromCompetency(t.competencyMonth, t.dueDay, t.weekendRule)
+      const date = calculateDueDateFromCompetency(t.competencyMonth, t.dueDay, t.weekendRule, t.dueMonth)
       return date ? isInPeriod(date) : true
     })
   }, [taxes, isLoading, isInPeriod])

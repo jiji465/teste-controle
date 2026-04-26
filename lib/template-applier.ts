@@ -135,6 +135,7 @@ export async function applyTemplateToClient(
           scope: item.scope,
           competencyMonth: competency,
           dueDay: item.dueDay,
+          dueMonth: item.dueMonth, // pra anuais com data fixa (DEFIS, DASN-SIMEI)
           recurrence: item.recurrence,
           weekendRule: item.weekendRule,
           priority: item.priority,
@@ -160,6 +161,7 @@ export async function applyTemplateToClient(
           scope: item.scope,
           applicableRegimes: regime ? [regime] : [],
           dueDay: item.dueDay,
+          dueMonth: item.dueMonth, // pra anuais com data fixa (DEFIS, DASN-SIMEI)
           competencyMonth: competency,
           frequency: item.frequency,
           recurrence: item.recurrence,

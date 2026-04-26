@@ -166,18 +166,31 @@ export const calculateDueDate = (
 
 /**
  * Calcula a data de vencimento a partir da competência.
- * Pattern brasileiro: vencimento no mês SEGUINTE ao da competência.
- * Ex: competência "2026-01", dueDay 20 → vencimento 20/02/2026
+ * Pattern brasileiro padrão: vencimento no mês SEGUINTE ao da competência.
+ * Ex: competência "2026-01", dueDay 20 → vencimento 20/02/2026.
+ *
+ * Caso especial — ANUAL com mês fixo: quando `dueMonth` (1-12) é informado,
+ * retorna `(ano da competência + 1, dueMonth, dueDay)`. Usado pra DEFIS
+ * (vence 31/03 do ano seguinte → dueMonth=3) e DASN-SIMEI (31/05 → dueMonth=5).
  */
 export const calculateDueDateFromCompetency = (
   competencyMonth: string | undefined,
   dueDay: number | undefined,
   weekendRule: WeekendRule = "postpone",
+  dueMonth?: number,
 ): Date | null => {
   if (!competencyMonth || !dueDay) return null
   const match = competencyMonth.match(/^(\d{4})-(\d{2})$/)
   if (!match) return null
   const year = Number(match[1])
+
+  // Caso especial: anual com mês fixo (DEFIS, DASN-SIMEI)
+  if (dueMonth && dueMonth >= 1 && dueMonth <= 12) {
+    const dueDate = buildSafeDate(year + 1, dueMonth - 1, dueDay)
+    return adjustForWeekend(dueDate, weekendRule)
+  }
+
+  // Padrão: mês seguinte
   const monthIdx = Number(match[2]) - 1 // 0-based
   const nextMonthYear = monthIdx === 11 ? year + 1 : year
   const nextMonthIdx = monthIdx === 11 ? 0 : monthIdx + 1
@@ -207,15 +220,24 @@ export const calculateDueDateInfoFromCompetency = (
   competencyMonth: string | undefined,
   dueDay: number | undefined,
   weekendRule: WeekendRule = "postpone",
+  dueMonth?: number,
 ): DueDateInfo | null => {
   if (!competencyMonth || !dueDay) return null
   const match = competencyMonth.match(/^(\d{4})-(\d{2})$/)
   if (!match) return null
   const year = Number(match[1])
-  const monthIdx = Number(match[2]) - 1
-  const nextMonthYear = monthIdx === 11 ? year + 1 : year
-  const nextMonthIdx = monthIdx === 11 ? 0 : monthIdx + 1
-  const originalDate = buildSafeDate(nextMonthYear, nextMonthIdx, dueDay)
+
+  let originalDate: Date
+  if (dueMonth && dueMonth >= 1 && dueMonth <= 12) {
+    // Anual com mês fixo (DEFIS, DASN-SIMEI)
+    originalDate = buildSafeDate(year + 1, dueMonth - 1, dueDay)
+  } else {
+    const monthIdx = Number(match[2]) - 1
+    const nextMonthYear = monthIdx === 11 ? year + 1 : year
+    const nextMonthIdx = monthIdx === 11 ? 0 : monthIdx + 1
+    originalDate = buildSafeDate(nextMonthYear, nextMonthIdx, dueDay)
+  }
+
   const adjusted = adjustForWeekend(originalDate, weekendRule)
   const wasAdjusted = !sameYmd(originalDate, adjusted)
   return {
