@@ -7,84 +7,89 @@ import type { ObligationWithDetails } from "@/lib/types"
 
 type ProductivityStatsProps = {
   obligations: ObligationWithDetails[]
+  /** Rótulo do período filtrado (ex: "Março/2026"). null/undefined => sem filtro */
+  periodLabel?: string | null
 }
 
-export function ProductivityStats({ obligations }: ProductivityStatsProps) {
-  const { completedThisMonth, inProgress, overdue, onTimeRate } = useMemo(() => {
+export function ProductivityStats({ obligations, periodLabel }: ProductivityStatsProps) {
+  const { completedCount, inProgress, overdue, onTimeRate } = useMemo(() => {
     const now = new Date()
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
-    const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0)
-    const last30 = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
 
-    const completedThisMonth: ObligationWithDetails[] = []
-    const inProgress: ObligationWithDetails[] = []
-    const overdue: ObligationWithDetails[] = []
-    const completedLast30: ObligationWithDetails[] = []
-    const totalLast30: ObligationWithDetails[] = []
+    let completed = 0
+    let inProgress = 0
+    let overdue = 0
+    let completedOnTime = 0
+    let totalEvaluable = 0 // obrigações que já venceram OU foram concluídas no período
 
-    // Single pass O(n) em vez de 5 filters separados
     for (const obl of obligations) {
       const due = new Date(obl.calculatedDueDate)
-      const completed = obl.completedAt ? new Date(obl.completedAt) : null
+      const completedAt = obl.completedAt ? new Date(obl.completedAt) : null
 
-      if (completed && completed >= startOfMonth && completed <= endOfMonth) {
-        completedThisMonth.push(obl)
+      if (obl.status === "completed") completed++
+      if (obl.status === "in_progress") inProgress++
+      if (obl.status !== "completed" && due < now) overdue++
+
+      // Taxa no prazo: concluídas até a data de vencimento, sobre todas avaliáveis
+      if (completedAt || due < now) {
+        totalEvaluable++
+        if (completedAt && completedAt <= due) completedOnTime++
       }
-      if (obl.status === "in_progress") inProgress.push(obl)
-      if (obl.status !== "completed" && due < now) overdue.push(obl)
-      if (due >= last30 && due <= now) totalLast30.push(obl)
-      if (completed && completed >= last30 && completed <= due) completedLast30.push(obl)
     }
 
-    const rate =
-      totalLast30.length > 0 ? Math.round((completedLast30.length / totalLast30.length) * 100) : 0
-
-    return { completedThisMonth, inProgress, overdue, onTimeRate: rate }
+    const rate = totalEvaluable > 0 ? Math.round((completedOnTime / totalEvaluable) * 100) : 0
+    return { completedCount: completed, inProgress, overdue, onTimeRate: rate }
   }, [obligations])
 
+  const completedLabel = periodLabel ? `Concluídas em ${periodLabel}` : "Concluídas"
+  const rateLabel = periodLabel ? "No período" : "Geral"
+
   return (
-    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-      <Card>
+    <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
+      <Card className="ring-1 ring-emerald-500/10 hover:shadow-md transition-shadow">
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-          <CardTitle className="text-sm font-medium">Concluídas este Mês</CardTitle>
-          <CheckCircle2 className="size-4 text-green-600" />
+          <CardTitle className="text-sm font-medium">{completedLabel}</CardTitle>
+          <CheckCircle2 className="size-4 text-emerald-600" />
         </CardHeader>
         <CardContent>
-          <div className="text-2xl font-bold">{completedThisMonth.length}</div>
+          <div className="text-2xl font-bold tabular-nums">{completedCount}</div>
           <p className="text-xs text-muted-foreground">Obrigações finalizadas</p>
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="ring-1 ring-blue-500/10 hover:shadow-md transition-shadow">
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
           <CardTitle className="text-sm font-medium">Em Andamento</CardTitle>
           <Clock className="size-4 text-blue-600" />
         </CardHeader>
         <CardContent>
-          <div className="text-2xl font-bold">{inProgress.length}</div>
+          <div className="text-2xl font-bold tabular-nums">{inProgress}</div>
           <p className="text-xs text-muted-foreground">Sendo processadas</p>
         </CardContent>
       </Card>
 
-      <Card>
+      <Card
+        className={`ring-1 ${overdue > 0 ? "ring-red-500/30 bg-red-50/40 dark:bg-red-950/10" : "ring-red-500/10"} hover:shadow-md transition-shadow`}
+      >
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
           <CardTitle className="text-sm font-medium">Atrasadas</CardTitle>
           <AlertCircle className="size-4 text-red-600" />
         </CardHeader>
         <CardContent>
-          <div className="text-2xl font-bold">{overdue.length}</div>
-          <p className="text-xs text-muted-foreground">Requerem atenção</p>
+          <div className="text-2xl font-bold tabular-nums">{overdue}</div>
+          <p className="text-xs text-muted-foreground">
+            {overdue > 0 ? "Requerem atenção" : "Tudo em dia"}
+          </p>
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="ring-1 ring-primary/10 hover:shadow-md transition-shadow">
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
           <CardTitle className="text-sm font-medium">Taxa no Prazo</CardTitle>
           <TrendingUp className="size-4 text-primary" />
         </CardHeader>
         <CardContent>
-          <div className="text-2xl font-bold">{onTimeRate}%</div>
-          <p className="text-xs text-muted-foreground">Últimos 30 dias</p>
+          <div className="text-2xl font-bold tabular-nums">{onTimeRate}%</div>
+          <p className="text-xs text-muted-foreground">{rateLabel}</p>
         </CardContent>
       </Card>
     </div>
