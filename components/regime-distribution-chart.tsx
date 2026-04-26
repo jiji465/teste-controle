@@ -355,16 +355,24 @@ function StatesCard({ clients }: { clients: Client[] }) {
 }
 
 // ============================================================
-// Wrapper público
+// Wrapper público — grid adaptativo (centraliza quando < 3 cards)
 // ============================================================
 export function RegimeDistributionChart({ obligations, clients }: RegimeDistributionChartProps) {
   if (obligations.length === 0 && clients.length === 0) return null
 
-  return (
-    <div className="grid gap-4 lg:grid-cols-3">
-      {obligations.length > 0 && <ObligationsHealthCard obligations={obligations} />}
-      {clients.length > 0 && <RegimeCard clients={clients} />}
-      {clients.length > 0 && <StatesCard clients={clients} />}
-    </div>
-  )
+  const cards = [
+    obligations.length > 0 && <ObligationsHealthCard key="health" obligations={obligations} />,
+    clients.length > 0 && <RegimeCard key="regime" clients={clients} />,
+    clients.length > 0 && <StatesCard key="states" clients={clients} />,
+  ].filter(Boolean)
+
+  // Grid adaptativo: 3 cards = 3 cols full, 2 cards = 2 cols centrado, 1 card = centralizado
+  const gridClass =
+    cards.length >= 3
+      ? "grid gap-4 lg:grid-cols-3"
+      : cards.length === 2
+        ? "grid gap-4 sm:grid-cols-2 lg:max-w-5xl mx-auto"
+        : "grid gap-4 max-w-md mx-auto"
+
+  return <div className={gridClass}>{cards}</div>
 }
