@@ -12,7 +12,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Plus, Trash2, Receipt, FileText } from "lucide-react"
-import { saveCustomTemplate, type CustomTemplatePackage, type ObligationTemplate } from "@/lib/obligation-templates"
+import { type CustomTemplatePackage, type ObligationTemplate } from "@/lib/obligation-templates"
+import { saveCustomTemplateAsync } from "@/features/templates/services"
+import { toast } from "sonner"
+import { useState } from "react"
 
 // No template mostramos só 2 tipos para o usuário: "Imposto" (guia a pagar) e "Obrigação" (declaração a transmitir).
 // Internamente mapeamos para ObligationCategory.
@@ -108,7 +111,11 @@ export function TemplatePackageForm({ template, open, onOpenChange, onSave }: Pr
     }
   }, [template, open, form])
 
-  const onSubmit = (data: FormData) => {
+  const [isSaving, setIsSaving] = useState(false)
+
+  const onSubmit = async (data: FormData) => {
+    setIsSaving(true)
+    const now = new Date().toISOString()
     const pkg: CustomTemplatePackage = {
       id: template?.id || crypto.randomUUID(),
       name: data.name,
@@ -126,11 +133,21 @@ export function TemplatePackageForm({ template, open, onOpenChange, onSave }: Pr
         weekendRule: o.weekendRule,
         priority: o.priority,
       })),
-      createdAt: template?.createdAt || new Date().toISOString(),
+      createdAt: template?.createdAt || now,
+      updatedAt: now,
     }
-    saveCustomTemplate(pkg)
-    onSave()
-    onOpenChange(false)
+    try {
+      // Aguarda Supabase confirmar antes de fechar — assim a edição "vai pra
+      // valer" e a UI não fecha em cima de uma race condition.
+      await saveCustomTemplateAsync(pkg)
+      toast.success(template ? "Template atualizado" : "Template criado")
+      onSave()
+      onOpenChange(false)
+    } catch (err) {
+      toast.error(`Falha ao salvar: ${err instanceof Error ? err.message : "erro desconhecido"}`)
+    } finally {
+      setIsSaving(false)
+    }
   }
 
   return (
@@ -272,11 +289,11 @@ export function TemplatePackageForm({ template, open, onOpenChange, onSave }: Pr
 
         <div className="p-6 border-t bg-muted/10">
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={isSaving}>
               Cancelar
             </Button>
-            <Button type="submit" form="template-form">
-              Salvar Template
+            <Button type="submit" form="template-form" disabled={isSaving}>
+              {isSaving ? "Salvando…" : "Salvar Template"}
             </Button>
           </DialogFooter>
         </div>
