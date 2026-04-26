@@ -38,6 +38,7 @@ import {
   Filter,
   RotateCcw,
   Calendar as CalendarIcon,
+  ArrowUpDown,
 } from "lucide-react"
 import type { Tax, TaxRegime } from "@/lib/types"
 import { TAX_REGIME_LABELS, TAX_REGIME_COLORS } from "@/lib/types"
@@ -86,6 +87,12 @@ export default function ImpostosPage() {
   const [bulkAssignedTo, setBulkAssignedTo] = useState("")
   const [taxSearch, setTaxSearch] = useState("")
   const [showFilters, setShowFilters] = useState(false)
+  const [sortBy, setSortBy] = useState<"client" | "status" | "dueDate" | "name">("dueDate")
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc")
+  const toggleSort = (field: "client" | "status" | "dueDate" | "name") => {
+    if (sortBy === field) setSortOrder(sortOrder === "asc" ? "desc" : "asc")
+    else { setSortBy(field); setSortOrder("asc") }
+  }
   const [confirmState, setConfirmState] = useState<ConfirmState>(null)
 
   const activeFilterCount =
@@ -361,10 +368,36 @@ export default function ImpostosPage() {
     })
   }, [taxes, taxSearch, regimeFilter, scopeFilter, priorityFilter, clientFilter, competencyFilter, isInPeriod])
 
-  const pendingTaxes = searchedTaxes.filter((t) => t.status === "pending")
-  const inProgressTaxes = searchedTaxes.filter((t) => t.status === "in_progress")
-  const completedTaxes = searchedTaxes.filter((t) => t.status === "completed")
-  const overdueTaxes = searchedTaxes.filter((t) => t.status === "overdue")
+  const sortedTaxes = useMemo(() => {
+    const arr = [...searchedTaxes]
+    arr.sort((a, b) => {
+      let cmp = 0
+      if (sortBy === "name") cmp = a.name.localeCompare(b.name)
+      else if (sortBy === "client") {
+        const an = clients.find((c) => c.id === a.clientId)?.name ?? ""
+        const bn = clients.find((c) => c.id === b.clientId)?.name ?? ""
+        cmp = an.localeCompare(bn)
+      }
+      else if (sortBy === "status") {
+        const order = { overdue: 0, pending: 1, in_progress: 2, completed: 3 } as const
+        cmp = (order[a.status] ?? 9) - (order[b.status] ?? 9)
+      }
+      else if (sortBy === "dueDate") {
+        const ad = calculateDueDateFromCompetency(a.competencyMonth, a.dueDay, a.weekendRule)
+        const bd = calculateDueDateFromCompetency(b.competencyMonth, b.dueDay, b.weekendRule)
+        const at = ad ? ad.getTime() : Number.MAX_SAFE_INTEGER
+        const bt = bd ? bd.getTime() : Number.MAX_SAFE_INTEGER
+        cmp = at - bt
+      }
+      return sortOrder === "asc" ? cmp : -cmp
+    })
+    return arr
+  }, [searchedTaxes, sortBy, sortOrder, clients])
+
+  const pendingTaxes = sortedTaxes.filter((t) => t.status === "pending")
+  const inProgressTaxes = sortedTaxes.filter((t) => t.status === "in_progress")
+  const completedTaxes = sortedTaxes.filter((t) => t.status === "completed")
+  const overdueTaxes = sortedTaxes.filter((t) => t.status === "overdue")
 
   const taxExportColumns: ExportColumn<Tax>[] = [
     { header: "Nome", width: 24, accessor: (t) => t.name },
@@ -390,7 +423,7 @@ export default function ImpostosPage() {
       case "overdue":
         return overdueTaxes
       default:
-        return searchedTaxes
+        return sortedTaxes
     }
   }
 
@@ -769,12 +802,28 @@ export default function ImpostosPage() {
                             aria-label="Selecionar todos"
                           />
                         </TableHead>
-                        <TableHead>Nome</TableHead>
-                        <TableHead>Cliente</TableHead>
-                        <TableHead>Regimes</TableHead>
-                        <TableHead>Vencimento</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead>Ações Rápidas</TableHead>
+                        <TableHead className="w-[280px]">
+                          <Button variant="ghost" size="sm" onClick={() => toggleSort("name")} className="-ml-3">
+                            Nome <ArrowUpDown className="ml-2 size-3" />
+                          </Button>
+                        </TableHead>
+                        <TableHead className="w-[260px]">
+                          <Button variant="ghost" size="sm" onClick={() => toggleSort("client")} className="-ml-3">
+                            Cliente <ArrowUpDown className="ml-2 size-3" />
+                          </Button>
+                        </TableHead>
+                        <TableHead className="w-[160px]">Regimes</TableHead>
+                        <TableHead className="w-[180px]">
+                          <Button variant="ghost" size="sm" onClick={() => toggleSort("dueDate")} className="-ml-3">
+                            Vencimento <ArrowUpDown className="ml-2 size-3" />
+                          </Button>
+                        </TableHead>
+                        <TableHead className="w-[140px]">
+                          <Button variant="ghost" size="sm" onClick={() => toggleSort("status")} className="-ml-3">
+                            Status <ArrowUpDown className="ml-2 size-3" />
+                          </Button>
+                        </TableHead>
+                        <TableHead className="w-[180px]">Ações Rápidas</TableHead>
                         <TableHead className="w-[50px]"></TableHead>
                       </TableRow>
                     </TableHeader>
@@ -826,10 +875,10 @@ export default function ImpostosPage() {
                                 aria-label={`Selecionar ${tax.name}`}
                               />
                             </TableCell>
-                            <TableCell>
-                              <div className="space-y-1">
-                                <div className="flex items-center gap-2">
-                                  <div className="font-medium">{tax.name}</div>
+                            <TableCell className="max-w-[280px]">
+                              <div className="space-y-1 min-w-0">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <div className="font-medium truncate">{tax.name}</div>
                                   {tax.priority && tax.priority !== "medium" && (
                                     <Badge
                                       variant="outline"

@@ -8,8 +8,6 @@ import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import {
-  ChevronLeft,
-  ChevronRight,
   Calendar as CalendarIcon,
   Receipt,
   FileText,
@@ -24,6 +22,7 @@ import {
 } from "lucide-react"
 import type { Client, Tax, ObligationWithDetails, InstallmentWithDetails } from "@/lib/types"
 import { buildSafeDate, isHoliday, isWeekend, calculateDueDateFromCompetency } from "@/lib/date-utils"
+import { useSelectedPeriod } from "@/hooks/use-selected-period"
 
 type CalendarItemKind = "obligation" | "tax" | "installment"
 
@@ -85,7 +84,17 @@ const STATUS_LABEL: Record<string, string> = {
 const formatDate = (d: Date) => d.toLocaleDateString("pt-BR")
 
 export function FiscalCalendar({ obligations, taxes = [], installments = [], clients = [] }: Props) {
-  const [currentDate, setCurrentDate] = useState(() => new Date())
+  // Calendário lê o período do PeriodSwitcher do topo (?period=YYYY-MM).
+  // Sem filtro/all → mostra mês atual.
+  const { period, showAll } = useSelectedPeriod()
+  const currentDate = useMemo(() => {
+    if (period && !showAll) {
+      const m = period.match(/^(\d{4})-(\d{2})$/)
+      if (m) return new Date(Number(m[1]), Number(m[2]) - 1, 1)
+    }
+    return new Date()
+  }, [period, showAll])
+
   const [selectedDay, setSelectedDay] = useState<Date | null>(null)
   const [clientFilter, setClientFilter] = useState<string>("all")
   const [kindFilter, setKindFilter] = useState<string>("all")
@@ -250,22 +259,13 @@ export function FiscalCalendar({ obligations, taxes = [], installments = [], cli
         <Card className="border-none shadow-none bg-muted/30">
           <CardContent className="p-4 flex flex-wrap items-center gap-3">
             <div className="flex items-center gap-2">
-              <Button variant="outline" size="icon" onClick={() => setCurrentDate(new Date(year, month - 1, 1))} aria-label="Mês anterior">
-                <ChevronLeft className="size-4" />
-              </Button>
-              <div className="px-3 min-w-[160px] text-center">
+              <div className="px-3 min-w-[160px]">
                 <p className="text-sm font-bold capitalize">{monthName} {year}</p>
                 <p className="text-[11px] text-muted-foreground">
                   {totalThisMonth} vencimento{totalThisMonth !== 1 ? "s" : ""}
                   {overdueThisMonth > 0 && <span className="text-red-600"> · {overdueThisMonth} atrasado(s)</span>}
                 </p>
               </div>
-              <Button variant="outline" size="icon" onClick={() => setCurrentDate(new Date(year, month + 1, 1))} aria-label="Próximo mês">
-                <ChevronRight className="size-4" />
-              </Button>
-              <Button variant="ghost" size="sm" onClick={() => setCurrentDate(new Date())} className="ml-1 text-xs">
-                Hoje
-              </Button>
             </div>
 
             <div className="flex flex-wrap gap-2 ml-auto">

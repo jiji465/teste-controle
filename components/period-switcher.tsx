@@ -31,7 +31,8 @@ export function PeriodSwitcher() {
   }, [])
 
   const currentPeriod = searchParams.get("period")
-  const currentDate = parsePeriod(currentPeriod)
+  const showAll = currentPeriod === "all"
+  const currentDate = parsePeriod(showAll ? null : currentPeriod)
 
   const goTo = (date: Date) => {
     const params = new URLSearchParams(Array.from(searchParams.entries()))
@@ -47,11 +48,16 @@ export function PeriodSwitcher() {
     const qs = params.toString()
     router.push(`${pathname}${qs ? `?${qs}` : ""}`, { scroll: false })
   }
+  const handleShowAll = () => {
+    const params = new URLSearchParams(Array.from(searchParams.entries()))
+    params.set("period", "all")
+    router.push(`${pathname}?${params.toString()}`, { scroll: false })
+  }
 
   const todayPeriod = formatPeriod(new Date())
-  const isCurrentMonth = !currentPeriod || currentPeriod === todayPeriod
-  const isPast = currentPeriod !== null && currentPeriod < todayPeriod
-  const isFuture = currentPeriod !== null && currentPeriod > todayPeriod
+  const isCurrentMonth = !showAll && (!currentPeriod || currentPeriod === todayPeriod)
+  const isPast = !showAll && currentPeriod !== null && currentPeriod < todayPeriod
+  const isFuture = !showAll && currentPeriod !== null && currentPeriod > todayPeriod
 
   return (
     <div className="flex items-center gap-2">
@@ -64,7 +70,7 @@ export function PeriodSwitcher() {
             <Button variant="ghost" className="h-8 gap-2 px-3 font-medium">
               <CalendarDays className="size-4 text-primary" />
               <span className="capitalize">
-                {isMounted ? format(currentDate, "MMMM yyyy", { locale: ptBR }) : "Carregando..."}
+                {!isMounted ? "Carregando..." : showAll ? "Todos os meses" : format(currentDate, "MMMM yyyy", { locale: ptBR })}
               </span>
             </Button>
           </PopoverTrigger>
@@ -73,7 +79,7 @@ export function PeriodSwitcher() {
               <p className="col-span-3 text-xs font-semibold text-muted-foreground uppercase mb-2">Últimos meses</p>
               {[0, 1, 2, 3, 4, 5].map((i) => {
                 const date = subMonths(new Date(), i)
-                const isActive = formatPeriod(currentDate) === formatPeriod(date)
+                const isActive = !showAll && formatPeriod(currentDate) === formatPeriod(date)
                 return (
                   <Button
                     key={i}
@@ -87,12 +93,20 @@ export function PeriodSwitcher() {
                 )
               })}
               <Button
-                variant="ghost"
+                variant={isCurrentMonth ? "secondary" : "ghost"}
                 size="sm"
                 className="col-span-3 text-xs mt-1"
                 onClick={handleReset}
               >
                 Voltar para o mês atual
+              </Button>
+              <Button
+                variant={showAll ? "default" : "ghost"}
+                size="sm"
+                className="col-span-3 text-xs"
+                onClick={handleShowAll}
+              >
+                Mostrar todos os meses
               </Button>
             </div>
           </PopoverContent>
@@ -105,14 +119,16 @@ export function PeriodSwitcher() {
       {!isCurrentMonth && (
         <div
           className={`hidden sm:flex items-center px-3 py-1 rounded-full text-[10px] font-bold border ${
-            isPast
-              ? "bg-muted text-muted-foreground border-border"
-              : isFuture
-                ? "bg-blue-50 dark:bg-blue-950/30 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-900"
-                : ""
+            showAll
+              ? "bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-900"
+              : isPast
+                ? "bg-muted text-muted-foreground border-border"
+                : isFuture
+                  ? "bg-blue-50 dark:bg-blue-950/30 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-900"
+                  : ""
           }`}
         >
-          {isPast ? "PASSADO" : isFuture ? "PROJEÇÃO" : ""}
+          {showAll ? "SEM FILTRO" : isPast ? "PASSADO" : isFuture ? "PROJEÇÃO" : ""}
         </div>
       )}
     </div>
