@@ -64,7 +64,6 @@ export function ObligationForm({ obligation, clients, open, onOpenChange, onSave
       weekendRule: "postpone",
       status: "pending",
       priority: "medium",
-      assignedTo: "",
       protocol: "",
       notes: "",
       tags: [],
@@ -91,7 +90,6 @@ export function ObligationForm({ obligation, clients, open, onOpenChange, onSave
           weekendRule: obligation.weekendRule || "postpone",
           status: obligation.status,
           priority: obligation.priority,
-          assignedTo: obligation.assignedTo || "",
           protocol: obligation.protocol || "",
           notes: obligation.notes || "",
           tags: obligation.tags || [],
@@ -113,7 +111,6 @@ export function ObligationForm({ obligation, clients, open, onOpenChange, onSave
           weekendRule: "postpone",
           status: "pending",
           priority: "medium",
-          assignedTo: "",
           protocol: "",
           notes: "",
           tags: [],
@@ -150,7 +147,6 @@ export function ObligationForm({ obligation, clients, open, onOpenChange, onSave
       weekendRule: data.weekendRule as any,
       status: data.status as any,
       priority: data.priority as any,
-      assignedTo: data.assignedTo || undefined,
       protocol: data.protocol || undefined,
       notes: data.notes || undefined,
       createdAt: data.createdAt || new Date().toISOString(),
@@ -514,20 +510,6 @@ export function ObligationForm({ obligation, clients, open, onOpenChange, onSave
                           <SelectItem value="urgent">Urgente</SelectItem>
                         </SelectContent>
                       </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="assignedTo"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Responsável</FormLabel>
-                      <FormControl>
-                        <Input placeholder="Nome do responsável" {...field} />
-                      </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}

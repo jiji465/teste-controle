@@ -11,7 +11,7 @@ import { ResizableTableHead } from "@/components/ui/resizable-table-head"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { FilterBar, FilterPill, FilterPillMonth } from "@/components/filter-panel"
-import { Building2, AlertCircle as PriorityIcon, User, CalendarDays, Layers, Scale } from "lucide-react"
+import { Building2, AlertCircle as PriorityIcon, CalendarDays, Layers, Scale } from "lucide-react"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { BulkActionsBar } from "@/components/bulk-actions-bar"
 import { ConfirmDialog, type ConfirmState } from "@/components/ui/confirm-dialog"
@@ -53,7 +53,6 @@ export type ObligationListHandle = {
 }
 
 type BulkEditForm = {
-  assignedTo: string
   priority: "" | Priority
   status: "" | "pending" | "in_progress" | "completed"
   dueDay: string
@@ -63,7 +62,6 @@ type BulkEditForm = {
 }
 
 const EMPTY_BULK_FORM: BulkEditForm = {
-  assignedTo: "",
   priority: "",
   status: "",
   dueDay: "",
@@ -79,7 +77,6 @@ export const ObligationList = forwardRef<ObligationListHandle, ObligationListPro
   const [search, setSearch] = useState("")
   const [clientFilter, setClientFilter] = useState<string>("all")
   const [priorityFilter, setPriorityFilter] = useState<string>("all")
-  const [assigneeFilter, setAssigneeFilter] = useState<string>("all")
   const [competencyFilter, setCompetencyFilter] = useState<string>("")
   const [scopeFilter, setScopeFilter] = useState<string>("all")
   const [regimeFilter, setRegimeFilter] = useState<string>("all")
@@ -95,16 +92,9 @@ export const ObligationList = forwardRef<ObligationListHandle, ObligationListPro
   const [bulkLoading, setBulkLoading] = useState(false)
   const [confirmState, setConfirmState] = useState<ConfirmState>(null)
 
-  const assignees = useMemo(() => {
-    const set = new Set<string>()
-    obligations.forEach((o) => o.assignedTo && set.add(o.assignedTo))
-    return [...set].sort((a, b) => a.localeCompare(b))
-  }, [obligations])
-
   const activeFilterCount =
     (clientFilter !== "all" ? 1 : 0) +
     (priorityFilter !== "all" ? 1 : 0) +
-    (assigneeFilter !== "all" ? 1 : 0) +
     (competencyFilter ? 1 : 0) +
     (scopeFilter !== "all" ? 1 : 0) +
     (regimeFilter !== "all" ? 1 : 0)
@@ -121,7 +111,6 @@ export const ObligationList = forwardRef<ObligationListHandle, ObligationListPro
             matchesText(obl.tax?.name, q) ||
             matchesText(obl.description, q) ||
             matchesText(obl.protocol, q) ||
-            matchesText(obl.assignedTo, q) ||
             matchesText(obl.notes, q) ||
             matchesText(obl.competencyMonth, q) ||
             (obl.tags ?? []).some((t) => matchesText(t, q))
@@ -129,7 +118,6 @@ export const ObligationList = forwardRef<ObligationListHandle, ObligationListPro
         }
         if (clientFilter !== "all" && obl.clientId !== clientFilter) return false
         if (priorityFilter !== "all" && obl.priority !== priorityFilter) return false
-        if (assigneeFilter !== "all" && obl.assignedTo !== assigneeFilter) return false
         if (competencyFilter && obl.competencyMonth !== competencyFilter) return false
         if (scopeFilter !== "all" && obl.scope !== scopeFilter) return false
         if (regimeFilter !== "all") {
@@ -140,7 +128,7 @@ export const ObligationList = forwardRef<ObligationListHandle, ObligationListPro
         }
         return true
       }),
-    [obligations, search, clientFilter, priorityFilter, assigneeFilter, competencyFilter, scopeFilter, regimeFilter],
+    [obligations, search, clientFilter, priorityFilter, competencyFilter, scopeFilter, regimeFilter],
   )
 
   const sortedObligations = useMemo(() => {
@@ -335,7 +323,7 @@ export const ObligationList = forwardRef<ObligationListHandle, ObligationListPro
 
   const handleBulkEditApply = async () => {
     if (selectedIds.size === 0) return
-    const { assignedTo, priority, status, dueDay, weekendRule, competencyMonth, scope } = bulkForm
+    const { priority, status, dueDay, weekendRule, competencyMonth, scope } = bulkForm
     const dueDayNum = dueDay ? Number(dueDay) : null
     if (dueDayNum !== null && (Number.isNaN(dueDayNum) || dueDayNum < 1 || dueDayNum > 31)) {
       toast.error("Dia do vencimento deve estar entre 1 e 31")
@@ -345,7 +333,7 @@ export const ObligationList = forwardRef<ObligationListHandle, ObligationListPro
       toast.error("Mês de competência inválido (use formato AAAA-MM)")
       return
     }
-    if (!assignedTo && !priority && !status && !dueDayNum && !weekendRule && !competencyMonth && !scope) {
+    if (!priority && !status && !dueDayNum && !weekendRule && !competencyMonth && !scope) {
       toast.info("Preencha pelo menos um campo para aplicar")
       return
     }
@@ -353,7 +341,6 @@ export const ObligationList = forwardRef<ObligationListHandle, ObligationListPro
     try {
       const now = new Date().toISOString()
       const changes: string[] = []
-      if (assignedTo) changes.push(`responsável: ${assignedTo}`)
       if (priority) changes.push(`prioridade: ${priority}`)
       if (status) changes.push(`status: ${status}`)
       if (dueDayNum) changes.push(`dia do vencimento: ${dueDayNum}`)
@@ -365,7 +352,6 @@ export const ObligationList = forwardRef<ObligationListHandle, ObligationListPro
       await Promise.all(
         selectedList.map((o) => {
           const updated: ObligationWithDetails = { ...o }
-          if (assignedTo) updated.assignedTo = assignedTo
           if (priority) updated.priority = priority as Priority
           if (status) updated.status = status
           if (dueDayNum) updated.dueDay = dueDayNum
@@ -587,7 +573,7 @@ export const ObligationList = forwardRef<ObligationListHandle, ObligationListPro
         <div className="relative flex-1 min-w-[280px]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
           <Input
-            placeholder="Nome, cliente, imposto, descrição, protocolo, responsável, competência, tags…"
+            placeholder="Nome, cliente, imposto, descrição, protocolo, competência, tags…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="pl-9"
@@ -601,7 +587,6 @@ export const ObligationList = forwardRef<ObligationListHandle, ObligationListPro
         onClearAll={() => {
           setClientFilter("all")
           setPriorityFilter("all")
-          setAssigneeFilter("all")
           setCompetencyFilter("")
           setScopeFilter("all")
           setRegimeFilter("all")
@@ -654,19 +639,6 @@ export const ObligationList = forwardRef<ObligationListHandle, ObligationListPro
             { value: "low", label: "Baixa" },
           ]}
         />
-        <FilterPill
-          icon={<User className="size-3.5" />}
-          label="Responsável"
-          value={assigneeFilter}
-          onChange={setAssigneeFilter}
-          searchable={assignees.length > 5}
-          options={[
-            { value: "all", label: "Todos os responsáveis" },
-            ...(assignees.length === 0
-              ? [{ value: "__none__", label: "(nenhum responsável atribuído)" }]
-              : assignees.map((a) => ({ value: a, label: a }))),
-          ]}
-        />
         <FilterPillMonth
           icon={<CalendarDays className="size-3.5" />}
           label="Competência"
@@ -697,7 +669,7 @@ export const ObligationList = forwardRef<ObligationListHandle, ObligationListPro
             </div>
             <p className="font-medium">Nenhuma obrigação encontrada</p>
             <p className="text-sm text-muted-foreground mt-1 max-w-sm mx-auto">
-              {search || clientFilter !== "all" || priorityFilter !== "all" || assigneeFilter !== "all"
+              {search || clientFilter !== "all" || priorityFilter !== "all"
                 ? "Ajuste a busca ou os filtros."
                 : "Cadastre a primeira pelo botão acima."}
             </p>
@@ -832,11 +804,11 @@ export const ObligationList = forwardRef<ObligationListHandle, ObligationListPro
                     </div>
                     <p className="font-medium">Nenhuma obrigação encontrada</p>
                     <p className="text-sm text-muted-foreground max-w-md">
-                      {search || clientFilter !== "all" || priorityFilter !== "all" || assigneeFilter !== "all"
+                      {search || clientFilter !== "all" || priorityFilter !== "all"
                         ? "Tente ajustar a busca ou os filtros."
                         : "Cadastre a primeira obrigação clicando no botão abaixo."}
                     </p>
-                    {!search && clientFilter === "all" && priorityFilter === "all" && assigneeFilter === "all" && (
+                    {!search && clientFilter === "all" && priorityFilter === "all" && (
                       <Button onClick={handleNew} className="mt-2 gap-2">
                         Nova Obrigação
                       </Button>
@@ -907,9 +879,6 @@ export const ObligationList = forwardRef<ObligationListHandle, ObligationListPro
                       </div>
                       {obligation.description && (
                         <div className="text-sm text-muted-foreground line-clamp-1">{obligation.description}</div>
-                      )}
-                      {obligation.assignedTo && (
-                        <div className="text-xs text-muted-foreground">Responsável: {obligation.assignedTo}</div>
                       )}
                     </div>
                   </TableCell>
@@ -1006,15 +975,6 @@ export const ObligationList = forwardRef<ObligationListHandle, ObligationListPro
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-2">
-            <div className="grid gap-2">
-              <Label htmlFor="bulk-assigned">Responsável</Label>
-              <Input
-                id="bulk-assigned"
-                placeholder="Ex: João Silva"
-                value={bulkForm.assignedTo}
-                onChange={(e) => setBulkForm((f) => ({ ...f, assignedTo: e.target.value }))}
-              />
-            </div>
             <div className="grid gap-2">
               <Label>Prioridade</Label>
               <Select

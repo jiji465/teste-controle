@@ -59,7 +59,6 @@ export function ExportDialog({ open, onOpenChange, obligations, clients }: Expor
     { header: "Vencimento", width: 12, accessor: (o) => new Date(o.calculatedDueDate) },
     { header: "Status", width: 12, accessor: (o) => statusLabel(o.status) },
     { header: "Prioridade", width: 10, accessor: (o) => priorityLabel(o.priority) },
-    { header: "Responsável", width: 16, accessor: (o) => o.assignedTo || "" },
     { header: "Concluída em", width: 14, accessor: (o) => (o.completedAt ? new Date(o.completedAt) : "") },
   ]
 

@@ -90,7 +90,6 @@ export default function ImpostosPage() {
   const [bulkEditOpen, setBulkEditOpen] = useState(false)
   const [bulkDueDay, setBulkDueDay] = useState("")
   const [bulkPriority, setBulkPriority] = useState<"" | "low" | "medium" | "high" | "urgent">("")
-  const [bulkAssignedTo, setBulkAssignedTo] = useState("")
   const [taxSearch, setTaxSearch] = useState("")
   const [showFilters, setShowFilters] = useState(false)
   const [sortBy, setSortBy] = useState<"client" | "status" | "dueDate" | "name">("dueDate")
@@ -301,7 +300,6 @@ export default function ImpostosPage() {
   const openBulkEdit = () => {
     setBulkDueDay("")
     setBulkPriority("")
-    setBulkAssignedTo("")
     setBulkEditOpen(true)
   }
 
@@ -312,7 +310,7 @@ export default function ImpostosPage() {
       toast.error("Dia do vencimento deve estar entre 1 e 31")
       return
     }
-    if (!dueDayNum && !bulkPriority && !bulkAssignedTo) {
+    if (!dueDayNum && !bulkPriority) {
       toast.info("Preencha pelo menos um campo para aplicar")
       return
     }
@@ -324,7 +322,6 @@ export default function ImpostosPage() {
           const updated = { ...t }
           if (dueDayNum) updated.dueDay = dueDayNum
           if (bulkPriority) updated.priority = bulkPriority
-          if (bulkAssignedTo) updated.assignedTo = bulkAssignedTo
           return saveTax(updated)
         }),
       )
@@ -344,7 +341,6 @@ export default function ImpostosPage() {
         const textHit =
           matchesText(t.name, q) ||
           matchesText(t.description, q) ||
-          matchesText(t.assignedTo, q) ||
           matchesText(t.protocol, q) ||
           matchesText(t.notes, q) ||
           (t.tags ?? []).some((tag) => matchesText(tag, q)) ||
@@ -419,7 +415,6 @@ export default function ImpostosPage() {
     { header: "Regimes", width: 28, accessor: (t) => (t.applicableRegimes ?? []).map((r) => TAX_REGIME_LABELS[r as TaxRegime]).join(", ") },
     { header: "Status", width: 12, accessor: (t) => statusLabel(t.status) },
     { header: "Prioridade", width: 10, accessor: (t) => priorityLabel(t.priority) },
-    { header: "Responsável", width: 16, accessor: (t) => t.assignedTo ?? "" },
     { header: "Concluído em", width: 14, accessor: (t) => (t.completedAt ? new Date(t.completedAt) : "") },
   ]
 
@@ -592,7 +587,7 @@ export default function ImpostosPage() {
                 <div className="relative flex-1 min-w-[280px]">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
                   <Input
-                    placeholder="Nome, descrição, esfera, responsável, protocolo, competência, tags…"
+                    placeholder="Nome, descrição, esfera, protocolo, competência, tags…"
                     value={taxSearch}
                     onChange={(e) => setTaxSearch(e.target.value)}
                     className="pl-9"
@@ -911,9 +906,6 @@ export default function ImpostosPage() {
                                 {tax.description && (
                                   <div className="text-sm text-muted-foreground line-clamp-1">{tax.description}</div>
                                 )}
-                                {tax.assignedTo && (
-                                  <div className="text-xs text-muted-foreground">Responsável: {tax.assignedTo}</div>
-                                )}
                               </div>
                             </TableCell>
                             <TableCell className="text-sm">
@@ -1068,15 +1060,6 @@ export default function ImpostosPage() {
                   <SelectItem value="urgent">Urgente</SelectItem>
                 </SelectContent>
               </Select>
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="bulk-tax-assigned">Responsável</Label>
-              <Input
-                id="bulk-tax-assigned"
-                placeholder="Ex: João Silva (deixe em branco para manter)"
-                value={bulkAssignedTo}
-                onChange={(e) => setBulkAssignedTo(e.target.value)}
-              />
             </div>
           </div>
           <DialogFooter>
