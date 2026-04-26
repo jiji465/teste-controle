@@ -12,7 +12,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
 import { BulkActionsBar } from "@/components/bulk-actions-bar"
 import { ConfirmDialog, type ConfirmState } from "@/components/ui/confirm-dialog"
 import { ClientForm } from "./client-form"
-import { MoreVertical, Pencil, Trash2, Search, Plus, Building2, Sparkles, Filter, CheckCircle2, XCircle, Scale, Briefcase, MapPin, ToggleLeft } from "lucide-react"
+import { MoreVertical, Pencil, Trash2, Search, Plus, Building2, Sparkles, Filter, CheckCircle2, XCircle, Scale, Briefcase, MapPin, ToggleLeft, ArrowUpDown } from "lucide-react"
 import { FilterBar, FilterPill } from "@/components/filter-panel"
 import type { Client, TaxRegime } from "@/lib/types"
 import { TAX_REGIME_LABELS, TAX_REGIME_COLORS } from "@/lib/types"
@@ -43,7 +43,18 @@ export function ClientList({ clients, onUpdate }: ClientListProps) {
   const [statusFilter, setStatusFilter] = useState<string>("all")
   const [activityFilter, setActivityFilter] = useState<string>("all")
   const [stateFilter, setStateFilter] = useState<string>("all")
+  const [sortBy, setSortBy] = useState<"name" | "cnpj" | "regime" | "state" | "status">("name")
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc")
   const [confirmState, setConfirmState] = useState<ConfirmState>(null)
+
+  const toggleSort = (field: typeof sortBy) => {
+    if (sortBy === field) {
+      setSortOrder(sortOrder === "asc" ? "desc" : "asc")
+    } else {
+      setSortBy(field)
+      setSortOrder("asc")
+    }
+  }
 
   const activeFilterCount =
     (regimeFilter !== "all" ? 1 : 0) +
@@ -53,7 +64,7 @@ export function ClientList({ clients, onUpdate }: ClientListProps) {
 
   const filteredClients = useMemo(() => {
     const q = search.trim()
-    return clients.filter((client) => {
+    const filtered = clients.filter((client) => {
       if (!q) {
         // sem termo de busca, só aplica filtros
       } else {
@@ -85,7 +96,30 @@ export function ClientList({ clients, onUpdate }: ClientListProps) {
       if (stateFilter !== "all" && client.state !== stateFilter) return false
       return true
     })
-  }, [clients, search, regimeFilter, statusFilter, activityFilter, stateFilter])
+
+    // Sort
+    const sorted = [...filtered].sort((a, b) => {
+      let cmp = 0
+      if (sortBy === "name") {
+        cmp = a.name.localeCompare(b.name, "pt-BR")
+      } else if (sortBy === "cnpj") {
+        cmp = (a.cnpj ?? "").localeCompare(b.cnpj ?? "")
+      } else if (sortBy === "regime") {
+        const ra = a.taxRegime ? TAX_REGIME_LABELS[a.taxRegime] : ""
+        const rb = b.taxRegime ? TAX_REGIME_LABELS[b.taxRegime] : ""
+        cmp = ra.localeCompare(rb, "pt-BR")
+      } else if (sortBy === "state") {
+        cmp = (a.state ?? "").localeCompare(b.state ?? "")
+      } else if (sortBy === "status") {
+        // active vem antes de inactive
+        const order: Record<string, number> = { active: 0, inactive: 1 }
+        cmp = (order[a.status] ?? 99) - (order[b.status] ?? 99)
+      }
+      return sortOrder === "asc" ? cmp : -cmp
+    })
+
+    return sorted
+  }, [clients, search, regimeFilter, statusFilter, activityFilter, stateFilter, sortBy, sortOrder])
 
   // UFs disponíveis (apenas as que têm clientes cadastrados)
   const availableStates = useMemo(() => {
@@ -367,12 +401,37 @@ export function ClientList({ clients, onUpdate }: ClientListProps) {
                   aria-label="Selecionar todas"
                 />
               </TableHead>
-              <ResizableTableHead defaultWidth={280} storageKey="clientes-name">Nome / Razão Social</ResizableTableHead>
-              <ResizableTableHead defaultWidth={170} storageKey="clientes-cnpj">CNPJ</ResizableTableHead>
-              <ResizableTableHead defaultWidth={170} storageKey="clientes-regime">Regime Tributário</ResizableTableHead>
+              <ResizableTableHead defaultWidth={280} storageKey="clientes-name">
+                <Button variant="ghost" size="sm" onClick={() => toggleSort("name")} className="-ml-3">
+                  Nome / Razão Social
+                  <ArrowUpDown className="ml-2 size-3" />
+                </Button>
+              </ResizableTableHead>
+              <ResizableTableHead defaultWidth={170} storageKey="clientes-cnpj">
+                <Button variant="ghost" size="sm" onClick={() => toggleSort("cnpj")} className="-ml-3">
+                  CNPJ
+                  <ArrowUpDown className="ml-2 size-3" />
+                </Button>
+              </ResizableTableHead>
+              <ResizableTableHead defaultWidth={170} storageKey="clientes-regime">
+                <Button variant="ghost" size="sm" onClick={() => toggleSort("regime")} className="-ml-3">
+                  Regime Tributário
+                  <ArrowUpDown className="ml-2 size-3" />
+                </Button>
+              </ResizableTableHead>
               <ResizableTableHead defaultWidth={220} storageKey="clientes-contact">E-mail / Telefone</ResizableTableHead>
-              <ResizableTableHead defaultWidth={140} storageKey="clientes-estado">Estado</ResizableTableHead>
-              <ResizableTableHead defaultWidth={110} storageKey="clientes-status">Status</ResizableTableHead>
+              <ResizableTableHead defaultWidth={140} storageKey="clientes-estado">
+                <Button variant="ghost" size="sm" onClick={() => toggleSort("state")} className="-ml-3">
+                  Estado
+                  <ArrowUpDown className="ml-2 size-3" />
+                </Button>
+              </ResizableTableHead>
+              <ResizableTableHead defaultWidth={110} storageKey="clientes-status">
+                <Button variant="ghost" size="sm" onClick={() => toggleSort("status")} className="-ml-3">
+                  Status
+                  <ArrowUpDown className="ml-2 size-3" />
+                </Button>
+              </ResizableTableHead>
               <TableHead className="w-[50px]"></TableHead>
             </TableRow>
           </TableHeader>
