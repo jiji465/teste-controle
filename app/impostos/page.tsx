@@ -46,7 +46,7 @@ import {
   Scale,
   AlertCircle as PriorityIcon,
 } from "lucide-react"
-import { ActiveFilterChips, FilterShell, FilterField, type ActiveChip } from "@/components/filter-panel"
+import { FilterBar, FilterPill, FilterPillMonth } from "@/components/filter-panel"
 import type { Tax, TaxRegime } from "@/lib/types"
 import { TAX_REGIME_LABELS, TAX_REGIME_COLORS } from "@/lib/types"
 import { useData } from "@/contexts/data-context"
@@ -594,109 +594,73 @@ export default function ImpostosPage() {
                     className="pl-9"
                   />
                 </div>
-                <Button variant="outline" onClick={() => setShowFilters(!showFilters)}>
-                  <Filter className="size-4 mr-2" />
-                  Filtros
-                  {activeFilterCount > 0 && (
-                    <Badge variant="secondary" className="ml-2 size-5 rounded-full p-0 flex items-center justify-center">
-                      {activeFilterCount}
-                    </Badge>
-                  )}
-                </Button>
               </div>
 
-              {/* Chips de filtros ativos */}
-              {(() => {
-                const chips: ActiveChip[] = []
-                if (clientFilter && clientFilter !== "all") {
-                  const c = clients.find((cl) => cl.id === clientFilter)
-                  chips.push({ label: `Cliente: ${c?.name ?? "—"}`, onRemove: () => setClientFilter("all") })
-                }
-                if (competencyFilter) {
-                  chips.push({ label: `Competência: ${competencyFilter}`, onRemove: () => setCompetencyFilter("") })
-                }
-                if (regimeFilter !== "all") {
-                  chips.push({ label: `Regime: ${TAX_REGIME_LABELS[regimeFilter as TaxRegime] ?? regimeFilter}`, onRemove: () => setRegimeFilter("all") })
-                }
-                if (scopeFilter !== "all") {
-                  const labels: Record<string, string> = { federal: "Federal", estadual: "Estadual", municipal: "Municipal" }
-                  chips.push({ label: `Esfera: ${labels[scopeFilter] ?? scopeFilter}`, onRemove: () => setScopeFilter("all") })
-                }
-                if (priorityFilter !== "all") {
-                  const labels: Record<string, string> = { urgent: "Urgente", high: "Alta", medium: "Média", low: "Baixa" }
-                  chips.push({ label: `Prioridade: ${labels[priorityFilter] ?? priorityFilter}`, onRemove: () => setPriorityFilter("all") })
-                }
-                return (
-                  <ActiveFilterChips
-                    chips={chips}
-                    onClearAll={() => {
-                      setClientFilter("all")
-                      setCompetencyFilter("")
-                      setRegimeFilter("all")
-                      setScopeFilter("all")
-                      setPriorityFilter("all")
-                    }}
-                  />
-                )
-              })()}
-
-              {showFilters && (
-                <FilterShell cols={3}>
-                  <FilterField icon={<Building2 className="size-3.5" />} label="Cliente" active={!!clientFilter && clientFilter !== "all"}>
-                    <Select value={clientFilter || "all"} onValueChange={setClientFilter}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">Todos os clientes</SelectItem>
-                        {clients.map((c) => (
-                          <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </FilterField>
-                  <FilterField icon={<CalendarDays className="size-3.5" />} label="Mês de competência" active={!!competencyFilter}>
-                    <Input
-                      type="month"
-                      value={competencyFilter || ""}
-                      onChange={(e) => setCompetencyFilter(e.target.value)}
-                      placeholder="Qualquer"
-                    />
-                  </FilterField>
-                  <FilterField icon={<Scale className="size-3.5" />} label="Regime tributário" active={regimeFilter !== "all"}>
-                    <Select value={regimeFilter} onValueChange={setRegimeFilter}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">Todos os regimes</SelectItem>
-                        {(Object.entries(TAX_REGIME_LABELS) as [TaxRegime, string][]).map(([value, label]) => (
-                          <SelectItem key={value} value={value}>{label}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </FilterField>
-                  <FilterField icon={<Layers className="size-3.5" />} label="Esfera" active={scopeFilter !== "all"}>
-                    <Select value={scopeFilter} onValueChange={setScopeFilter}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">Todas</SelectItem>
-                        <SelectItem value="federal">Federal</SelectItem>
-                        <SelectItem value="estadual">Estadual</SelectItem>
-                        <SelectItem value="municipal">Municipal</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </FilterField>
-                  <FilterField icon={<PriorityIcon className="size-3.5" />} label="Prioridade" active={priorityFilter !== "all"}>
-                    <Select value={priorityFilter} onValueChange={setPriorityFilter}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">Todas</SelectItem>
-                        <SelectItem value="urgent">Urgente</SelectItem>
-                        <SelectItem value="high">Alta</SelectItem>
-                        <SelectItem value="medium">Média</SelectItem>
-                        <SelectItem value="low">Baixa</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </FilterField>
-                </FilterShell>
-              )}
+              {/* Filtros estilo pill */}
+              <FilterBar
+                activeCount={activeFilterCount}
+                onClearAll={() => {
+                  setClientFilter("all")
+                  setCompetencyFilter("")
+                  setRegimeFilter("all")
+                  setScopeFilter("all")
+                  setPriorityFilter("all")
+                }}
+              >
+                <FilterPill
+                  icon={<Building2 className="size-3.5" />}
+                  label="Cliente"
+                  value={clientFilter || "all"}
+                  onChange={setClientFilter}
+                  searchable
+                  searchPlaceholder="Buscar cliente…"
+                  options={[
+                    { value: "all", label: "Todos os clientes" },
+                    ...clients.map((c) => ({ value: c.id, label: c.name })),
+                  ]}
+                />
+                <FilterPill
+                  icon={<Scale className="size-3.5" />}
+                  label="Regime"
+                  value={regimeFilter}
+                  onChange={setRegimeFilter}
+                  options={[
+                    { value: "all", label: "Todos os regimes" },
+                    ...(Object.entries(TAX_REGIME_LABELS) as [TaxRegime, string][]).map(([v, l]) => ({ value: v, label: l })),
+                  ]}
+                />
+                <FilterPill
+                  icon={<Layers className="size-3.5" />}
+                  label="Esfera"
+                  value={scopeFilter}
+                  onChange={setScopeFilter}
+                  options={[
+                    { value: "all", label: "Todas as esferas" },
+                    { value: "federal", label: "Federal" },
+                    { value: "estadual", label: "Estadual" },
+                    { value: "municipal", label: "Municipal" },
+                  ]}
+                />
+                <FilterPill
+                  icon={<PriorityIcon className="size-3.5" />}
+                  label="Prioridade"
+                  value={priorityFilter}
+                  onChange={setPriorityFilter}
+                  options={[
+                    { value: "all", label: "Todas as prioridades" },
+                    { value: "urgent", label: "Urgente" },
+                    { value: "high", label: "Alta" },
+                    { value: "medium", label: "Média" },
+                    { value: "low", label: "Baixa" },
+                  ]}
+                />
+                <FilterPillMonth
+                  icon={<CalendarDays className="size-3.5" />}
+                  label="Competência"
+                  value={competencyFilter || ""}
+                  onChange={setCompetencyFilter}
+                />
+              </FilterBar>
 
               <BulkActionsBar
                 selectedCount={selectedIds.size}
