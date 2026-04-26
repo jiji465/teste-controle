@@ -59,10 +59,25 @@ export function RegimeDistributionChart({ obligations, clients }: RegimeDistribu
       .filter((d) => d.value > 0)
   }, [clients])
 
+  const stateData = useMemo(() => {
+    const counts: Record<string, number> = {}
+    clients.forEach((c) => {
+      const state = c.state ? c.state.toUpperCase() : "Sem UF"
+      counts[state] = (counts[state] || 0) + 1
+    })
+    return Object.entries(counts)
+      .map(([state, value]) => ({ name: state, value, state }))
+      .filter((d) => d.value > 0)
+      .sort((a, b) => b.value - a.value)
+  }, [clients])
+
+  // Paleta neutra rotativa pros estados (não tem cor "fixa" por UF)
+  const STATE_COLORS = ["#3b82f6", "#10b981", "#8b5cf6", "#f59e0b", "#ec4899", "#06b6d4", "#f97316", "#84cc16", "#ef4444", "#6366f1"]
+
   if (obligations.length === 0 && clients.length === 0) return null
 
   return (
-    <div className="grid gap-4 lg:grid-cols-2">
+    <div className="grid gap-4 lg:grid-cols-3">
       {/* Status das Obrigações */}
       {statusData.length > 0 && (
         <Card>
@@ -129,6 +144,46 @@ export function RegimeDistributionChart({ obligations, clients }: RegimeDistribu
                 </Pie>
                 <Tooltip
                   formatter={(value: number) => [`${value} cliente${value !== 1 ? "s" : ""}`, ""]}
+                  contentStyle={{ borderRadius: "8px", fontSize: "12px" }}
+                />
+                <Legend
+                  iconType="circle"
+                  iconSize={8}
+                  formatter={(value) => <span className="text-xs">{value}</span>}
+                />
+              </PieChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Empresas por Estado */}
+      {stateData.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Empresas por Estado</CardTitle>
+            <CardDescription>
+              {stateData.length} UF{stateData.length !== 1 ? "s" : ""} com clientes
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={220}>
+              <PieChart>
+                <Pie
+                  data={stateData}
+                  cx="50%"
+                  cy="50%"
+                  innerRadius={55}
+                  outerRadius={80}
+                  paddingAngle={3}
+                  dataKey="value"
+                >
+                  {stateData.map((entry, index) => (
+                    <Cell key={entry.state} fill={STATE_COLORS[index % STATE_COLORS.length]} />
+                  ))}
+                </Pie>
+                <Tooltip
+                  formatter={(value: number) => [`${value} empresa${value !== 1 ? "s" : ""}`, ""]}
                   contentStyle={{ borderRadius: "8px", fontSize: "12px" }}
                 />
                 <Legend

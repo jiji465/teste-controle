@@ -72,6 +72,8 @@ export function ClientForm({ client, open, onOpenChange, onSave, onObligationsCr
       status: "active",
       ie: "",
       im: "",
+      city: "",
+      state: "",
       notes: "",
       businessActivity: undefined,
       cnaeCode: "",
@@ -97,6 +99,8 @@ export function ClientForm({ client, open, onOpenChange, onSave, onObligationsCr
           cnaeDescription: client.cnaeDescription || "",
           ie: client.ie || "",
           im: client.im || "",
+          city: client.city || "",
+          state: client.state || "",
           notes: client.notes || "",
           createdAt: client.createdAt,
         })
@@ -114,6 +118,8 @@ export function ClientForm({ client, open, onOpenChange, onSave, onObligationsCr
           cnaeDescription: "",
           ie: "",
           im: "",
+          city: "",
+          state: "",
           notes: "",
         })
       }
@@ -135,6 +141,8 @@ export function ClientForm({ client, open, onOpenChange, onSave, onObligationsCr
       cnaeDescription: data.cnaeDescription || undefined,
       ie: data.ie || undefined,
       im: data.im || undefined,
+      city: data.city || undefined,
+      state: data.state || undefined,
       notes: data.notes || undefined,
       createdAt: data.createdAt || new Date().toISOString(),
     }
@@ -245,6 +253,8 @@ export function ClientForm({ client, open, onOpenChange, onSave, onObligationsCr
                             if (data.telefone && !form.getValues("phone")) form.setValue("phone", data.telefone)
                             if (data.cnaeCode) form.setValue("cnaeCode", data.cnaeCode)
                             if (data.cnaeDescription) form.setValue("cnaeDescription", data.cnaeDescription)
+                            if (data.municipio && !form.getValues("city")) form.setValue("city", data.municipio)
+                            if (data.uf && !form.getValues("state")) form.setValue("state", data.uf)
                             if (!form.getValues("businessActivity")) {
                               const inferred = inferBusinessActivityFromCNAE(data.cnaeCode)
                               if (inferred) form.setValue("businessActivity", inferred)
@@ -390,6 +400,36 @@ export function ClientForm({ client, open, onOpenChange, onSave, onObligationsCr
                       <FormLabel>Inscrição Municipal (IM)</FormLabel>
                       <FormControl>
                         <Input placeholder="00000000" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+
+              <div className="grid sm:grid-cols-3 gap-3">
+                <FormField
+                  control={form.control}
+                  name="city"
+                  render={({ field }) => (
+                    <FormItem className="sm:col-span-2">
+                      <FormLabel>Município</FormLabel>
+                      <FormControl>
+                        <Input placeholder="Ex: São Paulo" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="state"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>UF</FormLabel>
+                      <FormControl>
+                        <Input maxLength={2} placeholder="SP" className="uppercase" {...field} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>

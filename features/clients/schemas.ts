@@ -25,6 +25,8 @@ export const clientSchema = z.object({
   cnaeDescription: z.string().optional(),
   ie: z.string().optional(),
   im: z.string().optional(),
+  city: z.string().optional(),
+  state: z.string().optional(),
   notes: z.string().optional(),
   createdAt: z.string().optional(),
 })

@@ -9,7 +9,7 @@ import { ProductivityStats } from "@/components/productivity-stats"
 import { UpcomingObligations } from "@/components/upcoming-obligations"
 import { ClientOverview } from "@/components/client-overview"
 import { RecentActivity } from "@/components/recent-activity"
-import { TaxCalendar } from "@/components/tax-calendar"
+import { UpcomingTaxes } from "@/components/upcoming-taxes"
 
 const RegimeDistributionChart = dynamic(
   () => import("@/components/regime-distribution-chart").then((m) => m.RegimeDistributionChart),
@@ -394,25 +394,16 @@ export default function DashboardPage() {
             </div>
           )}
 
-          {/* Linha 2: Calendário Fiscal + Distribuição por Regime (lado a lado) */}
-          <div className="grid gap-6 lg:grid-cols-2">
-            <div>
-              <h2 className="text-xl font-semibold mb-3 flex items-center gap-2">
-                <CalendarIcon className="size-5" />
-                Calendário Fiscal
-              </h2>
-              <TaxCalendar taxes={taxes} />
-            </div>
-            <div>
-              <h2 className="text-xl font-semibold mb-3 flex items-center gap-2">
-                <BarChart3 className="size-5" />
-                Distribuição por Regime
-              </h2>
-              <RegimeDistributionChart obligations={obligations} clients={clients} />
-            </div>
+          {/* Linha 2: Distribuição por Regime + Estado + Status (3 colunas) */}
+          <div>
+            <h2 className="text-xl font-semibold mb-3 flex items-center gap-2">
+              <BarChart3 className="size-5" />
+              Distribuição
+            </h2>
+            <RegimeDistributionChart obligations={obligations} clients={clients} />
           </div>
 
-          {/* Indicadores de Produtividade — linha cheia (gráficos precisam espaço) */}
+          {/* Indicadores de Produtividade */}
           <div>
             <h2 className="text-xl font-semibold mb-3 flex items-center gap-2">
               <TrendingUp className="size-5" />
@@ -421,9 +412,13 @@ export default function DashboardPage() {
             <ProductivityStats obligations={obligations} />
           </div>
 
-          {/* Linha 3: Próximas Obrigações + Visão de Clientes + Atividade Recente */}
-          <div className="grid gap-4 lg:grid-cols-3">
+          {/* Linha 3: Próximas Obrigações + Próximas Guias + Visão de Clientes + Atividade */}
+          <div className="grid gap-4 lg:grid-cols-2">
             <UpcomingObligations obligations={obligations} />
+            <UpcomingTaxes taxes={taxes} clients={clients} />
+          </div>
+
+          <div className="grid gap-4 lg:grid-cols-2">
             <ClientOverview clients={clients} obligations={obligations} />
             <RecentActivity obligations={obligations} />
           </div>

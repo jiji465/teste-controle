@@ -37,6 +37,8 @@ export type Client = {
   cnaeDescription?: string  // Descrição do CNAE oficial
   ie?: string               // Inscrição Estadual
   im?: string               // Inscrição Municipal
+  city?: string             // Município (vem da Receita pelo CNPJ)
+  state?: string            // UF (vem da Receita pelo CNPJ)
   notes?: string
   createdAt: string
 }

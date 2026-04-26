@@ -16,6 +16,8 @@ function mapClientToDb(client: Client) {
     cnae_description: client.cnaeDescription || null,
     ie: client.ie || null,
     im: client.im || null,
+    city: client.city || null,
+    state: client.state || null,
     notes: client.notes || null,
     created_at: client.createdAt,
   }
@@ -36,6 +38,8 @@ function mapDbToClient(row: any): Client {
     cnaeDescription: row.cnae_description || undefined,
     ie: row.ie || undefined,
     im: row.im || undefined,
+    city: row.city || undefined,
+    state: row.state || undefined,
     notes: row.notes || undefined,
     createdAt: row.created_at,
   }

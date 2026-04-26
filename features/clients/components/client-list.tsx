@@ -40,12 +40,14 @@ export function ClientList({ clients, onUpdate }: ClientListProps) {
   const [regimeFilter, setRegimeFilter] = useState<string>("all")
   const [statusFilter, setStatusFilter] = useState<string>("all")
   const [activityFilter, setActivityFilter] = useState<string>("all")
+  const [stateFilter, setStateFilter] = useState<string>("all")
   const [confirmState, setConfirmState] = useState<ConfirmState>(null)
 
   const activeFilterCount =
     (regimeFilter !== "all" ? 1 : 0) +
     (statusFilter !== "all" ? 1 : 0) +
-    (activityFilter !== "all" ? 1 : 0)
+    (activityFilter !== "all" ? 1 : 0) +
+    (stateFilter !== "all" ? 1 : 0)
 
   const filteredClients = useMemo(() => {
     const q = search.trim()
@@ -63,6 +65,8 @@ export function ClientList({ clients, onUpdate }: ClientListProps) {
           matchesText(client.notes, q) ||
           matchesText(client.cnaeCode, q) ||
           matchesText(client.cnaeDescription, q) ||
+          matchesText(client.city, q) ||
+          matchesText(client.state, q) ||
           (client.taxRegime ? matchesText(TAX_REGIME_LABELS[client.taxRegime], q) : false) ||
           (client.businessActivity
             ? matchesText(
@@ -76,9 +80,19 @@ export function ClientList({ clients, onUpdate }: ClientListProps) {
       if (regimeFilter !== "all" && client.taxRegime !== regimeFilter) return false
       if (statusFilter !== "all" && client.status !== statusFilter) return false
       if (activityFilter !== "all" && client.businessActivity !== activityFilter) return false
+      if (stateFilter !== "all" && client.state !== stateFilter) return false
       return true
     })
-  }, [clients, search, regimeFilter, statusFilter, activityFilter])
+  }, [clients, search, regimeFilter, statusFilter, activityFilter, stateFilter])
+
+  // UFs disponíveis (apenas as que têm clientes cadastrados)
+  const availableStates = useMemo(() => {
+    const set = new Set<string>()
+    clients.forEach((c) => {
+      if (c.state) set.add(c.state.toUpperCase())
+    })
+    return [...set].sort()
+  }, [clients])
 
   const handleSave = async (client: Client) => {
     try {
@@ -312,6 +326,21 @@ export function ClientList({ clients, onUpdate }: ClientListProps) {
                 <SelectItem value="all">Todas</SelectItem>
                 {(Object.entries(BUSINESS_ACTIVITY_LABELS) as [BusinessActivity, string][]).map(([v, l]) => (
                   <SelectItem key={v} value={v}>{l}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="grid gap-2">
+            <label className="text-sm font-medium">Estado (UF)</label>
+            <Select value={stateFilter} onValueChange={setStateFilter}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos</SelectItem>
+                {availableStates.length === 0 && (
+                  <SelectItem value="__none__" disabled>(nenhum estado cadastrado)</SelectItem>
+                )}
+                {availableStates.map((uf) => (
+                  <SelectItem key={uf} value={uf}>{uf}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
