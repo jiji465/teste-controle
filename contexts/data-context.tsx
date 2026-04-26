@@ -3,7 +3,9 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from "react"
 import type { Client, Tax, Obligation, Installment } from "@/lib/types"
 import { getClients, getTaxes, getObligations, getInstallments } from "@/lib/supabase/database"
-import { seedDefaultTemplates } from "@/lib/obligation-templates"
+// seedDefaultTemplates foi movido pra rodar SÓ na página /templates pra
+// evitar duas chamadas concorrentes (era chamado aqui E lá, gerando race
+// conditions com o sync do Supabase).
 import { getCustomTemplatesAsync } from "@/features/templates/services"
 
 interface DataContextType {
@@ -77,7 +79,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     setIsMounted(true)
-    seedDefaultTemplates()
     refreshData()
   }, [])
 

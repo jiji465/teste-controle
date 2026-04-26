@@ -6,7 +6,8 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Plus, Trash2, Pencil, Sparkles, Layers, RotateCcw, Copy, Database, Eraser } from "lucide-react"
-import { getCustomTemplates, deleteCustomTemplate, seedDefaultTemplates, resetDefaultTemplates, cloneCustomTemplate, BUSINESS_ACTIVITY_LABELS, type CustomTemplatePackage } from "@/lib/obligation-templates"
+import { seedDefaultTemplates, resetDefaultTemplates, cloneCustomTemplate, BUSINESS_ACTIVITY_LABELS, type CustomTemplatePackage } from "@/lib/obligation-templates"
+import { getCustomTemplatesAsync, deleteCustomTemplateAsync } from "@/features/templates/services"
 import { TAX_REGIME_LABELS, TAX_REGIME_COLORS } from "@/lib/types"
 import { seedDemoData, clearAllData } from "@/lib/seed-demo"
 import { toast } from "sonner"
@@ -18,24 +19,23 @@ export default function TemplatesPage() {
   const [editingTemplate, setEditingTemplate] = useState<CustomTemplatePackage | undefined>()
   const [confirmState, setConfirmState] = useState<ConfirmState>(null)
 
-  const loadTemplates = () => {
-    setTemplates(getCustomTemplates())
+  const loadTemplates = async () => {
+    const list = await getCustomTemplatesAsync()
+    setTemplates(list)
   }
 
   useEffect(() => {
-    seedDefaultTemplates()
-    loadTemplates()
-
-    // Sync remoto: migra do localStorage uma vez + puxa última versão do Supabase
     void (async () => {
-      const { migrateLocalTemplatesToSupabase, getCustomTemplatesAsync } = await import("@/features/templates/services")
+      // 1. Migração one-shot localStorage → Supabase (se ainda não rodou)
+      const { migrateLocalTemplatesToSupabase } = await import("@/features/templates/services")
       const result = await migrateLocalTemplatesToSupabase()
       if (result.migrated > 0) {
         toast.success(`${result.migrated} template${result.migrated > 1 ? "s" : ""} sincronizado${result.migrated > 1 ? "s" : ""} com a nuvem`)
       }
-      // Re-carrega depois do pull para refletir mudanças feitas em outro dispositivo
-      await getCustomTemplatesAsync()
-      loadTemplates()
+      // 2. Cria padrões + faz cleanup de MEI/Lucro Real (one-shot)
+      await seedDefaultTemplates()
+      // 3. Carrega lista final pra UI
+      await loadTemplates()
     })()
   }, [])
 
@@ -45,22 +45,34 @@ export default function TemplatesPage() {
   }
 
   const handleDelete = (id: string) => {
+    const target = templates.find((t) => t.id === id)
+    const isDefault = target?.name.startsWith("Padrão · ")
     setConfirmState({
       title: "Excluir template",
-      description: "Tem certeza que deseja excluir este pacote de templates?",
+      description: isDefault
+        ? "Esse é um template padrão. Ele não vai voltar mesmo se você clicar em 'Restaurar padrões'. Deseja continuar?"
+        : "Tem certeza que deseja excluir este pacote de templates?",
       confirmLabel: "Excluir",
       destructive: true,
-      onConfirm: () => {
-        deleteCustomTemplate(id)
-        loadTemplates()
+      onConfirm: async () => {
+        try {
+          await deleteCustomTemplateAsync(id)
+          await loadTemplates()
+          toast.success("Template excluído")
+        } catch (err) {
+          toast.error(`Falha ao excluir: ${err instanceof Error ? err.message : "erro desconhecido"}`)
+        }
       },
     })
   }
 
-  const handleClone = (id: string) => {
+  const handleClone = async (id: string) => {
     const cloned = cloneCustomTemplate(id)
     if (cloned) {
-      loadTemplates()
+      // cloneCustomTemplate dispara save async em background; aguarda 1 tick
+      // pra Supabase processar antes do reload (evita ver "fantasma" antes de aparecer)
+      await new Promise((r) => setTimeout(r, 200))
+      await loadTemplates()
       toast.success(`Template clonado como "${cloned.name}"`)
     }
   }
@@ -99,9 +111,9 @@ export default function TemplatesPage() {
       title: "Restaurar templates padrão",
       description: "Apaga os templates que começam com 'Padrão · ' e recria as versões atualizadas. Seus templates personalizados não serão afetados.",
       confirmLabel: "Restaurar",
-      onConfirm: () => {
-        resetDefaultTemplates()
-        loadTemplates()
+      onConfirm: async () => {
+        await resetDefaultTemplates()
+        await loadTemplates()
         toast.success("Templates padrão restaurados")
       },
     })

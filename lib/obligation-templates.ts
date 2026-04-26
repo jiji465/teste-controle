@@ -63,55 +63,59 @@ export function taxToTemplateItem(tax: Tax): TemplateItem {
 
 // ─── Templates por regime + atividade ────────────────────────────────────────
 
+// ─── Convenções ──────────────────────────────────────────────────────────────
+// scope obrigatório em cada item (assim a esfera aparece já no template).
+// weekendRule:
+//   - federal       → "anticipate" (antecipa pro último dia útil anterior)
+//   - estadual/municipal → "postpone" (posterga pro próximo dia útil)
+// REMOVIDOS dos templates padrão (a pedido):
+//   - FGTS / RAIS  → quem manda nessas é o DP, não Fiscal
+//   - DIRF        → idem
+//   - ECD / ECF   → não geramos via template padrão por enquanto
+
 const COMMON_ALL: ObligationTemplate[] = [
-  { name: "FGTS", description: "Recolhimento mensal do FGTS", category: "tax_guide", dueDay: 7, frequency: "monthly", recurrence: "monthly", weekendRule: "postpone", priority: "high" },
-  { name: "INSS / GPS", description: "Guia da Previdência Social", category: "tax_guide", dueDay: 20, frequency: "monthly", recurrence: "monthly", weekendRule: "postpone", priority: "high" },
-  { name: "DIRF", description: "Declaração do Imposto de Renda Retido na Fonte", category: "declaration", dueDay: 28, frequency: "annual", recurrence: "annual", weekendRule: "anticipate", priority: "high" },
-  { name: "RAIS", description: "Relação Anual de Informações Sociais", category: "declaration", dueDay: 31, frequency: "annual", recurrence: "annual", weekendRule: "anticipate", priority: "medium" },
+  { name: "INSS / GPS", description: "Guia da Previdência Social", category: "tax_guide", scope: "federal", dueDay: 20, frequency: "monthly", recurrence: "monthly", weekendRule: "anticipate", priority: "high" },
 ]
 
 const SIMPLES_SERVICOS: ObligationTemplate[] = [
-  { name: "DAS", description: "Documento de Arrecadação do Simples Nacional", category: "tax_guide", dueDay: 20, frequency: "monthly", recurrence: "monthly", weekendRule: "postpone", priority: "urgent" },
-  { name: "PGDAS-D", description: "Programa Gerador do Documento de Arrecadação - Declaração", category: "declaration", dueDay: 20, frequency: "monthly", recurrence: "monthly", weekendRule: "postpone", priority: "high" },
-  { name: "ISS", description: "Imposto Sobre Serviços", category: "tax_guide", dueDay: 10, frequency: "monthly", recurrence: "monthly", weekendRule: "postpone", priority: "high" },
-  { name: "DEFIS", description: "Declaração de Informações Socioeconômicas e Fiscais", category: "declaration", dueDay: 31, frequency: "annual", recurrence: "annual", weekendRule: "anticipate", priority: "high" },
-  { name: "DASN-SIMEI", description: "Declaração Anual do Simples Nacional", category: "declaration", dueDay: 31, frequency: "annual", recurrence: "annual", weekendRule: "anticipate", priority: "medium" },
+  { name: "DAS", description: "Documento de Arrecadação do Simples Nacional", category: "tax_guide", scope: "federal", dueDay: 20, frequency: "monthly", recurrence: "monthly", weekendRule: "anticipate", priority: "urgent" },
+  { name: "PGDAS-D", description: "Programa Gerador do Documento de Arrecadação - Declaração", category: "declaration", scope: "federal", dueDay: 20, frequency: "monthly", recurrence: "monthly", weekendRule: "anticipate", priority: "high" },
+  { name: "ISS", description: "Imposto Sobre Serviços", category: "tax_guide", scope: "municipal", dueDay: 10, frequency: "monthly", recurrence: "monthly", weekendRule: "postpone", priority: "high" },
+  { name: "DEFIS", description: "Declaração de Informações Socioeconômicas e Fiscais", category: "declaration", scope: "federal", dueDay: 31, frequency: "annual", recurrence: "annual", weekendRule: "anticipate", priority: "high" },
 ]
 
 const SIMPLES_COMERCIO: ObligationTemplate[] = [
-  { name: "DAS", description: "Documento de Arrecadação do Simples Nacional", category: "tax_guide", dueDay: 20, frequency: "monthly", recurrence: "monthly", weekendRule: "postpone", priority: "urgent" },
-  { name: "PGDAS-D", description: "Programa Gerador do Documento de Arrecadação - Declaração", category: "declaration", dueDay: 20, frequency: "monthly", recurrence: "monthly", weekendRule: "postpone", priority: "high" },
-  { name: "DEFIS", description: "Declaração de Informações Socioeconômicas e Fiscais", category: "declaration", dueDay: 31, frequency: "annual", recurrence: "annual", weekendRule: "anticipate", priority: "high" },
-  { name: "ICMS-ST", description: "ICMS Substituição Tributária (se aplicável)", category: "tax_guide", dueDay: 9, frequency: "monthly", recurrence: "monthly", weekendRule: "postpone", priority: "medium" },
-  { name: "SPED Fiscal (EFD ICMS/IPI)", description: "Escrituração Fiscal Digital ICMS/IPI", category: "sped", dueDay: 15, frequency: "monthly", recurrence: "monthly", weekendRule: "postpone", priority: "high" },
+  { name: "DAS", description: "Documento de Arrecadação do Simples Nacional", category: "tax_guide", scope: "federal", dueDay: 20, frequency: "monthly", recurrence: "monthly", weekendRule: "anticipate", priority: "urgent" },
+  { name: "PGDAS-D", description: "Programa Gerador do Documento de Arrecadação - Declaração", category: "declaration", scope: "federal", dueDay: 20, frequency: "monthly", recurrence: "monthly", weekendRule: "anticipate", priority: "high" },
+  { name: "DEFIS", description: "Declaração de Informações Socioeconômicas e Fiscais", category: "declaration", scope: "federal", dueDay: 31, frequency: "annual", recurrence: "annual", weekendRule: "anticipate", priority: "high" },
+  { name: "ICMS-ST", description: "ICMS Substituição Tributária (se aplicável)", category: "tax_guide", scope: "estadual", dueDay: 9, frequency: "monthly", recurrence: "monthly", weekendRule: "postpone", priority: "medium" },
+  { name: "SPED Fiscal (EFD ICMS/IPI)", description: "Escrituração Fiscal Digital ICMS/IPI", category: "sped", scope: "estadual", dueDay: 15, frequency: "monthly", recurrence: "monthly", weekendRule: "postpone", priority: "high" },
 ]
 
 const SIMPLES_INDUSTRIA: ObligationTemplate[] = [
   ...SIMPLES_COMERCIO,
-  { name: "IPI", description: "Imposto sobre Produtos Industrializados", category: "tax_guide", dueDay: 25, frequency: "monthly", recurrence: "monthly", weekendRule: "postpone", priority: "high" },
+  { name: "IPI", description: "Imposto sobre Produtos Industrializados", category: "tax_guide", scope: "federal", dueDay: 25, frequency: "monthly", recurrence: "monthly", weekendRule: "anticipate", priority: "high" },
 ]
 
 const PRESUMIDO_SERVICOS: ObligationTemplate[] = [
-  { name: "IRPJ Trimestral", description: "Imposto de Renda Pessoa Jurídica - Lucro Presumido", category: "tax_guide", dueDay: 30, frequency: "quarterly", recurrence: "quarterly", weekendRule: "anticipate", priority: "urgent" },
-  { name: "CSLL Trimestral", description: "Contribuição Social sobre o Lucro Líquido", category: "tax_guide", dueDay: 30, frequency: "quarterly", recurrence: "quarterly", weekendRule: "anticipate", priority: "high" },
-  { name: "PIS", description: "Programa de Integração Social", category: "tax_guide", dueDay: 25, frequency: "monthly", recurrence: "monthly", weekendRule: "postpone", priority: "high" },
-  { name: "COFINS", description: "Contribuição para Financiamento da Seguridade Social", category: "tax_guide", dueDay: 25, frequency: "monthly", recurrence: "monthly", weekendRule: "postpone", priority: "high" },
-  { name: "ISS", description: "Imposto Sobre Serviços", category: "tax_guide", dueDay: 10, frequency: "monthly", recurrence: "monthly", weekendRule: "postpone", priority: "high" },
-  { name: "DCTF", description: "Declaração de Débitos e Créditos Tributários Federais", category: "declaration", dueDay: 15, frequency: "monthly", recurrence: "monthly", weekendRule: "postpone", priority: "high" },
-  { name: "ECF", description: "Escrituração Contábil Fiscal", category: "sped", dueDay: 31, frequency: "annual", recurrence: "annual", weekendRule: "anticipate", priority: "high" },
-  { name: "ECD", description: "Escrituração Contábil Digital", category: "sped", dueDay: 31, frequency: "annual", recurrence: "annual", weekendRule: "anticipate", priority: "high" },
+  { name: "IRPJ Trimestral", description: "Imposto de Renda Pessoa Jurídica - Lucro Presumido", category: "tax_guide", scope: "federal", dueDay: 30, frequency: "quarterly", recurrence: "quarterly", weekendRule: "anticipate", priority: "urgent" },
+  { name: "CSLL Trimestral", description: "Contribuição Social sobre o Lucro Líquido", category: "tax_guide", scope: "federal", dueDay: 30, frequency: "quarterly", recurrence: "quarterly", weekendRule: "anticipate", priority: "high" },
+  { name: "PIS", description: "Programa de Integração Social", category: "tax_guide", scope: "federal", dueDay: 25, frequency: "monthly", recurrence: "monthly", weekendRule: "anticipate", priority: "high" },
+  { name: "COFINS", description: "Contribuição para Financiamento da Seguridade Social", category: "tax_guide", scope: "federal", dueDay: 25, frequency: "monthly", recurrence: "monthly", weekendRule: "anticipate", priority: "high" },
+  { name: "ISS", description: "Imposto Sobre Serviços", category: "tax_guide", scope: "municipal", dueDay: 10, frequency: "monthly", recurrence: "monthly", weekendRule: "postpone", priority: "high" },
+  { name: "DCTF", description: "Declaração de Débitos e Créditos Tributários Federais", category: "declaration", scope: "federal", dueDay: 15, frequency: "monthly", recurrence: "monthly", weekendRule: "anticipate", priority: "high" },
 ]
 
 const PRESUMIDO_COMERCIO: ObligationTemplate[] = [
   ...PRESUMIDO_SERVICOS.filter(t => t.name !== "ISS"),
-  { name: "ICMS", description: "Imposto sobre Circulação de Mercadorias e Serviços", category: "tax_guide", dueDay: 9, frequency: "monthly", recurrence: "monthly", weekendRule: "postpone", priority: "high" },
-  { name: "SPED Fiscal (EFD ICMS/IPI)", description: "Escrituração Fiscal Digital", category: "sped", dueDay: 15, frequency: "monthly", recurrence: "monthly", weekendRule: "postpone", priority: "high" },
-  { name: "EFD-Contribuições", description: "Escrituração Fiscal Digital de Contribuições", category: "sped", dueDay: 10, frequency: "monthly", recurrence: "monthly", weekendRule: "postpone", priority: "high" },
+  { name: "ICMS", description: "Imposto sobre Circulação de Mercadorias e Serviços", category: "tax_guide", scope: "estadual", dueDay: 9, frequency: "monthly", recurrence: "monthly", weekendRule: "postpone", priority: "high" },
+  { name: "SPED Fiscal (EFD ICMS/IPI)", description: "Escrituração Fiscal Digital", category: "sped", scope: "estadual", dueDay: 15, frequency: "monthly", recurrence: "monthly", weekendRule: "postpone", priority: "high" },
+  { name: "EFD-Contribuições", description: "Escrituração Fiscal Digital de Contribuições", category: "sped", scope: "federal", dueDay: 10, frequency: "monthly", recurrence: "monthly", weekendRule: "anticipate", priority: "high" },
 ]
 
 const PRESUMIDO_INDUSTRIA: ObligationTemplate[] = [
   ...PRESUMIDO_COMERCIO,
-  { name: "IPI", description: "Imposto sobre Produtos Industrializados", category: "tax_guide", dueDay: 25, frequency: "monthly", recurrence: "monthly", weekendRule: "postpone", priority: "high" },
+  { name: "IPI", description: "Imposto sobre Produtos Industrializados", category: "tax_guide", scope: "federal", dueDay: 25, frequency: "monthly", recurrence: "monthly", weekendRule: "anticipate", priority: "high" },
 ]
 
 const REAL_SERVICOS: ObligationTemplate[] = [
@@ -143,21 +147,21 @@ const REAL_INDUSTRIA: ObligationTemplate[] = [
 // aguardar o fechamento trimestral.
 
 const PRESUMIDO_MENSAL_SERVICOS: ObligationTemplate[] = [
-  { name: "IRPJ Mensal", description: "IRPJ - Lucro Presumido (apuração mensal antecipada)", category: "tax_guide", dueDay: 30, frequency: "monthly", recurrence: "monthly", weekendRule: "anticipate", priority: "urgent" },
-  { name: "CSLL Mensal", description: "CSLL - Lucro Presumido (apuração mensal antecipada)", category: "tax_guide", dueDay: 30, frequency: "monthly", recurrence: "monthly", weekendRule: "anticipate", priority: "high" },
+  { name: "IRPJ Mensal", description: "IRPJ - Lucro Presumido (apuração mensal antecipada)", category: "tax_guide", scope: "federal", dueDay: 30, frequency: "monthly", recurrence: "monthly", weekendRule: "anticipate", priority: "urgent" },
+  { name: "CSLL Mensal", description: "CSLL - Lucro Presumido (apuração mensal antecipada)", category: "tax_guide", scope: "federal", dueDay: 30, frequency: "monthly", recurrence: "monthly", weekendRule: "anticipate", priority: "high" },
   ...PRESUMIDO_SERVICOS.filter((t) => t.name !== "IRPJ Trimestral" && t.name !== "CSLL Trimestral"),
 ]
 
 const PRESUMIDO_MENSAL_COMERCIO: ObligationTemplate[] = [
   ...PRESUMIDO_MENSAL_SERVICOS.filter((t) => t.name !== "ISS"),
-  { name: "ICMS", description: "Imposto sobre Circulação de Mercadorias e Serviços", category: "tax_guide", dueDay: 9, frequency: "monthly", recurrence: "monthly", weekendRule: "postpone", priority: "high" },
-  { name: "SPED Fiscal (EFD ICMS/IPI)", description: "Escrituração Fiscal Digital", category: "sped", dueDay: 15, frequency: "monthly", recurrence: "monthly", weekendRule: "postpone", priority: "high" },
-  { name: "EFD-Contribuições", description: "Escrituração Fiscal Digital de Contribuições", category: "sped", dueDay: 10, frequency: "monthly", recurrence: "monthly", weekendRule: "postpone", priority: "high" },
+  { name: "ICMS", description: "Imposto sobre Circulação de Mercadorias e Serviços", category: "tax_guide", scope: "estadual", dueDay: 9, frequency: "monthly", recurrence: "monthly", weekendRule: "postpone", priority: "high" },
+  { name: "SPED Fiscal (EFD ICMS/IPI)", description: "Escrituração Fiscal Digital", category: "sped", scope: "estadual", dueDay: 15, frequency: "monthly", recurrence: "monthly", weekendRule: "postpone", priority: "high" },
+  { name: "EFD-Contribuições", description: "Escrituração Fiscal Digital de Contribuições", category: "sped", scope: "federal", dueDay: 10, frequency: "monthly", recurrence: "monthly", weekendRule: "anticipate", priority: "high" },
 ]
 
 const PRESUMIDO_MENSAL_INDUSTRIA: ObligationTemplate[] = [
   ...PRESUMIDO_MENSAL_COMERCIO,
-  { name: "IPI", description: "Imposto sobre Produtos Industrializados", category: "tax_guide", dueDay: 25, frequency: "monthly", recurrence: "monthly", weekendRule: "postpone", priority: "high" },
+  { name: "IPI", description: "Imposto sobre Produtos Industrializados", category: "tax_guide", scope: "federal", dueDay: 25, frequency: "monthly", recurrence: "monthly", weekendRule: "anticipate", priority: "high" },
 ]
 
 const PRESUMIDO_MENSAL_MISTO: ObligationTemplate[] = [
@@ -247,6 +251,9 @@ export type CustomTemplatePackage = {
   activity?: BusinessActivity
   obligations: ObligationTemplate[]
   createdAt: string
+  /** Última atualização. Usado pra resolver conflitos local vs remoto:
+   *  na hora de mergear, a versão com updatedAt mais recente vence. */
+  updatedAt?: string
 }
 
 /**
@@ -286,19 +293,30 @@ export const getCustomTemplates = (): CustomTemplatePackage[] => {
   return data ? JSON.parse(data) : []
 }
 
+/**
+ * Salva síncrono (cache local + dispara save remoto fire-and-forget).
+ * @deprecated Prefira `saveCustomTemplateAsync` em features/templates/services
+ *             — ele aguarda o Supabase confirmar antes de retornar, evitando
+ *             que edições sejam sobrescritas em condições de corrida.
+ */
 export const saveCustomTemplate = (pkg: CustomTemplatePackage): void => {
+  const stamped: CustomTemplatePackage = { ...pkg, updatedAt: new Date().toISOString() }
   const templates = getCustomTemplates()
-  const index = templates.findIndex((t) => t.id === pkg.id)
+  const index = templates.findIndex((t) => t.id === stamped.id)
   if (index >= 0) {
-    templates[index] = pkg
+    templates[index] = stamped
   } else {
-    templates.push(pkg)
+    templates.push(stamped)
   }
   localStorage.setItem(CUSTOM_TEMPLATES_KEY, JSON.stringify(templates))
   // Sincroniza no Supabase sem bloquear a UI
-  void import("@/features/templates/services").then((m) => m.saveCustomTemplateAsync(pkg))
+  void import("@/features/templates/services").then((m) => m.saveCustomTemplateAsync(stamped))
 }
 
+/**
+ * Apaga síncrono (cache local + dispara delete remoto fire-and-forget).
+ * @deprecated Prefira `deleteCustomTemplateAsync` em features/templates/services.
+ */
 export const deleteCustomTemplate = (id: string): void => {
   const templates = getCustomTemplates().filter((t) => t.id !== id)
   localStorage.setItem(CUSTOM_TEMPLATES_KEY, JSON.stringify(templates))
@@ -349,9 +367,9 @@ type SeedDef = {
   activity: BusinessActivity
 }
 
-// 14 combinações cobrindo todos os regimes × atividades.
-// Cada template recebe regime + activity para matching automático ao
-// aplicar em uma empresa nova com o mesmo perfil.
+// Apenas Simples Nacional + Lucro Presumido (com variante mensal).
+// MEI e Lucro Real ficam disponíveis no código (TEMPLATES) mas NÃO são
+// criados como templates padrão — usuário pode criar manualmente se quiser.
 const DEFAULT_TEMPLATE_DEFINITIONS: SeedDef[] = [
   // ── Simples Nacional ────────────────────────────────────────────────────
   { name: "Padrão · Simples Nacional · Serviços", description: "Empresas Simples Nacional prestadoras de serviços (DAS, PGDAS-D, ISS)", key: "simples_nacional_servicos", regime: "simples_nacional", activity: "servicos" },
@@ -359,21 +377,11 @@ const DEFAULT_TEMPLATE_DEFINITIONS: SeedDef[] = [
   { name: "Padrão · Simples Nacional · Indústria", description: "Indústria no Simples Nacional (com IPI e SPED ICMS)", key: "simples_nacional_industria", regime: "simples_nacional", activity: "industria" },
   { name: "Padrão · Simples Nacional · Misto", description: "Atividade mista (serviços + comércio) no Simples Nacional", key: "simples_nacional_misto", regime: "simples_nacional", activity: "misto" },
 
-  // ── Lucro Presumido ─────────────────────────────────────────────────────
+  // ── Lucro Presumido (trimestral) ────────────────────────────────────────
   { name: "Padrão · Lucro Presumido · Serviços", description: "Serviços no Lucro Presumido (IRPJ/CSLL trim, PIS/COFINS, ISS, DCTF)", key: "lucro_presumido_servicos", regime: "lucro_presumido", activity: "servicos" },
   { name: "Padrão · Lucro Presumido · Comércio", description: "Comércio no Lucro Presumido (com ICMS e SPED Fiscal)", key: "lucro_presumido_comercio", regime: "lucro_presumido", activity: "comercio" },
   { name: "Padrão · Lucro Presumido · Indústria", description: "Indústria no Lucro Presumido (com IPI, ICMS, SPED Fiscal)", key: "lucro_presumido_industria", regime: "lucro_presumido", activity: "industria" },
   { name: "Padrão · Lucro Presumido · Misto", description: "Atividade mista no Lucro Presumido", key: "lucro_presumido_misto", regime: "lucro_presumido", activity: "misto" },
-
-  // ── Lucro Real ──────────────────────────────────────────────────────────
-  { name: "Padrão · Lucro Real · Serviços", description: "Serviços no Lucro Real (IRPJ/CSLL mensal, PIS/COFINS não-cumulativos, EFD-Contribuições, ECF, ECD, LALUR)", key: "lucro_real_servicos", regime: "lucro_real", activity: "servicos" },
-  { name: "Padrão · Lucro Real · Comércio", description: "Comércio no Lucro Real (com ICMS e SPED Fiscal)", key: "lucro_real_comercio", regime: "lucro_real", activity: "comercio" },
-  { name: "Padrão · Lucro Real · Indústria", description: "Indústria no Lucro Real (com IPI, ICMS, SPED Fiscal)", key: "lucro_real_industria", regime: "lucro_real", activity: "industria" },
-  { name: "Padrão · Lucro Real · Misto", description: "Atividade mista no Lucro Real", key: "lucro_real_misto", regime: "lucro_real", activity: "misto" },
-
-  // ── MEI ─────────────────────────────────────────────────────────────────
-  { name: "Padrão · MEI · Serviços", description: "Microempreendedor Individual prestador de serviços", key: "mei_servicos", regime: "mei", activity: "servicos" },
-  { name: "Padrão · MEI · Comércio", description: "Microempreendedor Individual do comércio", key: "mei_comercio", regime: "mei", activity: "comercio" },
 
   // ── Lucro Presumido (IRPJ/CSLL Mensal) ──────────────────────────────────
   // Para clientes que optam por antecipar IRPJ/CSLL mensalmente em vez de trimestral.
@@ -381,13 +389,6 @@ const DEFAULT_TEMPLATE_DEFINITIONS: SeedDef[] = [
   { name: "Padrão · Lucro Presumido (IRPJ/CSLL Mensal) · Comércio", description: "Lucro Presumido com IRPJ/CSLL apurados mensalmente — comércio (com ICMS)", key: "lucro_presumido_mensal_comercio", regime: "lucro_presumido", activity: "comercio" },
   { name: "Padrão · Lucro Presumido (IRPJ/CSLL Mensal) · Indústria", description: "Lucro Presumido com IRPJ/CSLL apurados mensalmente — indústria (com IPI e ICMS)", key: "lucro_presumido_mensal_industria", regime: "lucro_presumido", activity: "industria" },
   { name: "Padrão · Lucro Presumido (IRPJ/CSLL Mensal) · Misto", description: "Lucro Presumido com IRPJ/CSLL apurados mensalmente — atividade mista", key: "lucro_presumido_mensal_misto", regime: "lucro_presumido", activity: "misto" },
-
-  // ── Lucro Real Trimestral ───────────────────────────────────────────────
-  // Em vez da estimativa mensal padrão.
-  { name: "Padrão · Lucro Real Trimestral · Serviços", description: "Lucro Real com apuração trimestral de IRPJ/CSLL — serviços", key: "lucro_real_trimestral_servicos", regime: "lucro_real", activity: "servicos" },
-  { name: "Padrão · Lucro Real Trimestral · Comércio", description: "Lucro Real Trimestral — comércio (com ICMS e SPED Fiscal)", key: "lucro_real_trimestral_comercio", regime: "lucro_real", activity: "comercio" },
-  { name: "Padrão · Lucro Real Trimestral · Indústria", description: "Lucro Real Trimestral — indústria (com IPI, ICMS, SPED Fiscal)", key: "lucro_real_trimestral_industria", regime: "lucro_real", activity: "industria" },
-  { name: "Padrão · Lucro Real Trimestral · Misto", description: "Lucro Real Trimestral — atividade mista", key: "lucro_real_trimestral_misto", regime: "lucro_real", activity: "misto" },
 ]
 
 const loadSeededNames = (): Set<string> => {
@@ -419,34 +420,100 @@ const saveSeededNames = (names: Set<string>): void => {
   localStorage.setItem(SEEDED_NAMES_KEY, JSON.stringify([...names]))
 }
 
-export const seedDefaultTemplates = (): void => {
-  if (typeof window === "undefined") return
+/**
+ * Cria os templates "Padrão · ..." na primeira execução do usuário.
+ *
+ * Comportamento:
+ *  - Pula nomes que o usuário deletou explicitamente (lista negra persistida
+ *    em Supabase + localStorage), pra "templates apagados não voltarem".
+ *  - Pula nomes já registrados no `seeded` set, mesmo que o template tenha
+ *    sido editado/renomeado.
+ *  - Salva via `saveCustomTemplateAsync` (await) pra garantir persistência
+ *    no Supabase antes de marcar como seeded — evita estado intermediário.
+ */
+// Cleanup one-shot: remove templates de MEI/Lucro Real que vieram de seeds
+// antigos. Não voltam mesmo que o usuário clique em "Restaurar padrões",
+// porque foram removidos de DEFAULT_TEMPLATE_DEFINITIONS.
+const MEI_REAL_CLEANUP_FLAG = "fiscal_templates_mei_real_cleanup_v1"
+
+async function cleanupLegacyMeiAndRealTemplates(
+  allTemplates: CustomTemplatePackage[],
+  deleteAsync: (id: string) => Promise<void>,
+): Promise<boolean> {
+  if (typeof window === "undefined") return false
+  if (localStorage.getItem(MEI_REAL_CLEANUP_FLAG) === "true") return false
+
+  const targets = allTemplates.filter(
+    (t) => t.name.startsWith("Padrão · MEI") || t.name.startsWith("Padrão · Lucro Real"),
+  )
+  for (const t of targets) {
+    try {
+      await deleteAsync(t.id)
+    } catch (err) {
+      console.error("[templates] cleanup MEI/Real falhou:", err)
+    }
+  }
+  // Limpa do seeded set também pra não confundir
   const seeded = loadSeededNames()
-  const existingNames = new Map(getCustomTemplates().map((p) => [p.name, p]))
+  for (const t of targets) seeded.delete(t.name)
+  saveSeededNames(seeded)
+
+  localStorage.setItem(MEI_REAL_CLEANUP_FLAG, "true")
+  return targets.length > 0
+}
+
+export const seedDefaultTemplates = async (): Promise<void> => {
+  if (typeof window === "undefined") return
+
+  // 1. Carrega templates existentes (preferindo Supabase, pra evitar duplicar
+  //    em outro device).
+  const { getCustomTemplatesAsync, saveCustomTemplateAsync, deleteCustomTemplateAsync, getDeletedDefaultNames } =
+    await import("@/features/templates/services")
+  let allTemplates = await getCustomTemplatesAsync()
+
+  // 1.5. Cleanup one-shot de MEI/Lucro Real (a pedido do usuário, não usamos por enquanto)
+  const cleaned = await cleanupLegacyMeiAndRealTemplates(allTemplates, deleteCustomTemplateAsync)
+  if (cleaned) allTemplates = await getCustomTemplatesAsync()
+
+  const existingNames = new Map(allTemplates.map((p) => [p.name, p]))
+
+  // 2. Carrega lista negra (templates padrão que o user deletou)
+  const deletedDefaults = await getDeletedDefaultNames()
+
+  const seeded = loadSeededNames()
   let changed = false
+
   for (const def of DEFAULT_TEMPLATE_DEFINITIONS) {
+    // Não recria o que o usuário deletou
+    if (deletedDefaults.has(def.name)) continue
+
     if (seeded.has(def.name)) {
-      // Já criamos antes. Migra metadata regime/activity se ainda não tem.
+      // Já registramos. Migra regime/activity se ainda não tem (compat com versões antigas).
       const existing = existingNames.get(def.name)
       if (existing && (!existing.regime || !existing.activity)) {
-        saveCustomTemplate({ ...existing, regime: def.regime, activity: def.activity })
+        await saveCustomTemplateAsync({ ...existing, regime: def.regime, activity: def.activity })
       }
       continue
     }
     if (existingNames.has(def.name)) {
+      // Existe mas não estava no seeded — só registra
       seeded.add(def.name)
       changed = true
       continue
     }
+
+    // Cria do zero
     const obligations = TEMPLATES[def.key] ?? COMMON_ALL
-    saveCustomTemplate({
+    const now = new Date().toISOString()
+    await saveCustomTemplateAsync({
       id: crypto.randomUUID(),
       name: def.name,
       description: def.description,
       regime: def.regime,
       activity: def.activity,
       obligations,
-      createdAt: new Date().toISOString(),
+      createdAt: now,
+      updatedAt: now,
     })
     seeded.add(def.name)
     changed = true
@@ -455,15 +522,26 @@ export const seedDefaultTemplates = (): void => {
 }
 
 /**
- * Apaga todos os templates com nome começando com "Padrão · " e limpa o
- * rastreamento de seeded_names, forçando a recriação pela próxima chamada
- * de seedDefaultTemplates(). Útil para o botão "Restaurar padrões".
+ * Apaga todos os templates "Padrão · ..." (no localStorage E no Supabase),
+ * limpa o rastreamento de seeded_names + a lista negra de deleted defaults,
+ * e re-cria os padrões via seedDefaultTemplates(). Útil para "Restaurar padrões".
  */
-export const resetDefaultTemplates = (): void => {
+export const resetDefaultTemplates = async (): Promise<void> => {
   if (typeof window === "undefined") return
-  const all = getCustomTemplates()
-  const remaining = all.filter((p) => !p.name.startsWith("Padrão · "))
-  localStorage.setItem(CUSTOM_TEMPLATES_KEY, JSON.stringify(remaining))
+
+  const { deleteCustomTemplateAsync, clearDeletedDefaults, getCustomTemplatesAsync } = await import(
+    "@/features/templates/services"
+  )
+
+  // 1. Apaga todos os "Padrão · ..." atuais (Supabase + local)
+  const all = await getCustomTemplatesAsync()
+  const defaults = all.filter((p) => p.name.startsWith("Padrão · "))
+  await Promise.all(defaults.map((d) => deleteCustomTemplateAsync(d.id).catch(() => {})))
+
+  // 2. Limpa lista negra (assim padrões deletados voltam) + rastreamento de seeded
+  await clearDeletedDefaults()
   localStorage.removeItem(SEEDED_NAMES_KEY)
-  seedDefaultTemplates()
+
+  // 3. Re-aplica o seed (cria padrões atualizados)
+  await seedDefaultTemplates()
 }
