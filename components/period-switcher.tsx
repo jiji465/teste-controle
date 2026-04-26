@@ -36,7 +36,7 @@ export function PeriodSwitcher() {
   const goTo = (date: Date) => {
     const params = new URLSearchParams(Array.from(searchParams.entries()))
     params.set("period", formatPeriod(date))
-    router.replace(`${pathname}?${params.toString()}`, { scroll: false })
+    router.push(`${pathname}?${params.toString()}`, { scroll: false })
   }
 
   const handlePrevMonth = () => goTo(subMonths(currentDate, 1))
@@ -45,7 +45,7 @@ export function PeriodSwitcher() {
     const params = new URLSearchParams(Array.from(searchParams.entries()))
     params.delete("period")
     const qs = params.toString()
-    router.replace(`${pathname}${qs ? `?${qs}` : ""}`, { scroll: false })
+    router.push(`${pathname}${qs ? `?${qs}` : ""}`, { scroll: false })
   }
 
   const todayPeriod = formatPeriod(new Date())

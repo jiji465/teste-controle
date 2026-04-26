@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useMemo } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { useSearchParams } from "next/navigation"
 
 /**
@@ -11,10 +11,21 @@ import { useSearchParams } from "next/navigation"
  *  - Sem `period` na URL → tudo passa (sem filtro).
  *  - Item com data válida → passa se a data cai no mês/ano selecionado.
  *  - Item SEM data → passa sempre (não filtra).
+ *
+ * Uso interno de useState + useEffect espelhando searchParams para forçar
+ * reatividade consistente em todas as páginas (algumas builds do Next 16
+ * + Turbopack atrasavam o re-render quando líamos searchParams direto).
  */
 export function useSelectedPeriod() {
   const searchParams = useSearchParams()
-  const period = searchParams.get("period") // formato "YYYY-MM" ou null
+  const periodFromUrl = searchParams.get("period") // "YYYY-MM" ou null
+
+  const [period, setPeriod] = useState<string | null>(periodFromUrl)
+
+  // Sincroniza estado com URL imediatamente sempre que a URL muda
+  useEffect(() => {
+    setPeriod(periodFromUrl)
+  }, [periodFromUrl])
 
   const periodLabel = useMemo(() => {
     if (!period) return null
