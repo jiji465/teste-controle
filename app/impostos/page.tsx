@@ -361,7 +361,7 @@ export default function ImpostosPage() {
         !competencyFilter || competencyFilter === "all" || t.competencyMonth === competencyFilter
       // Filtro global por período (PeriodSwitcher do topo) — por vencimento calculado.
       // Itens sem competência → calcDate é null → passa (sempre mostrar).
-      const calcDate = calculateDueDateFromCompetency(t.competencyMonth, t.dueDay, t.weekendRule)
+      const calcDate = calculateDueDateFromCompetency(t.competencyMonth, t.dueDay, t.weekendRule, t.dueMonth)
       const matchesGlobalPeriod = isInPeriod(calcDate)
       return matchesRegime && matchesScope && matchesPriority && matchesClient && matchesCompetency && matchesGlobalPeriod
     })
@@ -382,8 +382,8 @@ export default function ImpostosPage() {
         cmp = (order[a.status] ?? 9) - (order[b.status] ?? 9)
       }
       else if (sortBy === "dueDate") {
-        const ad = calculateDueDateFromCompetency(a.competencyMonth, a.dueDay, a.weekendRule)
-        const bd = calculateDueDateFromCompetency(b.competencyMonth, b.dueDay, b.weekendRule)
+        const ad = calculateDueDateFromCompetency(a.competencyMonth, a.dueDay, a.weekendRule, a.dueMonth)
+        const bd = calculateDueDateFromCompetency(b.competencyMonth, b.dueDay, b.weekendRule, b.dueMonth)
         const at = ad ? ad.getTime() : Number.MAX_SAFE_INTEGER
         const bt = bd ? bd.getTime() : Number.MAX_SAFE_INTEGER
         cmp = at - bt
@@ -397,7 +397,7 @@ export default function ImpostosPage() {
   // (assim não aparece em 2 tabs ao mesmo tempo + Atrasadas reflete o real).
   const taxEffectiveStatus = (t: Tax): Tax["status"] => {
     if (t.status !== "pending") return t.status
-    const due = calculateDueDateFromCompetency(t.competencyMonth, t.dueDay, t.weekendRule)
+    const due = calculateDueDateFromCompetency(t.competencyMonth, t.dueDay, t.weekendRule, t.dueMonth)
     if (!due) return t.status
     return isOverdue(due) ? "overdue" : "pending"
   }
@@ -694,6 +694,7 @@ export default function ImpostosPage() {
                         tax.competencyMonth,
                         tax.dueDay,
                         tax.weekendRule,
+                        tax.dueMonth,
                       )
                       return (
                       <div
@@ -851,6 +852,7 @@ export default function ImpostosPage() {
                             tax.competencyMonth,
                             tax.dueDay,
                             tax.weekendRule,
+                            tax.dueMonth,
                           )
                           const isTaxOverdue =
                             calculatedDueDate &&

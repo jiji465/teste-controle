@@ -913,6 +913,7 @@ export const ObligationList = forwardRef<ObligationListHandle, ObligationListPro
                           obligation.competencyMonth,
                           obligation.dueDay,
                           obligation.weekendRule,
+                          obligation.dueMonth,
                         )
                         if (!info?.wasAdjusted) return null
                         const arrow = info.direction === "anticipate" ? "←" : "→"

@@ -39,7 +39,7 @@ export function UpcomingTaxes({ taxes, clients, periodLabel, outsidePeriodCount 
     const items: TaxWithDate[] = []
     for (const t of taxes) {
       if (t.status === "completed") continue
-      const date = calculateDueDateFromCompetency(t.competencyMonth, t.dueDay, t.weekendRule)
+      const date = calculateDueDateFromCompetency(t.competencyMonth, t.dueDay, t.weekendRule, t.dueMonth)
       if (!date) continue
       const clientName = clients.find((c) => c.id === t.clientId)?.name ?? "—"
       items.push({ ...t, calculatedDueDate: date, clientName })

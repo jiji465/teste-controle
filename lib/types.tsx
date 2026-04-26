@@ -62,6 +62,10 @@ export type Tax = {
   /** Mês-base de competência (formato "YYYY-MM"). Ex: "2026-01" = janeiro/2026. */
   competencyMonth?: string
   dueDay?: number // Dia do vencimento da guia (1-31)
+  /** Mês fixo de vencimento (1-12) — só usado em guias ANUAIS com data fixa
+   *  (ex: DEFIS = 3, DASN-SIMEI = 5). Quando preenchido + recurrence='annual',
+   *  sobrescreve a regra padrão "mês seguinte à competência". */
+  dueMonth?: number
   status: "pending" | "in_progress" | "completed" | "overdue"
   priority: Priority
   assignedTo?: string
@@ -147,7 +151,10 @@ export type Obligation = {
   templateId?: string
   /** @deprecated Mantido para compatibilidade durante a migração. Não usar. */
   taxId?: string
-  /** @deprecated Use competencyMonth. */
+  /** Mês fixo de vencimento (1-12), usado em obrigações ANUAIS com data
+   *  fixa de entrega. Ex: DEFIS vence 31/03 do ano seguinte → dueMonth=3.
+   *  Quando preenchido + recurrence='annual', sobrescreve a regra padrão
+   *  de "mês seguinte à competência". */
   dueMonth?: number
   /** @deprecated Não usado mais. */
   realizationDate?: string

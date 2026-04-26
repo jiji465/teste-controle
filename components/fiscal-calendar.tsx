@@ -128,7 +128,7 @@ export function FiscalCalendar({ obligations, taxes = [], installments = [], cli
     // ignoramos no calendário pra não poluir todo mês.
     for (const t of taxes) {
       if (!t.dueDay) continue
-      const calc = calculateDueDateFromCompetency(t.competencyMonth, t.dueDay, t.weekendRule)
+      const calc = calculateDueDateFromCompetency(t.competencyMonth, t.dueDay, t.weekendRule, t.dueMonth)
       if (!calc) continue
       // Só inclui se cair no mês visualizado
       if (calc.getFullYear() !== year || calc.getMonth() !== month) continue

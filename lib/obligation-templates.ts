@@ -16,6 +16,11 @@ export type ObligationTemplate = {
   /** Esfera tributária — preenchida quando o item representa um imposto/guia. */
   scope?: TaxScope
   dueDay: number
+  /** Mês fixo de vencimento (1-12) pra obrigações ANUAIS com data fixa.
+   *  Ex: DEFIS sempre vence 31/03 do ano seguinte → dueMonth=3.
+   *  Quando preenchido + recurrence='annual', vencimento = year(competência)+1,
+   *  month=dueMonth, day=dueDay. Não usado em monthly/quarterly. */
+  dueMonth?: number
   frequency: "monthly" | "quarterly" | "annual" | "custom"
   recurrence: RecurrenceType
   weekendRule: WeekendRule
@@ -81,13 +86,17 @@ const SIMPLES_SERVICOS: ObligationTemplate[] = [
   { name: "DAS", description: "Documento de Arrecadação do Simples Nacional", category: "tax_guide", scope: "federal", dueDay: 20, frequency: "monthly", recurrence: "monthly", weekendRule: "anticipate", priority: "urgent" },
   { name: "PGDAS-D", description: "Programa Gerador do Documento de Arrecadação - Declaração", category: "declaration", scope: "federal", dueDay: 20, frequency: "monthly", recurrence: "monthly", weekendRule: "anticipate", priority: "high" },
   { name: "ISS", description: "Imposto Sobre Serviços", category: "tax_guide", scope: "municipal", dueDay: 10, frequency: "monthly", recurrence: "monthly", weekendRule: "postpone", priority: "high" },
-  { name: "DEFIS", description: "Declaração de Informações Socioeconômicas e Fiscais", category: "declaration", scope: "federal", dueDay: 31, frequency: "annual", recurrence: "annual", weekendRule: "anticipate", priority: "high" },
+  // DEFIS: anual, vence em 31/03 do ano seguinte ao exercício (Resolução
+  // CGSN 140/18 art. 72). dueMonth=3 + dueDay=31 + buildSafeDate ajusta.
+  { name: "DEFIS", description: "DEFIS - vence 31/03 do ano seguinte ao exercício", category: "declaration", scope: "federal", dueDay: 31, dueMonth: 3, frequency: "annual", recurrence: "annual", weekendRule: "anticipate", priority: "high" },
 ]
 
 const SIMPLES_COMERCIO: ObligationTemplate[] = [
   { name: "DAS", description: "Documento de Arrecadação do Simples Nacional", category: "tax_guide", scope: "federal", dueDay: 20, frequency: "monthly", recurrence: "monthly", weekendRule: "anticipate", priority: "urgent" },
   { name: "PGDAS-D", description: "Programa Gerador do Documento de Arrecadação - Declaração", category: "declaration", scope: "federal", dueDay: 20, frequency: "monthly", recurrence: "monthly", weekendRule: "anticipate", priority: "high" },
-  { name: "DEFIS", description: "Declaração de Informações Socioeconômicas e Fiscais", category: "declaration", scope: "federal", dueDay: 31, frequency: "annual", recurrence: "annual", weekendRule: "anticipate", priority: "high" },
+  // DEFIS: anual, vence em 31/03 do ano seguinte ao exercício (Resolução
+  // CGSN 140/18 art. 72). dueMonth=3 + dueDay=31 + buildSafeDate ajusta.
+  { name: "DEFIS", description: "DEFIS - vence 31/03 do ano seguinte ao exercício", category: "declaration", scope: "federal", dueDay: 31, dueMonth: 3, frequency: "annual", recurrence: "annual", weekendRule: "anticipate", priority: "high" },
   { name: "ICMS-ST", description: "ICMS Substituição Tributária (se aplicável)", category: "tax_guide", scope: "estadual", dueDay: 9, frequency: "monthly", recurrence: "monthly", weekendRule: "postpone", priority: "medium" },
   { name: "SPED Fiscal (EFD ICMS/IPI)", description: "Escrituração Fiscal Digital ICMS/IPI", category: "sped", scope: "estadual", dueDay: 15, frequency: "monthly", recurrence: "monthly", weekendRule: "postpone", priority: "high" },
 ]
@@ -108,7 +117,9 @@ const PRESUMIDO_SERVICOS: ObligationTemplate[] = [
   { name: "PIS", description: "Programa de Integração Social", category: "tax_guide", scope: "federal", dueDay: 25, frequency: "monthly", recurrence: "monthly", weekendRule: "anticipate", priority: "high" },
   { name: "COFINS", description: "Contribuição para Financiamento da Seguridade Social", category: "tax_guide", scope: "federal", dueDay: 25, frequency: "monthly", recurrence: "monthly", weekendRule: "anticipate", priority: "high" },
   { name: "ISS", description: "Imposto Sobre Serviços", category: "tax_guide", scope: "municipal", dueDay: 10, frequency: "monthly", recurrence: "monthly", weekendRule: "postpone", priority: "high" },
-  { name: "DCTF", description: "Declaração de Débitos e Créditos Tributários Federais", category: "declaration", scope: "federal", dueDay: 15, frequency: "monthly", recurrence: "monthly", weekendRule: "anticipate", priority: "high" },
+  // DCTFWeb (substitui a antiga DCTF). Vence sempre no último dia útil do
+  // mês seguinte ao da apuração. dueDay=31 + buildSafeDate trata cada mês.
+  { name: "DCTFWeb", description: "Declaração de Débitos e Créditos Tributários Federais Web (vence último dia útil do mês)", category: "declaration", scope: "federal", dueDay: 31, frequency: "monthly", recurrence: "monthly", weekendRule: "anticipate", priority: "high" },
 ]
 
 const PRESUMIDO_COMERCIO: ObligationTemplate[] = [
@@ -134,7 +145,9 @@ const REAL_SERVICOS: ObligationTemplate[] = [
   { name: "PIS Não-Cumulativo", description: "PIS regime não-cumulativo", category: "tax_guide", scope: "federal", dueDay: 25, frequency: "monthly", recurrence: "monthly", weekendRule: "anticipate", priority: "high" },
   { name: "COFINS Não-Cumulativo", description: "COFINS regime não-cumulativo", category: "tax_guide", scope: "federal", dueDay: 25, frequency: "monthly", recurrence: "monthly", weekendRule: "anticipate", priority: "high" },
   { name: "ISS", description: "Imposto Sobre Serviços", category: "tax_guide", scope: "municipal", dueDay: 10, frequency: "monthly", recurrence: "monthly", weekendRule: "postpone", priority: "high" },
-  { name: "DCTF", description: "Declaração de Débitos e Créditos Tributários Federais", category: "declaration", scope: "federal", dueDay: 15, frequency: "monthly", recurrence: "monthly", weekendRule: "anticipate", priority: "high" },
+  // DCTFWeb (substitui a antiga DCTF). Vence sempre no último dia útil do
+  // mês seguinte ao da apuração. dueDay=31 + buildSafeDate trata cada mês.
+  { name: "DCTFWeb", description: "Declaração de Débitos e Créditos Tributários Federais Web (vence último dia útil do mês)", category: "declaration", scope: "federal", dueDay: 31, frequency: "monthly", recurrence: "monthly", weekendRule: "anticipate", priority: "high" },
   { name: "EFD-Contribuições", description: "Escrituração Fiscal Digital de Contribuições", category: "sped", scope: "federal", dueDay: 10, frequency: "monthly", recurrence: "monthly", weekendRule: "anticipate", priority: "high" },
 ]
 
@@ -234,11 +247,13 @@ const TEMPLATES: Partial<Record<TemplateKey, ObligationTemplate[]>> = {
   lucro_real_trimestral_misto: [...COMMON_ALL, ...REAL_TRIMESTRAL_MISTO],
   mei_servicos: [
     { name: "DAS-MEI", description: "Documento de Arrecadação do MEI", category: "tax_guide", scope: "federal", dueDay: 20, frequency: "monthly", recurrence: "monthly", weekendRule: "anticipate", priority: "urgent" },
-    { name: "DASN-SIMEI", description: "Declaração Anual do MEI", category: "declaration", scope: "federal", dueDay: 31, frequency: "annual", recurrence: "annual", weekendRule: "anticipate", priority: "high" },
+    // DASN-SIMEI: anual, vence 31/05 do ano seguinte ao exercício (LC 123/06).
+    { name: "DASN-SIMEI", description: "DASN-SIMEI - vence 31/05 do ano seguinte ao exercício", category: "declaration", scope: "federal", dueDay: 31, dueMonth: 5, frequency: "annual", recurrence: "annual", weekendRule: "anticipate", priority: "high" },
   ],
   mei_comercio: [
     { name: "DAS-MEI", description: "Documento de Arrecadação do MEI", category: "tax_guide", scope: "federal", dueDay: 20, frequency: "monthly", recurrence: "monthly", weekendRule: "anticipate", priority: "urgent" },
-    { name: "DASN-SIMEI", description: "Declaração Anual do MEI", category: "declaration", scope: "federal", dueDay: 31, frequency: "annual", recurrence: "annual", weekendRule: "anticipate", priority: "high" },
+    // DASN-SIMEI: anual, vence 31/05 do ano seguinte ao exercício (LC 123/06).
+    { name: "DASN-SIMEI", description: "DASN-SIMEI - vence 31/05 do ano seguinte ao exercício", category: "declaration", scope: "federal", dueDay: 31, dueMonth: 5, frequency: "annual", recurrence: "annual", weekendRule: "anticipate", priority: "high" },
   ],
 }
 
