@@ -14,7 +14,8 @@ import {
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import type { ObligationWithDetails, Client } from "@/lib/types"
 import { TAX_REGIME_LABELS } from "@/lib/types"
-import { CheckCircle2, Clock, AlertTriangle, Loader2, Building2, MapPin } from "lucide-react"
+import { BUSINESS_ACTIVITY_LABELS, type BusinessActivity } from "@/lib/obligation-templates"
+import { CheckCircle2, Clock, AlertTriangle, Loader2, Building2, MapPin, Briefcase, ShoppingBag, Factory, Layers } from "lucide-react"
 
 type RegimeDistributionChartProps = {
   obligations: ObligationWithDetails[]
@@ -276,6 +277,102 @@ function RegimeCard({ clients }: { clients: Client[] }) {
 }
 
 // ============================================================
+// CARD — Atividade Empresarial (barras verticais por categoria)
+// ============================================================
+const ACTIVITY_META: Record<
+  BusinessActivity | "sem_atividade",
+  { label: string; color: string; icon: typeof Briefcase }
+> = {
+  servicos: { label: "Serviços", color: "#3b82f6", icon: Briefcase },
+  comercio: { label: "Comércio", color: "#f59e0b", icon: ShoppingBag },
+  industria: { label: "Indústria", color: "#8b5cf6", icon: Factory },
+  misto: { label: "Misto", color: "#10b981", icon: Layers },
+  sem_atividade: { label: "—", color: "#94a3b8", icon: Briefcase },
+}
+
+function ActivityCard({ clients }: { clients: Client[] }) {
+  const data = useMemo(() => {
+    const counts: Record<string, number> = {}
+    clients.forEach((c) => {
+      const a = (c.businessActivity as BusinessActivity) || "sem_atividade"
+      counts[a] = (counts[a] || 0) + 1
+    })
+    // Mostra todas as categorias conhecidas (mesmo zeradas) pra dar consistência visual
+    const order: (BusinessActivity | "sem_atividade")[] = ["servicos", "comercio", "industria", "misto"]
+    return order.map((key) => ({
+      key,
+      label: ACTIVITY_META[key].label,
+      color: ACTIVITY_META[key].color,
+      icon: ACTIVITY_META[key].icon,
+      value: counts[key] || 0,
+    }))
+  }, [clients])
+
+  const total = useMemo(() => data.reduce((acc, d) => acc + d.value, 0), [data])
+  const max = Math.max(...data.map((d) => d.value), 1)
+
+  return (
+    <Card className="overflow-hidden transition-shadow hover:shadow-lg">
+      <CardHeader className="pb-1">
+        <CardTitle className="text-base flex items-center justify-between">
+          <span>Atividade Empresarial</span>
+          <Briefcase className="size-4 text-amber-600" />
+        </CardTitle>
+        <CardDescription>
+          {total} cliente{total !== 1 ? "s" : ""} classificado{total !== 1 ? "s" : ""}
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="pt-2">
+        {/* Barras verticais lado a lado */}
+        <div className="flex items-end justify-around gap-2 h-[140px] pb-2">
+          {data.map((d) => {
+            const heightPct = (d.value / max) * 100
+            const Icon = d.icon
+            const isEmpty = d.value === 0
+            return (
+              <div key={d.key} className="flex-1 flex flex-col items-center gap-1.5 group">
+                <span
+                  className="text-sm font-bold tabular-nums"
+                  style={{ color: isEmpty ? undefined : d.color }}
+                >
+                  {d.value}
+                </span>
+                <div className="w-full max-w-[40px] h-full bg-muted/40 rounded-md overflow-hidden flex items-end relative">
+                  <div
+                    className="w-full rounded-md transition-all duration-500 group-hover:opacity-90"
+                    style={{
+                      height: isEmpty ? "4px" : `${Math.max(heightPct, 6)}%`,
+                      background: isEmpty
+                        ? "hsl(var(--muted))"
+                        : `linear-gradient(180deg, ${d.color}, ${d.color}cc)`,
+                    }}
+                  />
+                </div>
+                <Icon
+                  className={`size-4 ${isEmpty ? "text-muted-foreground/40" : ""}`}
+                  style={{ color: isEmpty ? undefined : d.color }}
+                />
+              </div>
+            )
+          })}
+        </div>
+        {/* Labels */}
+        <div className="flex items-start justify-around gap-1 mt-1">
+          {data.map((d) => (
+            <span
+              key={d.key}
+              className="flex-1 text-center text-[10px] uppercase tracking-wide text-muted-foreground truncate px-0.5"
+            >
+              {d.label}
+            </span>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+// ============================================================
 // CARD 3 — Empresas por Estado (leaderboard com barras horizontais)
 // ============================================================
 function StatesCard({ clients }: { clients: Client[] }) {
@@ -355,7 +452,7 @@ function StatesCard({ clients }: { clients: Client[] }) {
 }
 
 // ============================================================
-// Wrapper público — grid adaptativo (centraliza quando < 3 cards)
+// Wrapper público — grid adaptativo (preenche o espaço com qualquer #)
 // ============================================================
 export function RegimeDistributionChart({ obligations, clients }: RegimeDistributionChartProps) {
   if (obligations.length === 0 && clients.length === 0) return null
@@ -363,16 +460,23 @@ export function RegimeDistributionChart({ obligations, clients }: RegimeDistribu
   const cards = [
     obligations.length > 0 && <ObligationsHealthCard key="health" obligations={obligations} />,
     clients.length > 0 && <RegimeCard key="regime" clients={clients} />,
+    clients.length > 0 && <ActivityCard key="activity" clients={clients} />,
     clients.length > 0 && <StatesCard key="states" clients={clients} />,
   ].filter(Boolean)
 
-  // Grid adaptativo: 3 cards = 3 cols full, 2 cards = 2 cols centrado, 1 card = centralizado
+  // Grid adaptativo:
+  // 4 cards → 2x2 no md, 4 cols no xl
+  // 3 cards → 3 cols
+  // 2 cards → 2 cols (preenche)
+  // 1 card → centralizado
   const gridClass =
-    cards.length >= 3
-      ? "grid gap-4 lg:grid-cols-3"
-      : cards.length === 2
-        ? "grid gap-4 sm:grid-cols-2 lg:max-w-5xl mx-auto"
-        : "grid gap-4 max-w-md mx-auto"
+    cards.length >= 4
+      ? "grid gap-4 sm:grid-cols-2 xl:grid-cols-4"
+      : cards.length === 3
+        ? "grid gap-4 sm:grid-cols-2 lg:grid-cols-3"
+        : cards.length === 2
+          ? "grid gap-4 sm:grid-cols-2"
+          : "grid gap-4 max-w-md mx-auto"
 
   return <div className={gridClass}>{cards}</div>
 }
