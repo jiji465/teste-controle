@@ -96,17 +96,14 @@ export default function DashboardPage() {
     })
   }
 
-  const currentPeriod = useMemo(() => {
-    const fromUrl = searchParams.get("period")
-    return fromUrl && /^\d{4}-\d{2}$/.test(fromUrl) ? fromUrl : getCurrentPeriod()
-  }, [searchParams])
+  // Período corrente do contexto, com fallback para o mês atual real
+  const { period, isInPeriod, periodLabel, isFiltering } = useSelectedPeriod()
+  const currentPeriod = period === "all" || !/^\d{4}-\d{2}$/.test(period) ? getCurrentPeriod() : period
   const isPeriodLocked = useMemo(() => lockedPeriods.includes(currentPeriod), [lockedPeriods, currentPeriod])
 
   useEffect(() => {
     setIsMounted(true)
   }, [])
-
-  const { isInPeriod, periodLabel, isFiltering } = useSelectedPeriod()
 
   const obligations = useMemo(() => {
     if (isLoading || !clients.length) return []
