@@ -167,6 +167,19 @@ export const formatDate = (date: string | Date): string => {
   return d.toLocaleDateString("pt-BR")
 }
 
+/**
+ * Formata Date como "YYYY-MM-DD" no fuso LOCAL (não UTC).
+ * Use isso em vez de `date.toISOString().split("T")[0]` quando precisa
+ * representar "qual dia do calendário do usuário", pois toISOString
+ * shifta o dia em horários da noite no Brasil (UTC-3).
+ */
+export const toLocalDateString = (date: Date): string => {
+  const y = date.getFullYear()
+  const m = String(date.getMonth() + 1).padStart(2, "0")
+  const d = String(date.getDate()).padStart(2, "0")
+  return `${y}-${m}-${d}`
+}
+
 export const formatCurrency = (value: number): string => {
   return new Intl.NumberFormat("pt-BR", {
     style: "currency",
@@ -174,14 +187,32 @@ export const formatCurrency = (value: number): string => {
   }).format(value)
 }
 
-export const isOverdue = (dueDate: string): boolean => {
-  return new Date(dueDate) < new Date()
+/**
+ * Parse "YYYY-MM-DD" como meia-noite LOCAL (não UTC). Necessário pra não
+ * shiftar o dia em fuso UTC-3 (Brasil), onde `new Date("2026-04-25")` é
+ * 21h do dia 24 no horário local.
+ */
+const parseLocalDate = (input: string | Date): Date => {
+  if (input instanceof Date) return input
+  const m = input.match(/^(\d{4})-(\d{2})-(\d{2})/)
+  if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]))
+  return new Date(input)
 }
 
-export const isUpcomingThisWeek = (dueDate: string): boolean => {
-  const due = new Date(dueDate)
+export const isOverdue = (dueDate: string | Date): boolean => {
+  const due = parseLocalDate(dueDate)
+  due.setHours(0, 0, 0, 0)
   const today = new Date()
-  const weekFromNow = new Date()
+  today.setHours(0, 0, 0, 0)
+  return due < today
+}
+
+export const isUpcomingThisWeek = (dueDate: string | Date): boolean => {
+  const due = parseLocalDate(dueDate)
+  due.setHours(0, 0, 0, 0)
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const weekFromNow = new Date(today)
   weekFromNow.setDate(today.getDate() + 7)
   return due >= today && due <= weekFromNow
 }

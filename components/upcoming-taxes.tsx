@@ -81,8 +81,7 @@ export function UpcomingTaxes({ taxes, clients, periodLabel, outsidePeriodCount 
         ) : (
           <div className="space-y-2.5">
             {upcoming.map((tax) => {
-              const dateStr = tax.calculatedDueDate.toISOString().split("T")[0]
-              const overdue = isOverdue(dateStr)
+              const overdue = isOverdue(tax.calculatedDueDate)
               const competencyShort = formatCompetency(tax.competencyMonth)
               return (
                 <Link

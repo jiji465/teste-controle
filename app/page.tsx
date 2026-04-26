@@ -159,6 +159,7 @@ export default function DashboardPage() {
     const monthsToAdd = inst.currentInstallment - 1
     const dueDate = new Date(firstDue.getFullYear(), firstDue.getMonth() + monthsToAdd, inst.dueDay)
     const adjustedDueDate = adjustForWeekend(dueDate, inst.weekendRule)
+    if (!isInPeriod(adjustedDueDate)) return false
     return adjustedDueDate <= new Date()
   })
 
@@ -175,6 +176,7 @@ export default function DashboardPage() {
     const monthsToAdd = inst.currentInstallment - 1
     const dueDate = new Date(firstDue.getFullYear(), firstDue.getMonth() + monthsToAdd, inst.dueDay)
     const adjustedDueDate = adjustForWeekend(dueDate, inst.weekendRule)
+    if (!isInPeriod(adjustedDueDate)) return false
     const today = new Date()
     const nextWeek = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000)
     return adjustedDueDate >= today && adjustedDueDate <= nextWeek
