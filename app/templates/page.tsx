@@ -34,6 +34,7 @@ import { TAX_REGIME_LABELS, TAX_REGIME_COLORS, type TaxRegime } from "@/lib/type
 import { seedDemoData, clearAllData } from "@/lib/seed-demo"
 import { toast } from "sonner"
 import { TemplatePackageForm } from "@/features/templates/components/template-package-form"
+import { BulkAddItemToTemplatesDialog } from "@/features/templates/components/bulk-add-item-to-templates-dialog"
 import { BulkActionsBar } from "@/components/bulk-actions-bar"
 import { matchesText } from "@/lib/utils"
 
@@ -44,6 +45,7 @@ export default function TemplatesPage() {
   const [confirmState, setConfirmState] = useState<ConfirmState>(null)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [bulkLoading, setBulkLoading] = useState(false)
+  const [bulkAddItemOpen, setBulkAddItemOpen] = useState(false)
   const [search, setSearch] = useState("")
   const [regimeFilter, setRegimeFilter] = useState<string>("all")
   const [activityFilter, setActivityFilter] = useState<string>("all")
@@ -343,6 +345,12 @@ export default function TemplatesPage() {
               onClear={clearSelection}
               actions={[
                 {
+                  label: "Adicionar item",
+                  icon: <Plus className="size-3.5" />,
+                  onClick: () => setBulkAddItemOpen(true),
+                  disabled: bulkLoading,
+                },
+                {
                   label: "Duplicar",
                   icon: <Copy className="size-3.5" />,
                   onClick: handleBulkDuplicate,
@@ -502,6 +510,16 @@ export default function TemplatesPage() {
         open={isFormOpen}
         onOpenChange={setIsFormOpen}
         onSave={loadTemplates}
+      />
+
+      <BulkAddItemToTemplatesDialog
+        open={bulkAddItemOpen}
+        onOpenChange={setBulkAddItemOpen}
+        targets={templates.filter((t) => selectedIds.has(t.id))}
+        onSuccess={async () => {
+          await loadTemplates()
+          clearSelection()
+        }}
       />
     </div>
   )
