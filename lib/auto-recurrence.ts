@@ -114,7 +114,12 @@ export async function checkAndGenerateRecurrences(): Promise<void> {
 
     // Gerar parcelas recorrentes (já tem cap natural via installmentCount)
     const installments = await getInstallments()
-    const installmentsToGenerate = installments.filter((i) => i.autoGenerate && i.currentInstallment < i.installmentCount)
+    const installmentsToGenerate = installments.filter(
+      (i) =>
+        i.autoGenerate &&
+        i.status !== "completed" &&
+        i.currentInstallment < i.installmentCount,
+    )
 
     for (const installment of installmentsToGenerate) {
       const newInstallment = generateInstallmentForPeriod(installment, currentPeriod)

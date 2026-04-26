@@ -51,9 +51,8 @@ export function ReportsPanel({ obligations, taxes = [], installments = [] }: Rep
     filteredObligations.length > 0 ? Math.round((completed.length / filteredObligations.length) * 100) : 0
 
   const completedOnTime = completed.filter((obl) => {
-    const completedDate = obl.completedAt || obl.realizationDate
-    if (!completedDate) return false
-    return new Date(completedDate) <= new Date(obl.calculatedDueDate)
+    if (!obl.completedAt) return false
+    return new Date(obl.completedAt) <= new Date(obl.calculatedDueDate)
   })
   const onTimeRate = completed.length > 0 ? Math.round((completedOnTime.length / completed.length) * 100) : 0
 
@@ -369,14 +368,13 @@ export function ReportsPanel({ obligations, taxes = [], installments = [] }: Rep
                       <div className="space-y-1">
                         <div className="font-medium">{obl.name}</div>
                         <div className="text-sm text-muted-foreground">{obl.client.name}</div>
-                        {obl.realizationDate && (
+                        {obl.completedAt && (
                           <div className="text-xs text-muted-foreground">
-                            Realizada em: {formatDate(obl.realizationDate)}
+                            Concluída em: {formatDate(obl.completedAt.split("T")[0])}
                           </div>
                         )}
                       </div>
                       <div className="text-right">
-                        {obl.amount && <div className="font-medium">{formatCurrency(obl.amount)}</div>}
                         <Badge className="bg-green-600 mt-1">
                           <CheckCircle2 className="size-3 mr-1" />
                           Concluída
