@@ -21,7 +21,6 @@ import { BulkActionsBar } from "@/components/bulk-actions-bar"
 import { ExportButton } from "@/components/export-button"
 import type { ExportColumn } from "@/lib/export-utils"
 import { saveTax, deleteTax } from "@/lib/supabase/database"
-import { getObligationsWithDetails } from "@/lib/dashboard-utils"
 import { calculateDueDateFromCompetency, formatDate, isOverdue } from "@/lib/date-utils"
 import { matchesText } from "@/lib/utils"
 import { toast } from "sonner"
@@ -75,7 +74,7 @@ function getRelativeDate(date: Date): string {
 }
 
 export default function ImpostosPage() {
-  const { taxes, clients, obligations: rawObligations, refreshData } = useData()
+  const { taxes, clients, obligations: rawObligations, obligationsWithDetails, refreshData } = useData()
   const { isInPeriod, periodLabel, isFiltering } = useSelectedPeriod()
   const [editingTax, setEditingTax] = useState<Tax | undefined>()
   const [isFormOpen, setIsFormOpen] = useState(false)
@@ -109,10 +108,7 @@ export default function ImpostosPage() {
     (clientFilter && clientFilter !== "all" ? 1 : 0) +
     (competencyFilter && competencyFilter !== "all" ? 1 : 0)
 
-  const obligations = useMemo(
-    () => getObligationsWithDetails(rawObligations, clients, taxes),
-    [rawObligations, clients, taxes],
-  )
+  const obligations = obligationsWithDetails
 
   const updateData = async () => {
     await refreshData()

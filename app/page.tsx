@@ -20,7 +20,7 @@ const RegimeDistributionChart = dynamic(
     ),
   },
 )
-import { getObligationsWithDetails, calculateDashboardStats } from "@/lib/dashboard-utils"
+import { calculateDashboardStats } from "@/lib/dashboard-utils"
 import { calculateDueDateFromCompetency } from "@/lib/date-utils"
 import { getCurrentPeriod } from "@/lib/recurrence-engine"
 import { getGreetingMeta } from "@/lib/weather"
@@ -30,7 +30,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { ConfirmDialog, type ConfirmState } from "@/components/ui/confirm-dialog"
-import { adjustForWeekend } from "@/lib/date-utils"
+import { adjustForWeekend, buildSafeDate } from "@/lib/date-utils"
 import { saveObligation } from "@/features/obligations/services"
 import type { DashboardStats, ObligationWithDetails } from "@/lib/types"
 import { useData } from "@/contexts/data-context"
@@ -42,7 +42,7 @@ import { toast } from "sonner"
 // também gradient + accent dinâmicos por horário (manhã/tarde/entardecer/noite).
 
 export default function DashboardPage() {
-  const { clients, taxes, obligations: rawObligations, installments, lockedPeriods, isLoading, refreshData, togglePeriodLock } = useData()
+  const { clients, taxes, obligations: rawObligations, obligationsWithDetails, installments, lockedPeriods, isLoading, refreshData, togglePeriodLock } = useData()
   const [stats, setStats] = useState<DashboardStats | null>(null)
   const [isMounted, setIsMounted] = useState(false)
   const [confirmState, setConfirmState] = useState<ConfirmState>(null)
@@ -106,10 +106,8 @@ export default function DashboardPage() {
 
   const obligations = useMemo(() => {
     if (isLoading || !clients.length) return []
-    return getObligationsWithDetails(rawObligations, clients, taxes).filter((o) =>
-      isInPeriod(o.calculatedDueDate),
-    )
-  }, [rawObligations, clients, taxes, isLoading, isInPeriod])
+    return obligationsWithDetails.filter((o) => isInPeriod(o.calculatedDueDate))
+  }, [obligationsWithDetails, clients.length, isLoading, isInPeriod])
 
   // Taxes filtradas pelo período selecionado (mesma lógica de obrigações)
   const filteredTaxes = useMemo(() => {
@@ -147,38 +145,56 @@ export default function DashboardPage() {
     )
   }
 
-  const criticalAlerts = obligations.filter(
-    (o) => o.status === "overdue" || (o.status === "pending" && new Date(o.calculatedDueDate) <= new Date()),
+  // Memoizadas pra evitar refiltragem a cada render (perf).
+  // Recalculam só quando obligations/installments/isInPeriod mudam.
+  const criticalAlerts = useMemo(
+    () =>
+      obligations.filter(
+        (o) => o.status === "overdue" || (o.status === "pending" && new Date(o.calculatedDueDate) <= new Date()),
+      ),
+    [obligations],
   )
 
-  const criticalInstallments = installments.filter((inst) => {
-    if (inst.status === "completed") return false
-    const firstDue = new Date(inst.firstDueDate)
-    const monthsToAdd = inst.currentInstallment - 1
-    const dueDate = new Date(firstDue.getFullYear(), firstDue.getMonth() + monthsToAdd, inst.dueDay)
-    const adjustedDueDate = adjustForWeekend(dueDate, inst.weekendRule)
-    if (!isInPeriod(adjustedDueDate)) return false
-    return adjustedDueDate <= new Date()
-  })
+  const criticalInstallments = useMemo(
+    () =>
+      installments.filter((inst) => {
+        if (inst.status === "completed") return false
+        const firstDue = new Date(inst.firstDueDate)
+        const monthsToAdd = inst.currentInstallment - 1
+        const dueDate = buildSafeDate(firstDue.getFullYear(), firstDue.getMonth() + monthsToAdd, inst.dueDay)
+        const adjustedDueDate = adjustForWeekend(dueDate, inst.weekendRule)
+        if (!isInPeriod(adjustedDueDate)) return false
+        return adjustedDueDate <= new Date()
+      }),
+    [installments, isInPeriod],
+  )
 
-  const thisWeekObligations = obligations.filter((o) => {
-    const dueDate = new Date(o.calculatedDueDate)
-    const today = new Date()
-    const nextWeek = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000)
-    return dueDate >= today && dueDate <= nextWeek && o.status !== "completed"
-  })
+  const thisWeekObligations = useMemo(
+    () =>
+      obligations.filter((o) => {
+        const dueDate = new Date(o.calculatedDueDate)
+        const today = new Date()
+        const nextWeek = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000)
+        return dueDate >= today && dueDate <= nextWeek && o.status !== "completed"
+      }),
+    [obligations],
+  )
 
-  const thisWeekInstallments = installments.filter((inst) => {
-    if (inst.status === "completed") return false
-    const firstDue = new Date(inst.firstDueDate)
-    const monthsToAdd = inst.currentInstallment - 1
-    const dueDate = new Date(firstDue.getFullYear(), firstDue.getMonth() + monthsToAdd, inst.dueDay)
-    const adjustedDueDate = adjustForWeekend(dueDate, inst.weekendRule)
-    if (!isInPeriod(adjustedDueDate)) return false
-    const today = new Date()
-    const nextWeek = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000)
-    return adjustedDueDate >= today && adjustedDueDate <= nextWeek
-  })
+  const thisWeekInstallments = useMemo(
+    () =>
+      installments.filter((inst) => {
+        if (inst.status === "completed") return false
+        const firstDue = new Date(inst.firstDueDate)
+        const monthsToAdd = inst.currentInstallment - 1
+        const dueDate = buildSafeDate(firstDue.getFullYear(), firstDue.getMonth() + monthsToAdd, inst.dueDay)
+        const adjustedDueDate = adjustForWeekend(dueDate, inst.weekendRule)
+        if (!isInPeriod(adjustedDueDate)) return false
+        const today = new Date()
+        const nextWeek = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000)
+        return adjustedDueDate >= today && adjustedDueDate <= nextWeek
+      }),
+    [installments, isInPeriod],
+  )
 
   const totalCriticalCount = criticalAlerts.length + criticalInstallments.length
   const totalThisWeekCount = thisWeekObligations.length + thisWeekInstallments.length
@@ -409,7 +425,7 @@ export default function DashboardPage() {
                         const client = clients.find((c) => c.id === inst.clientId)
                         const firstDue = new Date(inst.firstDueDate)
                         const monthsToAdd = inst.currentInstallment - 1
-                        const dueDate = new Date(firstDue.getFullYear(), firstDue.getMonth() + monthsToAdd, inst.dueDay)
+                        const dueDate = buildSafeDate(firstDue.getFullYear(), firstDue.getMonth() + monthsToAdd, inst.dueDay)
                         const adjustedDueDate = adjustForWeekend(dueDate, inst.weekendRule)
                         return (
                           <div key={inst.id} className="p-3 bg-background rounded-lg border">

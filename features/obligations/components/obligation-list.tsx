@@ -109,50 +109,54 @@ export const ObligationList = forwardRef<ObligationListHandle, ObligationListPro
     (scopeFilter !== "all" ? 1 : 0) +
     (regimeFilter !== "all" ? 1 : 0)
 
-  const filteredObligations = obligations.filter((obl) => {
-    if (search.trim()) {
-      const q = search.trim()
-      const textHit =
-        matchesText(obl.name, q) ||
-        matchesText(obl.client.name, q) ||
-        matchesText(obl.client.tradeName, q) ||
-        matchesText(obl.tax?.name, q) ||
-        matchesText(obl.description, q) ||
-        matchesText(obl.protocol, q) ||
-        matchesText(obl.assignedTo, q) ||
-        matchesText(obl.notes, q) ||
-        matchesText(obl.competencyMonth, q) ||
-        (obl.tags ?? []).some((t) => matchesText(t, q))
-      if (!textHit) return false
-    }
-    if (clientFilter !== "all" && obl.clientId !== clientFilter) return false
-    if (priorityFilter !== "all" && obl.priority !== priorityFilter) return false
-    if (assigneeFilter !== "all" && obl.assignedTo !== assigneeFilter) return false
-    if (competencyFilter && obl.competencyMonth !== competencyFilter) return false
-    if (scopeFilter !== "all" && obl.scope !== scopeFilter) return false
-    if (regimeFilter !== "all") {
-      // Filtra por regime considerando os regimes aplicáveis OU o regime do cliente
-      const matchesByApplicable = obl.applicableRegimes?.includes(regimeFilter as TaxRegime) ?? false
-      const matchesByClient = obl.client.taxRegime === regimeFilter
-      if (!matchesByApplicable && !matchesByClient) return false
-    }
-    return true
-  })
+  const filteredObligations = useMemo(
+    () =>
+      obligations.filter((obl) => {
+        if (search.trim()) {
+          const q = search.trim()
+          const textHit =
+            matchesText(obl.name, q) ||
+            matchesText(obl.client.name, q) ||
+            matchesText(obl.client.tradeName, q) ||
+            matchesText(obl.tax?.name, q) ||
+            matchesText(obl.description, q) ||
+            matchesText(obl.protocol, q) ||
+            matchesText(obl.assignedTo, q) ||
+            matchesText(obl.notes, q) ||
+            matchesText(obl.competencyMonth, q) ||
+            (obl.tags ?? []).some((t) => matchesText(t, q))
+          if (!textHit) return false
+        }
+        if (clientFilter !== "all" && obl.clientId !== clientFilter) return false
+        if (priorityFilter !== "all" && obl.priority !== priorityFilter) return false
+        if (assigneeFilter !== "all" && obl.assignedTo !== assigneeFilter) return false
+        if (competencyFilter && obl.competencyMonth !== competencyFilter) return false
+        if (scopeFilter !== "all" && obl.scope !== scopeFilter) return false
+        if (regimeFilter !== "all") {
+          // Match por regime aplicável OU regime do cliente
+          const matchesByApplicable = obl.applicableRegimes?.includes(regimeFilter as TaxRegime) ?? false
+          const matchesByClient = obl.client.taxRegime === regimeFilter
+          if (!matchesByApplicable && !matchesByClient) return false
+        }
+        return true
+      }),
+    [obligations, search, clientFilter, priorityFilter, assigneeFilter, competencyFilter, scopeFilter, regimeFilter],
+  )
 
-  const sortedObligations = [...filteredObligations].sort((a, b) => {
-    let comparison = 0
-
-    if (sortBy === "dueDate") {
-      comparison = new Date(a.calculatedDueDate).getTime() - new Date(b.calculatedDueDate).getTime()
-    } else if (sortBy === "client") {
-      comparison = a.client.name.localeCompare(b.client.name)
-    } else if (sortBy === "status") {
-      const statusOrder = { overdue: 0, pending: 1, in_progress: 2, completed: 3 }
-      comparison = statusOrder[a.status] - statusOrder[b.status]
-    }
-
-    return sortOrder === "asc" ? comparison : -comparison
-  })
+  const sortedObligations = useMemo(() => {
+    return [...filteredObligations].sort((a, b) => {
+      let comparison = 0
+      if (sortBy === "dueDate") {
+        comparison = new Date(a.calculatedDueDate).getTime() - new Date(b.calculatedDueDate).getTime()
+      } else if (sortBy === "client") {
+        comparison = a.client.name.localeCompare(b.client.name)
+      } else if (sortBy === "status") {
+        const statusOrder = { overdue: 0, pending: 1, in_progress: 2, completed: 3 }
+        comparison = statusOrder[a.status] - statusOrder[b.status]
+      }
+      return sortOrder === "asc" ? comparison : -comparison
+    })
+  }, [filteredObligations, sortBy, sortOrder])
 
   const handleSave = (obligation: any) => {
     saveObligation(obligation)

@@ -18,20 +18,19 @@ import { useUrlState } from "@/hooks/use-url-state"
 import { InstallmentForm } from "@/features/installments/components/installment-form"
 import { BulkActionsBar } from "@/components/bulk-actions-bar"
 import { GlobalSearch } from "@/components/global-search"
-import { getObligationsWithDetails } from "@/lib/dashboard-utils"
 import { saveInstallment, deleteInstallment } from "@/lib/supabase/database"
 import { matchesText } from "@/lib/utils"
 import type { Installment } from "@/lib/types"
 import { Plus, Search, Pencil, Trash2, Play, CheckCircle2, AlertCircle, Clock, PlayCircle, AlertTriangle, Filter, RotateCcw, Calendar as CalendarIcon, MoreVertical, CreditCard, Building2, AlertCircle as PriorityIcon } from "lucide-react"
 import { FilterBar, FilterPill } from "@/components/filter-panel"
-import { formatDate, adjustForWeekend } from "@/lib/date-utils"
+import { formatDate, adjustForWeekend, buildSafeDate } from "@/lib/date-utils"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useData } from "@/contexts/data-context"
 import { useSelectedPeriod } from "@/hooks/use-selected-period"
 import { toast } from "sonner"
 
 export default function ParcelamentosPage() {
-  const { installments, clients, taxes, obligations: rawObligations, isLoading: loading, refreshData } = useData()
+  const { installments, clients, taxes, obligations: rawObligations, obligationsWithDetails, isLoading: loading, refreshData } = useData()
   const { isInPeriod, periodLabel, isFiltering } = useSelectedPeriod()
   const [statusFilter, setStatusFilter] = useUrlState("tab")
   const [clientFilter, setClientFilter] = useUrlState("client")
@@ -54,10 +53,7 @@ export default function ParcelamentosPage() {
   const activeFilterCount =
     (clientFilter !== "all" ? 1 : 0) + (priorityFilter !== "all" ? 1 : 0)
 
-  const obligationsForSearch = useMemo(
-    () => getObligationsWithDetails(rawObligations, clients, taxes),
-    [rawObligations, clients, taxes],
-  )
+  const obligationsForSearch = obligationsWithDetails
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -86,7 +82,7 @@ export default function ParcelamentosPage() {
   const calculateDueDate = (installment: Installment): Date => {
     const firstDue = new Date(installment.firstDueDate)
     const monthsToAdd = installment.currentInstallment - 1
-    const dueDate = new Date(firstDue.getFullYear(), firstDue.getMonth() + monthsToAdd, installment.dueDay)
+    const dueDate = buildSafeDate(firstDue.getFullYear(), firstDue.getMonth() + monthsToAdd, installment.dueDay)
     return adjustForWeekend(dueDate, installment.weekendRule)
   }
 

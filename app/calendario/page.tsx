@@ -3,17 +3,13 @@
 import { useMemo } from "react"
 import { FiscalCalendar } from "@/components/fiscal-calendar"
 import { useData } from "@/contexts/data-context"
-import { getObligationsWithDetails } from "@/lib/dashboard-utils"
 import { adjustForWeekend, buildSafeDate } from "@/lib/date-utils"
 import type { InstallmentWithDetails } from "@/lib/types"
 
 export default function CalendarioPage() {
-  const { obligations: rawObligations, taxes, installments: rawInstallments, clients, isLoading } = useData()
+  const { taxes, installments: rawInstallments, clients, obligationsWithDetails, isLoading } = useData()
 
-  const obligations = useMemo(() => {
-    if (isLoading || !clients.length) return []
-    return getObligationsWithDetails(rawObligations, clients, taxes)
-  }, [rawObligations, clients, taxes, isLoading])
+  const obligations = isLoading || !clients.length ? [] : obligationsWithDetails
 
   const installments = useMemo<InstallmentWithDetails[]>(() => {
     if (isLoading || !clients.length) return []

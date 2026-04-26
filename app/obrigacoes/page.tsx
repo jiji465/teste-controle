@@ -8,14 +8,13 @@ import { ExportDialog } from "@/components/export-dialog"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { getObligationsWithDetails } from "@/lib/dashboard-utils"
 import { buildSafeDate } from "@/lib/date-utils"
 import { CheckCircle2, Clock, PlayCircle, AlertTriangle, Search, Plus, Download, CalendarDays } from "lucide-react"
 import { useData } from "@/contexts/data-context"
 import { useSelectedPeriod } from "@/hooks/use-selected-period"
 
 export default function ObligacoesPage() {
-  const { obligations: rawObligations, clients, taxes, refreshData } = useData()
+  const { obligations: rawObligations, obligationsWithDetails, clients, taxes, refreshData } = useData()
   const [activeTab, setActiveTab] = useUrlState("tab")
   const [searchOpen, setSearchOpen] = useState(false)
   const [exportOpen, setExportOpen] = useState(false)
@@ -23,11 +22,8 @@ export default function ObligacoesPage() {
   const { isInPeriod, periodLabel, isFiltering } = useSelectedPeriod()
 
   const obligations = useMemo(
-    () =>
-      getObligationsWithDetails(rawObligations, clients, taxes).filter((o) =>
-        isInPeriod(o.calculatedDueDate),
-      ),
-    [rawObligations, clients, taxes, isInPeriod],
+    () => obligationsWithDetails.filter((o) => isInPeriod(o.calculatedDueDate)),
+    [obligationsWithDetails, isInPeriod],
   )
 
   const updateData = async () => {
