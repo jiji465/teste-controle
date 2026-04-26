@@ -14,6 +14,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import type { ObligationWithDetails, Client } from "@/lib/types"
 import { TAX_REGIME_LABELS } from "@/lib/types"
 import { BUSINESS_ACTIVITY_LABELS, type BusinessActivity } from "@/lib/obligation-templates"
+import { effectiveStatus } from "@/lib/obligation-status"
 import { CheckCircle2, Clock, AlertTriangle, Loader2, Building2, MapPin, Briefcase, ShoppingBag, Factory, Layers } from "lucide-react"
 
 type RegimeDistributionChartProps = {
@@ -52,7 +53,12 @@ const STATE_COLORS = [
 function ObligationsHealthCard({ obligations }: { obligations: ObligationWithDetails[] }) {
   const counts = useMemo(() => {
     const c: Record<string, number> = { pending: 0, in_progress: 0, completed: 0, overdue: 0 }
-    for (const o of obligations) if (c[o.status] !== undefined) c[o.status]++
+    // Usa effectiveStatus pra contar como "overdue" também os pending com data passada
+    // (o status no banco fica como pending, mas pro user é atrasada)
+    for (const o of obligations) {
+      const s = effectiveStatus(o)
+      if (c[s] !== undefined) c[s]++
+    }
     return c
   }, [obligations])
 

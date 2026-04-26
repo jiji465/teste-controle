@@ -9,6 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { buildSafeDate } from "@/lib/date-utils"
+import { effectiveStatus } from "@/lib/obligation-status"
 import { CheckCircle2, Clock, PlayCircle, AlertTriangle, Search, Plus, Download, CalendarDays } from "lucide-react"
 import { useData } from "@/contexts/data-context"
 import { useSelectedPeriod } from "@/hooks/use-selected-period"
@@ -42,15 +43,12 @@ export default function ObligacoesPage() {
     return () => window.removeEventListener("keydown", handleKeyDown)
   }, [])
 
-  const pendingObligations = obligations.filter((o) => o.status === "pending")
+  // Usa effectiveStatus pra que pending vencidas sejam classificadas como
+  // overdue (e não apareçam em "Pendentes" + "Atrasadas" ao mesmo tempo).
+  const pendingObligations = obligations.filter((o) => effectiveStatus(o) === "pending")
   const inProgressObligations = obligations.filter((o) => o.status === "in_progress")
   const completedObligations = obligations.filter((o) => o.status === "completed")
-  const overdueObligations = obligations.filter((o) => {
-    if (o.status === "completed") return false
-    if (o.status === "overdue") return true
-    // Usa a data calculada (já considera competência + dueDay + weekendRule)
-    return new Date(o.calculatedDueDate) < new Date()
-  })
+  const overdueObligations = obligations.filter((o) => effectiveStatus(o) === "overdue")
 
   const getFilteredObligations = () => {
     switch (activeTab) {
