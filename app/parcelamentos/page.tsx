@@ -22,7 +22,8 @@ import { getObligationsWithDetails } from "@/lib/dashboard-utils"
 import { saveInstallment, deleteInstallment } from "@/lib/supabase/database"
 import { matchesText } from "@/lib/utils"
 import type { Installment } from "@/lib/types"
-import { Plus, Search, Pencil, Trash2, Play, CheckCircle2, AlertCircle, Clock, PlayCircle, AlertTriangle, Filter, RotateCcw, Calendar as CalendarIcon, MoreVertical, CreditCard } from "lucide-react"
+import { Plus, Search, Pencil, Trash2, Play, CheckCircle2, AlertCircle, Clock, PlayCircle, AlertTriangle, Filter, RotateCcw, Calendar as CalendarIcon, MoreVertical, CreditCard, Building2, AlertCircle as PriorityIcon } from "lucide-react"
+import { ActiveFilterChips, FilterShell, FilterField, type ActiveChip } from "@/components/filter-panel"
 import { formatDate, adjustForWeekend } from "@/lib/date-utils"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useData } from "@/contexts/data-context"
@@ -491,10 +492,31 @@ export default function ParcelamentosPage() {
             </Button>
           </div>
 
+          {/* Chips de filtros ativos */}
+          {(() => {
+            const chips: ActiveChip[] = []
+            if (clientFilter !== "all") {
+              const c = clients.find((cl) => cl.id === clientFilter)
+              chips.push({ label: `Cliente: ${c?.name ?? "—"}`, onRemove: () => setClientFilter("all") })
+            }
+            if (priorityFilter !== "all") {
+              const labels: Record<string, string> = { urgent: "Urgente", high: "Alta", medium: "Média", low: "Baixa" }
+              chips.push({ label: `Prioridade: ${labels[priorityFilter] ?? priorityFilter}`, onRemove: () => setPriorityFilter("all") })
+            }
+            return (
+              <ActiveFilterChips
+                chips={chips}
+                onClearAll={() => {
+                  setClientFilter("all")
+                  setPriorityFilter("all")
+                }}
+              />
+            )
+          })()}
+
           {showFilters && (
-            <div className="grid sm:grid-cols-3 gap-4 p-4 border rounded-lg bg-muted/50">
-              <div className="grid gap-2">
-                <label className="text-sm font-medium">Cliente</label>
+            <FilterShell cols={2}>
+              <FilterField icon={<Building2 className="size-3.5" />} label="Cliente" active={clientFilter !== "all"}>
                 <Select value={clientFilter} onValueChange={setClientFilter}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
@@ -504,9 +526,8 @@ export default function ParcelamentosPage() {
                     ))}
                   </SelectContent>
                 </Select>
-              </div>
-              <div className="grid gap-2">
-                <label className="text-sm font-medium">Prioridade</label>
+              </FilterField>
+              <FilterField icon={<PriorityIcon className="size-3.5" />} label="Prioridade" active={priorityFilter !== "all"}>
                 <Select value={priorityFilter} onValueChange={setPriorityFilter}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
@@ -517,8 +538,8 @@ export default function ParcelamentosPage() {
                     <SelectItem value="low">Baixa</SelectItem>
                   </SelectContent>
                 </Select>
-              </div>
-            </div>
+              </FilterField>
+            </FilterShell>
           )}
 
           <BulkActionsBar

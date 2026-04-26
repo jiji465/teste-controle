@@ -12,7 +12,8 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
 import { BulkActionsBar } from "@/components/bulk-actions-bar"
 import { ConfirmDialog, type ConfirmState } from "@/components/ui/confirm-dialog"
 import { ClientForm } from "./client-form"
-import { MoreVertical, Pencil, Trash2, Search, Plus, Building2, Sparkles, Filter, CheckCircle2, XCircle } from "lucide-react"
+import { MoreVertical, Pencil, Trash2, Search, Plus, Building2, Sparkles, Filter, CheckCircle2, XCircle, Scale, Briefcase, MapPin, ToggleLeft } from "lucide-react"
+import { ActiveFilterChips, FilterShell, FilterField, type ActiveChip } from "@/components/filter-panel"
 import type { Client, TaxRegime } from "@/lib/types"
 import { TAX_REGIME_LABELS, TAX_REGIME_COLORS } from "@/lib/types"
 import { saveClient, deleteClient, DuplicateClientError } from "@/features/clients/services"
@@ -294,10 +295,37 @@ export function ClientList({ clients, onUpdate }: ClientListProps) {
         </Button>
       </div>
 
+      {/* Chips de filtros ativos */}
+      {(() => {
+        const chips: ActiveChip[] = []
+        if (regimeFilter !== "all") {
+          chips.push({ label: `Regime: ${TAX_REGIME_LABELS[regimeFilter as TaxRegime] ?? regimeFilter}`, onRemove: () => setRegimeFilter("all") })
+        }
+        if (statusFilter !== "all") {
+          chips.push({ label: `Status: ${statusFilter === "active" ? "Ativos" : "Inativos"}`, onRemove: () => setStatusFilter("all") })
+        }
+        if (activityFilter !== "all") {
+          chips.push({ label: `Atividade: ${BUSINESS_ACTIVITY_LABELS[activityFilter as BusinessActivity] ?? activityFilter}`, onRemove: () => setActivityFilter("all") })
+        }
+        if (stateFilter !== "all") {
+          chips.push({ label: `Estado: ${stateFilter}`, onRemove: () => setStateFilter("all") })
+        }
+        return (
+          <ActiveFilterChips
+            chips={chips}
+            onClearAll={() => {
+              setRegimeFilter("all")
+              setStatusFilter("all")
+              setActivityFilter("all")
+              setStateFilter("all")
+            }}
+          />
+        )
+      })()}
+
       {showFilters && (
-        <div className="grid sm:grid-cols-3 gap-4 p-4 border rounded-lg bg-muted/50">
-          <div className="grid gap-2">
-            <label className="text-sm font-medium">Regime tributário</label>
+        <FilterShell cols={4}>
+          <FilterField icon={<Scale className="size-3.5" />} label="Regime tributário" active={regimeFilter !== "all"}>
             <Select value={regimeFilter} onValueChange={setRegimeFilter}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
@@ -307,9 +335,8 @@ export function ClientList({ clients, onUpdate }: ClientListProps) {
                 ))}
               </SelectContent>
             </Select>
-          </div>
-          <div className="grid gap-2">
-            <label className="text-sm font-medium">Status</label>
+          </FilterField>
+          <FilterField icon={<ToggleLeft className="size-3.5" />} label="Status" active={statusFilter !== "all"}>
             <Select value={statusFilter} onValueChange={setStatusFilter}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
@@ -318,9 +345,8 @@ export function ClientList({ clients, onUpdate }: ClientListProps) {
                 <SelectItem value="inactive">Apenas inativos</SelectItem>
               </SelectContent>
             </Select>
-          </div>
-          <div className="grid gap-2">
-            <label className="text-sm font-medium">Atividade</label>
+          </FilterField>
+          <FilterField icon={<Briefcase className="size-3.5" />} label="Atividade" active={activityFilter !== "all"}>
             <Select value={activityFilter} onValueChange={setActivityFilter}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
@@ -330,9 +356,8 @@ export function ClientList({ clients, onUpdate }: ClientListProps) {
                 ))}
               </SelectContent>
             </Select>
-          </div>
-          <div className="grid gap-2">
-            <label className="text-sm font-medium">Estado (UF)</label>
+          </FilterField>
+          <FilterField icon={<MapPin className="size-3.5" />} label="Estado (UF)" active={stateFilter !== "all"}>
             <Select value={stateFilter} onValueChange={setStateFilter}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
@@ -345,8 +370,8 @@ export function ClientList({ clients, onUpdate }: ClientListProps) {
                 ))}
               </SelectContent>
             </Select>
-          </div>
-        </div>
+          </FilterField>
+        </FilterShell>
       )}
 
       <BulkActionsBar
