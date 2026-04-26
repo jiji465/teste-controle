@@ -36,7 +36,7 @@ import {
 import type { ObligationWithDetails, Client, Tax, Priority, TaxRegime } from "@/lib/types"
 import { TAX_REGIME_LABELS, TAX_REGIME_COLORS } from "@/lib/types"
 import { saveObligation, deleteObligation } from "@/features/obligations/services"
-import { formatDate, isOverdue } from "@/lib/date-utils"
+import { formatDate, isOverdue, calculateDueDateInfoFromCompetency } from "@/lib/date-utils"
 import { getRecurrenceDescription } from "@/lib/recurrence-utils"
 import { matchesText } from "@/lib/utils"
 import { toast } from "sonner"
@@ -907,6 +907,27 @@ export const ObligationList = forwardRef<ObligationListHandle, ObligationListPro
                       <div className="text-xs text-muted-foreground">
                         {getRelativeDate(obligation.calculatedDueDate)}
                       </div>
+                      {/* Indicador de ajuste por feriado/fim-de-semana */}
+                      {(() => {
+                        const info = calculateDueDateInfoFromCompetency(
+                          obligation.competencyMonth,
+                          obligation.dueDay,
+                          obligation.weekendRule,
+                        )
+                        if (!info?.wasAdjusted) return null
+                        const arrow = info.direction === "anticipate" ? "←" : "→"
+                        return (
+                          <div
+                            className="text-[10px] text-orange-600 dark:text-orange-400 flex items-center gap-1"
+                            title={`${info.reason} — vencimento original: ${formatDate(info.originalDate)}`}
+                          >
+                            <span>🎉</span>
+                            <span className="truncate">
+                              {arrow} {info.reason}
+                            </span>
+                          </div>
+                        )
+                      })()}
                       {obligation.competencyMonth && (
                         <div className="text-[10px] text-muted-foreground">
                           Competência: <span className="font-mono">{obligation.competencyMonth}</span>

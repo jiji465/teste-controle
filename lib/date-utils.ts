@@ -5,17 +5,19 @@ export const isWeekend = (date: Date): boolean => {
   return day === 0 || day === 6
 }
 
-// Fixed Brazilian Holidays (Month is 0-indexed)
-const fixedHolidays = [
-  { month: 0, day: 1 },   // Confraternização Universal
-  { month: 3, day: 21 },  // Tiradentes
-  { month: 4, day: 1 },   // Dia do Trabalho
-  { month: 8, day: 7 },   // Independência do Brasil
-  { month: 9, day: 12 },  // Nossa Senhora Aparecida
-  { month: 10, day: 2 },  // Finados
-  { month: 10, day: 15 }, // Proclamação da República
-  { month: 10, day: 20 }, // Consciência Negra (nacional)
-  { month: 11, day: 25 }, // Natal
+// Feriados nacionais FIXOS (mês é 0-indexed em JS)
+// Lei 662/49 + Lei 6.802/80 (Aparecida) + Lei 14.759/24 (Consciência Negra).
+// Pra controle fiscal: bancos NÃO abrem nesses dias, vencimentos antecipam ou postergam.
+const fixedHolidays: Array<{ month: number; day: number; name: string }> = [
+  { month: 0, day: 1, name: "Confraternização Universal" },
+  { month: 3, day: 21, name: "Tiradentes" },
+  { month: 4, day: 1, name: "Dia do Trabalho" },
+  { month: 8, day: 7, name: "Independência do Brasil" },
+  { month: 9, day: 12, name: "Nossa Senhora Aparecida" },
+  { month: 10, day: 2, name: "Finados" },
+  { month: 10, day: 15, name: "Proclamação da República" },
+  { month: 10, day: 20, name: "Consciência Negra" },
+  { month: 11, day: 25, name: "Natal" },
 ]
 
 // Algoritmo de Meeus/Jones/Butcher para domingo de Páscoa (Gregoriano).
@@ -58,22 +60,43 @@ const sameYmd = (a: Date, b: Date): boolean =>
   a.getMonth() === b.getMonth() &&
   a.getDate() === b.getDate()
 
-export const isHoliday = (date: Date): boolean => {
+/**
+ * Retorna o NOME do feriado se a data for feriado nacional, ou null.
+ * Lista federal completa: 9 fixos + 4 móveis (derivados da Páscoa).
+ */
+export const getHolidayName = (date: Date): string | null => {
   const month = date.getMonth()
   const day = date.getDate()
-  if (fixedHolidays.some((h) => h.month === month && h.day === day)) return true
+  const fixed = fixedHolidays.find((h) => h.month === month && h.day === day)
+  if (fixed) return fixed.name
 
   const easter = getEaster(date.getFullYear())
   // Feriados móveis nacionais derivados da Páscoa
-  if (sameYmd(date, addDays(easter, -48))) return true // Segunda de Carnaval
-  if (sameYmd(date, addDays(easter, -47))) return true // Terça de Carnaval
-  if (sameYmd(date, addDays(easter, -2))) return true  // Sexta-feira Santa
-  if (sameYmd(date, addDays(easter, 60))) return true  // Corpus Christi
-  return false
+  if (sameYmd(date, addDays(easter, -48))) return "Segunda-feira de Carnaval"
+  if (sameYmd(date, addDays(easter, -47))) return "Terça-feira de Carnaval"
+  if (sameYmd(date, addDays(easter, -2))) return "Sexta-feira Santa"
+  if (sameYmd(date, addDays(easter, 60))) return "Corpus Christi"
+  return null
 }
+
+export const isHoliday = (date: Date): boolean => getHolidayName(date) !== null
 
 export const isWeekendOrHoliday = (date: Date): boolean => {
   return isWeekend(date) || isHoliday(date)
+}
+
+/**
+ * Retorna o motivo pelo qual a data foi ajustada (feriado ou fim de semana),
+ * ou null se a data original já era dia útil.
+ * Útil pra mostrar tooltip "Antecipou de 21/04 (feriado: Tiradentes)".
+ */
+export const getAdjustmentReason = (originalDate: Date): string | null => {
+  const holiday = getHolidayName(originalDate)
+  if (holiday) return `Feriado: ${holiday}`
+  if (isWeekend(originalDate)) {
+    return originalDate.getDay() === 0 ? "Domingo" : "Sábado"
+  }
+  return null
 }
 
 export const adjustForWeekend = (date: Date, rule: WeekendRule): Date => {
@@ -160,6 +183,48 @@ export const calculateDueDateFromCompetency = (
   const nextMonthIdx = monthIdx === 11 ? 0 : monthIdx + 1
   const dueDate = buildSafeDate(nextMonthYear, nextMonthIdx, dueDay)
   return adjustForWeekend(dueDate, weekendRule)
+}
+
+/**
+ * Calcula vencimento + retorna metadados sobre ajuste (se houve antecipação
+ * ou postergação por feriado/fim-de-semana). Útil pra mostrar tooltip
+ * "Antecipado de 21/04 (Feriado: Tiradentes)" na UI.
+ */
+export type DueDateInfo = {
+  /** Data efetiva (após ajuste de fim de semana/feriado) */
+  date: Date
+  /** Data "natural" (dueDay + competência), antes de qualquer ajuste */
+  originalDate: Date
+  /** True se a data foi alterada do original (sábado/domingo/feriado) */
+  wasAdjusted: boolean
+  /** Motivo do ajuste (ex: "Feriado: Tiradentes", "Sábado") ou null */
+  reason: string | null
+  /** "anticipate" | "postpone" | null se sem ajuste */
+  direction: WeekendRule | null
+}
+
+export const calculateDueDateInfoFromCompetency = (
+  competencyMonth: string | undefined,
+  dueDay: number | undefined,
+  weekendRule: WeekendRule = "postpone",
+): DueDateInfo | null => {
+  if (!competencyMonth || !dueDay) return null
+  const match = competencyMonth.match(/^(\d{4})-(\d{2})$/)
+  if (!match) return null
+  const year = Number(match[1])
+  const monthIdx = Number(match[2]) - 1
+  const nextMonthYear = monthIdx === 11 ? year + 1 : year
+  const nextMonthIdx = monthIdx === 11 ? 0 : monthIdx + 1
+  const originalDate = buildSafeDate(nextMonthYear, nextMonthIdx, dueDay)
+  const adjusted = adjustForWeekend(originalDate, weekendRule)
+  const wasAdjusted = !sameYmd(originalDate, adjusted)
+  return {
+    date: adjusted,
+    originalDate,
+    wasAdjusted,
+    reason: wasAdjusted ? getAdjustmentReason(originalDate) : null,
+    direction: wasAdjusted ? weekendRule : null,
+  }
 }
 
 export const formatDate = (date: string | Date): string => {
