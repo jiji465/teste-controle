@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useMemo } from "react"
 import { useSearchParams } from "next/navigation"
 
 const MONTH_NAMES = [
@@ -28,26 +28,23 @@ export function useSelectedPeriod() {
   const searchParams = useSearchParams()
   const periodFromUrl = searchParams.get("period") // "YYYY-MM", "all" ou null
 
-  const [period, setPeriod] = useState<string | null>(() => periodFromUrl ?? currentMonthPeriod())
-
-  // Sincroniza estado com URL imediatamente sempre que a URL muda
-  useEffect(() => {
-    setPeriod(periodFromUrl ?? currentMonthPeriod())
-  }, [periodFromUrl])
-
+  // Cálculo direto sem useState — searchParams já é reativo no Next.js client
+  const period = periodFromUrl ?? currentMonthPeriod()
   const showAll = period === "all"
 
   const periodLabel = useMemo(() => {
-    if (!period || showAll) return null
-    const [y, m] = period.split("-").map(Number)
-    if (!y || !m) return null
-    return `${MONTH_NAMES[m - 1]}/${y}`
+    if (showAll) return null
+    const m = period.match(/^(\d{4})-(\d{2})$/)
+    if (!m) return null
+    const y = Number(m[1])
+    const mn = Number(m[2])
+    if (!y || !mn) return null
+    return `${MONTH_NAMES[mn - 1]}/${y}`
   }, [period, showAll])
 
   const isInPeriod = useCallback(
     (date: string | Date | null | undefined): boolean => {
       if (showAll) return true
-      if (!period) return true
       if (!date) return true
       const d = typeof date === "string" ? new Date(date) : date
       if (Number.isNaN(d.getTime())) return true

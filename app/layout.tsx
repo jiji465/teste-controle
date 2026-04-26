@@ -1,7 +1,6 @@
 import type React from "react"
 import type { Metadata } from "next"
 import { Geist, Geist_Mono } from "next/font/google"
-import { Analytics } from "@vercel/analytics/next"
 import { Suspense } from "react"
 import { DataProvider } from "@/contexts/data-context"
 import { AutoRecurrenceInitializer } from "@/components/auto-recurrence-initializer"
@@ -43,7 +42,6 @@ export default function RootLayout({
           </ErrorBoundary>
         </DataProvider>
         <Toaster position="bottom-right" richColors />
-        <Analytics />
       </body>
     </html>
   )

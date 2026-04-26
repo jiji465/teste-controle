@@ -117,19 +117,30 @@ export function PeriodSwitcher() {
       </div>
 
       {!isCurrentMonth && (
-        <div
-          className={`hidden sm:flex items-center px-3 py-1 rounded-full text-[10px] font-bold border ${
-            showAll
-              ? "bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-900"
-              : isPast
-                ? "bg-muted text-muted-foreground border-border"
-                : isFuture
-                  ? "bg-blue-50 dark:bg-blue-950/30 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-900"
-                  : ""
-          }`}
-        >
-          {showAll ? "SEM FILTRO" : isPast ? "PASSADO" : isFuture ? "PROJEÇÃO" : ""}
-        </div>
+        <>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-9 px-3 text-xs gap-1"
+            onClick={handleReset}
+            title="Voltar ao mês atual"
+          >
+            Hoje
+          </Button>
+          <div
+            className={`hidden sm:flex items-center px-3 py-1 rounded-full text-[10px] font-bold border ${
+              showAll
+                ? "bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-900"
+                : isPast
+                  ? "bg-muted text-muted-foreground border-border"
+                  : isFuture
+                    ? "bg-blue-50 dark:bg-blue-950/30 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-900"
+                    : ""
+            }`}
+          >
+            {showAll ? "SEM FILTRO" : isPast ? "PASSADO" : isFuture ? "PROJEÇÃO" : ""}
+          </div>
+        </>
       )}
     </div>
   )
