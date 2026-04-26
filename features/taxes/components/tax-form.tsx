@@ -61,7 +61,6 @@ export function TaxForm({ tax, clients, open, onOpenChange, onSave }: TaxFormPro
       recurrenceInterval: 1,
       autoGenerate: false,
       weekendRule: "postpone",
-      assignedTo: "",
       protocol: "",
       notes: "",
       tags: [],
@@ -87,7 +86,6 @@ export function TaxForm({ tax, clients, open, onOpenChange, onSave }: TaxFormPro
           recurrenceEndDate: tax.recurrenceEndDate || "",
           autoGenerate: tax.autoGenerate || false,
           weekendRule: tax.weekendRule || "postpone",
-          assignedTo: tax.assignedTo || "",
           protocol: tax.protocol || "",
           notes: tax.notes || "",
           tags: tax.tags || [],
@@ -110,8 +108,7 @@ export function TaxForm({ tax, clients, open, onOpenChange, onSave }: TaxFormPro
           recurrenceInterval: 1,
           autoGenerate: false,
           weekendRule: "postpone",
-          assignedTo: "",
-          protocol: "",
+              protocol: "",
           notes: "",
           tags: [],
           applicableRegimes: [],
@@ -137,7 +134,6 @@ export function TaxForm({ tax, clients, open, onOpenChange, onSave }: TaxFormPro
       recurrenceEndDate: data.recurrenceEndDate || undefined,
       autoGenerate: data.autoGenerate,
       weekendRule: data.weekendRule,
-      assignedTo: data.assignedTo || undefined,
       protocol: data.protocol || undefined,
       notes: data.notes || undefined,
       tags: data.tags,
@@ -497,20 +493,6 @@ export function TaxForm({ tax, clients, open, onOpenChange, onSave }: TaxFormPro
                           <SelectItem value="urgent">Urgente</SelectItem>
                         </SelectContent>
                       </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="assignedTo"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Responsável</FormLabel>
-                      <FormControl>
-                        <Input placeholder="Nome do responsável" {...field} />
-                      </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}

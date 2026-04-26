@@ -45,7 +45,6 @@ export default function ParcelamentosPage() {
   const [bulkDueDay, setBulkDueDay] = useState("")
   const [bulkPriority, setBulkPriority] = useState<"" | "low" | "medium" | "high" | "urgent">("")
   const [bulkWeekendRule, setBulkWeekendRule] = useState<"" | "postpone" | "anticipate" | "keep">("")
-  const [bulkAssignedTo, setBulkAssignedTo] = useState("")
   const [searchOpen, setSearchOpen] = useState(false)
   const [showFilters, setShowFilters] = useState(false)
   const [confirmState, setConfirmState] = useState<ConfirmState>(null)
@@ -105,7 +104,6 @@ export default function ParcelamentosPage() {
           matchesText(getTaxName(installment.taxId), q) ||
           matchesText(installment.description, q) ||
           matchesText(installment.protocol, q) ||
-          matchesText(installment.assignedTo, q) ||
           matchesText(installment.notes, q) ||
           (installment.tags ?? []).some((t) => matchesText(t, q))
         if (!textHit) return false
@@ -131,7 +129,6 @@ export default function ParcelamentosPage() {
     { header: "Próx. venc.", width: 14, accessor: (i) => calculateDueDate(i) },
     { header: "Status", width: 12, accessor: (i) => statusLabel(getStatus(i)) },
     { header: "Prioridade", width: 10, accessor: (i) => priorityLabel(i.priority) },
-    { header: "Responsável", width: 16, accessor: (i) => i.assignedTo ?? "" },
   ]
 
   const statusCounts = useMemo(() => {
@@ -308,7 +305,6 @@ export default function ParcelamentosPage() {
     setBulkDueDay("")
     setBulkPriority("")
     setBulkWeekendRule("")
-    setBulkAssignedTo("")
     setBulkEditOpen(true)
   }
 
@@ -323,7 +319,7 @@ export default function ParcelamentosPage() {
       toast.error("Data inválida")
       return
     }
-    if (!dueDayNum && !bulkFirstDueDate && !bulkPriority && !bulkWeekendRule && !bulkAssignedTo) {
+    if (!dueDayNum && !bulkFirstDueDate && !bulkPriority && !bulkWeekendRule) {
       toast.info("Preencha pelo menos um campo para aplicar")
       return
     }
@@ -337,7 +333,6 @@ export default function ParcelamentosPage() {
           if (dueDayNum) updated.dueDay = dueDayNum
           if (bulkPriority) updated.priority = bulkPriority
           if (bulkWeekendRule) updated.weekendRule = bulkWeekendRule
-          if (bulkAssignedTo) updated.assignedTo = bulkAssignedTo
           return saveInstallment(updated)
         }),
       )
@@ -471,7 +466,7 @@ export default function ParcelamentosPage() {
             <div className="relative flex-1 min-w-[280px]">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
-                placeholder="Nome, cliente, imposto, descrição, protocolo, referência, responsável, tags…"
+                placeholder="Nome, cliente, imposto, descrição, protocolo, referência, tags…"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="pl-9"
@@ -845,15 +840,6 @@ export default function ParcelamentosPage() {
                   <SelectItem value="urgent">Urgente</SelectItem>
                 </SelectContent>
               </Select>
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="bulk-inst-assigned">Responsável</Label>
-              <Input
-                id="bulk-inst-assigned"
-                placeholder="Ex: João Silva (deixe em branco para manter)"
-                value={bulkAssignedTo}
-                onChange={(e) => setBulkAssignedTo(e.target.value)}
-              />
             </div>
           </div>
           <DialogFooter>

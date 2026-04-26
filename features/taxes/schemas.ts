@@ -29,7 +29,6 @@ export const taxSchema = z.object({
   recurrenceEndDate: z.string().optional().or(z.literal("")),
   autoGenerate: z.boolean().default(false),
   weekendRule: z.enum(["postpone", "anticipate", "keep"]).default("postpone"),
-  assignedTo: z.string().optional().or(z.literal("")),
   protocol: z.string().optional().or(z.literal("")),
   notes: z.string().optional().or(z.literal("")),
   tags: z.array(z.string()).default([]),

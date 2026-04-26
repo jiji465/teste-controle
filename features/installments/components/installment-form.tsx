@@ -55,7 +55,6 @@ export function InstallmentForm({ installment, open, onOpenChange, onSave }: Ins
       weekendRule: "postpone",
       status: "pending",
       priority: "medium",
-      assignedTo: "",
       protocol: "",
       notes: "",
       tags: [],
@@ -90,7 +89,6 @@ export function InstallmentForm({ installment, open, onOpenChange, onSave }: Ins
         weekendRule: installment.weekendRule,
         status: installment.status,
         priority: installment.priority,
-        assignedTo: installment.assignedTo || "",
         protocol: installment.protocol || "",
         notes: installment.notes || "",
         tags: installment.tags || [],
@@ -112,8 +110,7 @@ export function InstallmentForm({ installment, open, onOpenChange, onSave }: Ins
         weekendRule: "postpone",
         status: "pending",
         priority: "medium",
-        assignedTo: "",
-        protocol: "",
+          protocol: "",
         notes: "",
         tags: [],
         autoGenerate: true,
@@ -137,7 +134,6 @@ export function InstallmentForm({ installment, open, onOpenChange, onSave }: Ins
       weekendRule: data.weekendRule as WeekendRule,
       status: data.status as any,
       priority: data.priority as Priority,
-      assignedTo: data.assignedTo || undefined,
       protocol: data.protocol || undefined,
       notes: data.notes || undefined,
       createdAt: data.createdAt || new Date().toISOString(),
@@ -450,19 +446,6 @@ export function InstallmentForm({ installment, open, onOpenChange, onSave }: Ins
                   )}
                 />
 
-                <FormField
-                  control={form.control}
-                  name="assignedTo"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Responsável</FormLabel>
-                      <FormControl>
-                        <Input placeholder="Nome de quem cuida desse parcelamento" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
               </div>
 
               <FormField

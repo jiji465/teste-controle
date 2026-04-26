@@ -13,7 +13,6 @@ export const installmentSchema = z.object({
   weekendRule: z.enum(["postpone", "anticipate", "keep"]).default("postpone"),
   status: z.enum(["pending", "in_progress", "completed", "overdue"]).default("pending"),
   priority: z.enum(["low", "medium", "high", "urgent"]).default("medium"),
-  assignedTo: z.string().optional().or(z.literal("")),
   protocol: z.string().optional().or(z.literal("")),
   notes: z.string().optional().or(z.literal("")),
   autoGenerate: z.boolean().default(true),
