@@ -30,6 +30,9 @@ const obligationSchema = z.object({
   kind: z.enum(["tax", "obligation"]).default("tax"),
   scope: z.enum(["federal", "estadual", "municipal"]).optional(),
   dueDay: z.coerce.number().min(1, "Dia inválido").max(31, "Dia inválido"),
+  /** Mês fixo (1-12) usado SÓ pra recorrência anual com data fixa
+   *  (ex: DEFIS=março, DASN-SIMEI=maio). undefined = vence no mês seguinte à competência. */
+  dueMonth: z.coerce.number().min(1).max(12).optional(),
   recurrence: z.enum(["monthly", "bimonthly", "quarterly", "semiannual", "annual", "custom"]).default("monthly"),
   weekendRule: z.enum(["postpone", "anticipate", "keep"]).default("postpone"),
   priority: z.enum(["low", "medium", "high", "urgent"]).default("medium"),
@@ -104,6 +107,7 @@ export function TemplatePackageForm({ template, open, onOpenChange, onSave }: Pr
           kind: categoryToKind(o.category),
           scope: o.scope,
           dueDay: o.dueDay,
+          dueMonth: o.dueMonth,
           recurrence: o.recurrence,
           weekendRule: o.weekendRule,
           priority: o.priority,
@@ -140,6 +144,7 @@ export function TemplatePackageForm({ template, open, onOpenChange, onSave }: Pr
         kind: it.category === "tax_guide" ? "tax" : "obligation",
         scope: it.scope,
         dueDay: it.dueDay,
+        dueMonth: it.dueMonth,
         recurrence: it.recurrence,
         weekendRule: it.weekendRule,
         priority: it.priority,
@@ -194,6 +199,8 @@ export function TemplatePackageForm({ template, open, onOpenChange, onSave }: Pr
         category: kindToCategory(o.kind),
         scope: o.scope,
         dueDay: Number(o.dueDay),
+        // dueMonth só faz sentido pra anual; ignora pra outras recorrências
+        dueMonth: o.recurrence === "annual" && o.dueMonth ? Number(o.dueMonth) : undefined,
         frequency: frequencyFromRecurrence(o.recurrence),
         recurrence: o.recurrence,
         weekendRule: o.weekendRule,
@@ -629,7 +636,16 @@ function TemplateItemCard({ index, form, onRemove, isSelected, onToggleSelect }:
             render={({ field }) => (
               <FormItem>
                 <FormLabel className="text-xs">Recorrência</FormLabel>
-                <Select onValueChange={field.onChange} value={field.value}>
+                <Select
+                  onValueChange={(v) => {
+                    field.onChange(v)
+                    // Limpa dueMonth se sair de anual
+                    if (v !== "annual") {
+                      form.setValue(`obligations.${index}.dueMonth`, undefined)
+                    }
+                  }}
+                  value={field.value}
+                >
                   <FormControl>
                     <SelectTrigger>
                       <SelectValue />
@@ -670,6 +686,57 @@ function TemplateItemCard({ index, form, onRemove, isSelected, onToggleSelect }:
             )}
           />
         </div>
+
+        {/* Mês fixo de vencimento — só faz sentido pra ANUAL com data fixa
+            (ex: DEFIS = 31/03 do ano seguinte; DASN-SIMEI = 31/05). */}
+        {form.watch(`obligations.${index}.recurrence`) === "annual" && (
+          <div className="grid sm:grid-cols-2 gap-4 p-3 rounded-lg bg-amber-50/50 dark:bg-amber-950/20 border border-amber-200/50 dark:border-amber-900/30">
+            <FormField
+              control={form.control}
+              name={`obligations.${index}.dueMonth`}
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel className="text-xs flex items-center gap-1">
+                    Mês de vencimento
+                    <span className="text-[10px] text-muted-foreground">(opcional)</span>
+                  </FormLabel>
+                  <Select
+                    onValueChange={(v) => field.onChange(v === "auto" ? undefined : Number(v))}
+                    value={field.value ? String(field.value) : "auto"}
+                  >
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value="auto">Mês seguinte à competência (padrão)</SelectItem>
+                      <SelectItem value="1">Janeiro</SelectItem>
+                      <SelectItem value="2">Fevereiro</SelectItem>
+                      <SelectItem value="3">Março</SelectItem>
+                      <SelectItem value="4">Abril</SelectItem>
+                      <SelectItem value="5">Maio</SelectItem>
+                      <SelectItem value="6">Junho</SelectItem>
+                      <SelectItem value="7">Julho</SelectItem>
+                      <SelectItem value="8">Agosto</SelectItem>
+                      <SelectItem value="9">Setembro</SelectItem>
+                      <SelectItem value="10">Outubro</SelectItem>
+                      <SelectItem value="11">Novembro</SelectItem>
+                      <SelectItem value="12">Dezembro</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </FormItem>
+              )}
+            />
+            <div className="flex items-end">
+              <p className="text-[11px] text-muted-foreground leading-snug pb-2">
+                {form.watch(`obligations.${index}.dueMonth`)
+                  ? `Vence todo dia ${form.watch(`obligations.${index}.dueDay`) || "?"} de ${["", "janeiro","fevereiro","março","abril","maio","junho","julho","agosto","setembro","outubro","novembro","dezembro"][form.watch(`obligations.${index}.dueMonth`) ?? 0]} do ano seguinte ao exercício.`
+                  : "Sem mês fixo, vence no mês seguinte à competência."}
+              </p>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )
