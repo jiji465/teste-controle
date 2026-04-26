@@ -98,8 +98,13 @@ const SIMPLES_INDUSTRIA: ObligationTemplate[] = [
 ]
 
 const PRESUMIDO_SERVICOS: ObligationTemplate[] = [
-  { name: "IRPJ Trimestral", description: "Imposto de Renda Pessoa Jurídica - Lucro Presumido", category: "tax_guide", scope: "federal", dueDay: 30, frequency: "quarterly", recurrence: "quarterly", weekendRule: "anticipate", priority: "urgent" },
-  { name: "CSLL Trimestral", description: "Contribuição Social sobre o Lucro Líquido", category: "tax_guide", scope: "federal", dueDay: 30, frequency: "quarterly", recurrence: "quarterly", weekendRule: "anticipate", priority: "high" },
+  // IRPJ/CSLL Trimestral: vence ÚLTIMO DIA ÚTIL do mês seguinte ao trimestre
+  // (Lei 9.430/96 art. 5º). dueDay=31 + buildSafeDate trata cada mês corretamente
+  // (abr=30, jul=31, out=31, jan=31; fev=28/29 nunca cai aqui pq 4T vai pra jan).
+  // Competência é o último mês do trimestre (mar/jun/set/dez) — generateCompetencies
+  // alinha automaticamente.
+  { name: "IRPJ Trimestral", description: "IRPJ - Lucro Presumido (apuração trimestral, vence último dia útil do mês seguinte)", category: "tax_guide", scope: "federal", dueDay: 31, frequency: "quarterly", recurrence: "quarterly", weekendRule: "anticipate", priority: "urgent" },
+  { name: "CSLL Trimestral", description: "CSLL (apuração trimestral, vence último dia útil do mês seguinte)", category: "tax_guide", scope: "federal", dueDay: 31, frequency: "quarterly", recurrence: "quarterly", weekendRule: "anticipate", priority: "high" },
   { name: "PIS", description: "Programa de Integração Social", category: "tax_guide", scope: "federal", dueDay: 25, frequency: "monthly", recurrence: "monthly", weekendRule: "anticipate", priority: "high" },
   { name: "COFINS", description: "Contribuição para Financiamento da Seguridade Social", category: "tax_guide", scope: "federal", dueDay: 25, frequency: "monthly", recurrence: "monthly", weekendRule: "anticipate", priority: "high" },
   { name: "ISS", description: "Imposto Sobre Serviços", category: "tax_guide", scope: "municipal", dueDay: 10, frequency: "monthly", recurrence: "monthly", weekendRule: "postpone", priority: "high" },
@@ -122,8 +127,10 @@ const PRESUMIDO_INDUSTRIA: ObligationTemplate[] = [
 // segue as mesmas regras: sem ECD/ECF, sem FGTS/RAIS/DIRF, com scope, e
 // weekendRule por esfera (federal antecipa, estadual/municipal posterga).
 const REAL_SERVICOS: ObligationTemplate[] = [
-  { name: "IRPJ Mensal (CSLL)", description: "Estimativa mensal IRPJ - Lucro Real", category: "tax_guide", scope: "federal", dueDay: 30, frequency: "monthly", recurrence: "monthly", weekendRule: "anticipate", priority: "urgent" },
-  { name: "CSLL Mensal", description: "Contribuição Social - estimativa mensal", category: "tax_guide", scope: "federal", dueDay: 30, frequency: "monthly", recurrence: "monthly", weekendRule: "anticipate", priority: "high" },
+  // IRPJ/CSLL Mensal (Lucro Real Estimativa): vence último dia útil do mês seguinte.
+  // dueDay=31 + buildSafeDate trata fevereiro (28/29) e meses de 30 dias automaticamente.
+  { name: "IRPJ Mensal (CSLL)", description: "IRPJ - Lucro Real, estimativa mensal (vence último dia útil do mês seguinte)", category: "tax_guide", scope: "federal", dueDay: 31, frequency: "monthly", recurrence: "monthly", weekendRule: "anticipate", priority: "urgent" },
+  { name: "CSLL Mensal", description: "CSLL - estimativa mensal (vence último dia útil do mês seguinte)", category: "tax_guide", scope: "federal", dueDay: 31, frequency: "monthly", recurrence: "monthly", weekendRule: "anticipate", priority: "high" },
   { name: "PIS Não-Cumulativo", description: "PIS regime não-cumulativo", category: "tax_guide", scope: "federal", dueDay: 25, frequency: "monthly", recurrence: "monthly", weekendRule: "anticipate", priority: "high" },
   { name: "COFINS Não-Cumulativo", description: "COFINS regime não-cumulativo", category: "tax_guide", scope: "federal", dueDay: 25, frequency: "monthly", recurrence: "monthly", weekendRule: "anticipate", priority: "high" },
   { name: "ISS", description: "Imposto Sobre Serviços", category: "tax_guide", scope: "municipal", dueDay: 10, frequency: "monthly", recurrence: "monthly", weekendRule: "postpone", priority: "high" },
@@ -147,8 +154,8 @@ const REAL_INDUSTRIA: ObligationTemplate[] = [
 // aguardar o fechamento trimestral.
 
 const PRESUMIDO_MENSAL_SERVICOS: ObligationTemplate[] = [
-  { name: "IRPJ Mensal", description: "IRPJ - Lucro Presumido (apuração mensal antecipada)", category: "tax_guide", scope: "federal", dueDay: 30, frequency: "monthly", recurrence: "monthly", weekendRule: "anticipate", priority: "urgent" },
-  { name: "CSLL Mensal", description: "CSLL - Lucro Presumido (apuração mensal antecipada)", category: "tax_guide", scope: "federal", dueDay: 30, frequency: "monthly", recurrence: "monthly", weekendRule: "anticipate", priority: "high" },
+  { name: "IRPJ Mensal", description: "IRPJ - Lucro Presumido, apuração mensal antecipada (vence último dia útil do mês seguinte)", category: "tax_guide", scope: "federal", dueDay: 31, frequency: "monthly", recurrence: "monthly", weekendRule: "anticipate", priority: "urgent" },
+  { name: "CSLL Mensal", description: "CSLL - Lucro Presumido, apuração mensal antecipada (vence último dia útil do mês seguinte)", category: "tax_guide", scope: "federal", dueDay: 31, frequency: "monthly", recurrence: "monthly", weekendRule: "anticipate", priority: "high" },
   ...PRESUMIDO_SERVICOS.filter((t) => t.name !== "IRPJ Trimestral" && t.name !== "CSLL Trimestral"),
 ]
 
@@ -174,8 +181,8 @@ const PRESUMIDO_MENSAL_MISTO: ObligationTemplate[] = [
 // estimativa mensal. Sem ECD/ECF/LALUR/RAIS/DIRF/FGTS (tirados a pedido).
 
 const REAL_TRIMESTRAL_SERVICOS: ObligationTemplate[] = [
-  { name: "IRPJ Trimestral", description: "IRPJ - Lucro Real Trimestral", category: "tax_guide", scope: "federal", dueDay: 30, frequency: "quarterly", recurrence: "quarterly", weekendRule: "anticipate", priority: "urgent" },
-  { name: "CSLL Trimestral", description: "CSLL - Lucro Real Trimestral", category: "tax_guide", scope: "federal", dueDay: 30, frequency: "quarterly", recurrence: "quarterly", weekendRule: "anticipate", priority: "high" },
+  { name: "IRPJ Trimestral", description: "IRPJ - Lucro Real Trimestral (vence último dia útil do mês seguinte ao trimestre)", category: "tax_guide", scope: "federal", dueDay: 31, frequency: "quarterly", recurrence: "quarterly", weekendRule: "anticipate", priority: "urgent" },
+  { name: "CSLL Trimestral", description: "CSLL - Lucro Real Trimestral (vence último dia útil do mês seguinte ao trimestre)", category: "tax_guide", scope: "federal", dueDay: 31, frequency: "quarterly", recurrence: "quarterly", weekendRule: "anticipate", priority: "high" },
   ...REAL_SERVICOS.filter((t) => t.name !== "IRPJ Mensal (CSLL)" && t.name !== "CSLL Mensal"),
 ]
 

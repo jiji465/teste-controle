@@ -30,8 +30,15 @@ const RECURRENCE_STEP_MONTHS: Record<RecurrenceType, number> = {
  * Gera todas as competências (formato "YYYY-MM") entre `start` e `end`,
  * pulando de acordo com o tipo de recorrência.
  *
+ * IMPORTANTE — alinhamento fiscal pro trimestral:
+ *   Pelo art. 5º da Lei 9.430/96, IRPJ/CSLL trimestral apura por trimestre
+ *   civil (1T=jan-mar, 2T=abr-jun, 3T=jul-set, 4T=out-dez) e a competência
+ *   se refere ao TRIMESTRE INTEIRO. Convencionamos a competência como o
+ *   ÚLTIMO MÊS do trimestre (mar, jun, set, dez), pois o vencimento (último
+ *   dia útil do mês seguinte) é calculado a partir dela.
+ *
  * Ex: monthly de 2026-01 a 2026-12 → 12 competências
- *     quarterly de 2026-01 a 2026-12 → 4 competências (jan, abr, jul, out)
+ *     quarterly de 2026-01 a 2026-12 → 4 competências (mar, jun, set, dez)
  *     annual de 2026-01 a 2026-12 → 1 competência (jan)
  */
 function generateCompetencies(
@@ -50,6 +57,12 @@ function generateCompetencies(
   const result: string[] = []
   let year = startYear
   let month = startMonth
+
+  // Alinhamento fiscal pro trimestral: avança até o último mês do trimestre
+  // que contém startMonth. 1->3, 2->3, 3->3, 4->6, 5->6, 6->6, etc.
+  if (recurrence === "quarterly") {
+    month = Math.ceil(month / 3) * 3
+  }
 
   while (year < endYear || (year === endYear && month <= endMonth)) {
     result.push(`${year}-${String(month).padStart(2, "0")}`)
