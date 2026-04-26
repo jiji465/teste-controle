@@ -423,6 +423,15 @@ export default function DashboardPage() {
             </div>
           )}
 
+          {/* Distribuição (3 gráficos) — logo após Resumo Geral */}
+          <div>
+            <h2 className="text-xl font-semibold mb-3 flex items-center gap-2">
+              <BarChart3 className="size-5" />
+              Distribuição
+            </h2>
+            <RegimeDistributionChart obligations={obligations} clients={clients} />
+          </div>
+
           {/* Próximos Vencimentos: Obrigações + Guias de Imposto */}
           <div>
             <h2 className="text-xl font-semibold mb-3 flex items-center gap-2">
@@ -457,15 +466,6 @@ export default function DashboardPage() {
               )}
             </h2>
             <ProductivityStats obligations={obligations} periodLabel={periodLabel} />
-          </div>
-
-          {/* Distribuição (3 donut charts) */}
-          <div>
-            <h2 className="text-xl font-semibold mb-3 flex items-center gap-2">
-              <BarChart3 className="size-5" />
-              Distribuição
-            </h2>
-            <RegimeDistributionChart obligations={obligations} clients={clients} />
           </div>
 
           {/* Clientes & Atividade */}
