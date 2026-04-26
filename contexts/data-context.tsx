@@ -1,8 +1,9 @@
 "use client"
 
-import React, { createContext, useContext, useState, useEffect, ReactNode } from "react"
-import type { Client, Tax, Obligation, Installment } from "@/lib/types"
+import React, { createContext, useContext, useState, useEffect, useMemo, ReactNode } from "react"
+import type { Client, Tax, Obligation, Installment, ObligationWithDetails } from "@/lib/types"
 import { getClients, getTaxes, getObligations, getInstallments } from "@/lib/supabase/database"
+import { getObligationsWithDetails } from "@/lib/dashboard-utils"
 // seedDefaultTemplates foi movido pra rodar SÓ na página /templates pra
 // evitar duas chamadas concorrentes (era chamado aqui E lá, gerando race
 // conditions com o sync do Supabase).
@@ -12,6 +13,9 @@ interface DataContextType {
   clients: Client[]
   taxes: Tax[]
   obligations: Obligation[]
+  /** Obrigações já enriquecidas (cliente + tax + calculatedDueDate) — memoizado.
+   *  Usar isso em vez de chamar getObligationsWithDetails em cada página. */
+  obligationsWithDetails: ObligationWithDetails[]
   installments: Installment[]
   lockedPeriods: string[]
   isLoading: boolean
@@ -97,10 +101,17 @@ export function DataProvider({ children }: { children: ReactNode }) {
     return () => document.removeEventListener("visibilitychange", onVisibilityChange)
   }, [isMounted, lastRefreshAt])
 
+  // Memoiza obligationsWithDetails — evita 4 páginas chamarem a função O(n*m)
+  // separadamente em cada render. Recalcula só quando dados base mudam.
+  const obligationsWithDetails = useMemo(
+    () => getObligationsWithDetails(obligations, clients, taxes),
+    [obligations, clients, taxes],
+  )
+
   // Expose empty arrays during SSR to prevent hydration mismatch
   const value = isMounted
-    ? { clients, taxes, obligations, installments, lockedPeriods, isLoading, isRefreshing, lastRefreshAt, refreshData, togglePeriodLock }
-    : { clients: [], taxes: [], obligations: [], installments: [], lockedPeriods: [], isLoading: true, isRefreshing: false, lastRefreshAt: null, refreshData, togglePeriodLock }
+    ? { clients, taxes, obligations, obligationsWithDetails, installments, lockedPeriods, isLoading, isRefreshing, lastRefreshAt, refreshData, togglePeriodLock }
+    : { clients: [], taxes: [], obligations: [], obligationsWithDetails: [], installments: [], lockedPeriods: [], isLoading: true, isRefreshing: false, lastRefreshAt: null, refreshData, togglePeriodLock }
 
   return (
     <DataContext.Provider value={value}>

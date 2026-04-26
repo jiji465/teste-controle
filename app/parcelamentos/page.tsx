@@ -18,20 +18,19 @@ import { useUrlState } from "@/hooks/use-url-state"
 import { InstallmentForm } from "@/features/installments/components/installment-form"
 import { BulkActionsBar } from "@/components/bulk-actions-bar"
 import { GlobalSearch } from "@/components/global-search"
-import { getObligationsWithDetails } from "@/lib/dashboard-utils"
 import { saveInstallment, deleteInstallment } from "@/lib/supabase/database"
 import { matchesText } from "@/lib/utils"
 import type { Installment } from "@/lib/types"
 import { Plus, Search, Pencil, Trash2, Play, CheckCircle2, AlertCircle, Clock, PlayCircle, AlertTriangle, Filter, RotateCcw, Calendar as CalendarIcon, MoreVertical, CreditCard, Building2, AlertCircle as PriorityIcon } from "lucide-react"
-import { ActiveFilterChips, FilterShell, FilterField, type ActiveChip } from "@/components/filter-panel"
-import { formatDate, adjustForWeekend } from "@/lib/date-utils"
+import { FilterBar, FilterPill } from "@/components/filter-panel"
+import { formatDate, adjustForWeekend, buildSafeDate } from "@/lib/date-utils"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useData } from "@/contexts/data-context"
 import { useSelectedPeriod } from "@/hooks/use-selected-period"
 import { toast } from "sonner"
 
 export default function ParcelamentosPage() {
-  const { installments, clients, taxes, obligations: rawObligations, isLoading: loading, refreshData } = useData()
+  const { installments, clients, taxes, obligations: rawObligations, obligationsWithDetails, isLoading: loading, refreshData } = useData()
   const { isInPeriod, periodLabel, isFiltering } = useSelectedPeriod()
   const [statusFilter, setStatusFilter] = useUrlState("tab")
   const [clientFilter, setClientFilter] = useUrlState("client")
@@ -54,10 +53,7 @@ export default function ParcelamentosPage() {
   const activeFilterCount =
     (clientFilter !== "all" ? 1 : 0) + (priorityFilter !== "all" ? 1 : 0)
 
-  const obligationsForSearch = useMemo(
-    () => getObligationsWithDetails(rawObligations, clients, taxes),
-    [rawObligations, clients, taxes],
-  )
+  const obligationsForSearch = obligationsWithDetails
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -86,7 +82,7 @@ export default function ParcelamentosPage() {
   const calculateDueDate = (installment: Installment): Date => {
     const firstDue = new Date(installment.firstDueDate)
     const monthsToAdd = installment.currentInstallment - 1
-    const dueDate = new Date(firstDue.getFullYear(), firstDue.getMonth() + monthsToAdd, installment.dueDay)
+    const dueDate = buildSafeDate(firstDue.getFullYear(), firstDue.getMonth() + monthsToAdd, installment.dueDay)
     return adjustForWeekend(dueDate, installment.weekendRule)
   }
 
@@ -481,66 +477,42 @@ export default function ParcelamentosPage() {
                 className="pl-9"
               />
             </div>
-            <Button variant="outline" onClick={() => setShowFilters(!showFilters)}>
-              <Filter className="size-4 mr-2" />
-              Filtros
-              {activeFilterCount > 0 && (
-                <Badge variant="secondary" className="ml-2 size-5 rounded-full p-0 flex items-center justify-center">
-                  {activeFilterCount}
-                </Badge>
-              )}
-            </Button>
           </div>
 
-          {/* Chips de filtros ativos */}
-          {(() => {
-            const chips: ActiveChip[] = []
-            if (clientFilter !== "all") {
-              const c = clients.find((cl) => cl.id === clientFilter)
-              chips.push({ label: `Cliente: ${c?.name ?? "—"}`, onRemove: () => setClientFilter("all") })
-            }
-            if (priorityFilter !== "all") {
-              const labels: Record<string, string> = { urgent: "Urgente", high: "Alta", medium: "Média", low: "Baixa" }
-              chips.push({ label: `Prioridade: ${labels[priorityFilter] ?? priorityFilter}`, onRemove: () => setPriorityFilter("all") })
-            }
-            return (
-              <ActiveFilterChips
-                chips={chips}
-                onClearAll={() => {
-                  setClientFilter("all")
-                  setPriorityFilter("all")
-                }}
-              />
-            )
-          })()}
-
-          {showFilters && (
-            <FilterShell cols={2}>
-              <FilterField icon={<Building2 className="size-3.5" />} label="Cliente" active={clientFilter !== "all"}>
-                <Select value={clientFilter} onValueChange={setClientFilter}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Todos os clientes</SelectItem>
-                    {clients.map((client) => (
-                      <SelectItem key={client.id} value={client.id}>{client.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </FilterField>
-              <FilterField icon={<PriorityIcon className="size-3.5" />} label="Prioridade" active={priorityFilter !== "all"}>
-                <Select value={priorityFilter} onValueChange={setPriorityFilter}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Todas</SelectItem>
-                    <SelectItem value="urgent">Urgente</SelectItem>
-                    <SelectItem value="high">Alta</SelectItem>
-                    <SelectItem value="medium">Média</SelectItem>
-                    <SelectItem value="low">Baixa</SelectItem>
-                  </SelectContent>
-                </Select>
-              </FilterField>
-            </FilterShell>
-          )}
+          {/* Filtros estilo pill */}
+          <FilterBar
+            activeCount={activeFilterCount}
+            onClearAll={() => {
+              setClientFilter("all")
+              setPriorityFilter("all")
+            }}
+          >
+            <FilterPill
+              icon={<Building2 className="size-3.5" />}
+              label="Cliente"
+              value={clientFilter}
+              onChange={setClientFilter}
+              searchable
+              searchPlaceholder="Buscar cliente…"
+              options={[
+                { value: "all", label: "Todos os clientes" },
+                ...clients.map((c) => ({ value: c.id, label: c.name })),
+              ]}
+            />
+            <FilterPill
+              icon={<PriorityIcon className="size-3.5" />}
+              label="Prioridade"
+              value={priorityFilter}
+              onChange={setPriorityFilter}
+              options={[
+                { value: "all", label: "Todas as prioridades" },
+                { value: "urgent", label: "Urgente" },
+                { value: "high", label: "Alta" },
+                { value: "medium", label: "Média" },
+                { value: "low", label: "Baixa" },
+              ]}
+            />
+          </FilterBar>
 
           <BulkActionsBar
             selectedCount={selectedIds.size}

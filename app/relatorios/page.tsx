@@ -3,15 +3,14 @@
 import { useMemo } from "react"
 import { ReportsPanel } from "@/components/reports-panel"
 import { useData } from "@/contexts/data-context"
-import { getObligationsWithDetails } from "@/lib/dashboard-utils"
 
 export default function RelatoriosPage() {
-  const { obligations: rawObligations, clients, taxes, installments, isLoading } = useData()
+  const { clients, taxes, installments, obligationsWithDetails, isLoading } = useData()
 
-  const obligations = useMemo(() => {
-    if (isLoading || !clients.length) return []
-    return getObligationsWithDetails(rawObligations, clients, taxes)
-  }, [rawObligations, clients, taxes, isLoading])
+  const obligations = useMemo(
+    () => (isLoading || !clients.length ? [] : obligationsWithDetails),
+    [obligationsWithDetails, clients.length, isLoading],
+  )
 
   return (
     <div className="mx-auto max-w-screen-2xl px-4 lg:px-6 py-5">

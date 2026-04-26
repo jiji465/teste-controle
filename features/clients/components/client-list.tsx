@@ -13,7 +13,7 @@ import { BulkActionsBar } from "@/components/bulk-actions-bar"
 import { ConfirmDialog, type ConfirmState } from "@/components/ui/confirm-dialog"
 import { ClientForm } from "./client-form"
 import { MoreVertical, Pencil, Trash2, Search, Plus, Building2, Sparkles, Filter, CheckCircle2, XCircle, Scale, Briefcase, MapPin, ToggleLeft } from "lucide-react"
-import { ActiveFilterChips, FilterShell, FilterField, type ActiveChip } from "@/components/filter-panel"
+import { FilterBar, FilterPill } from "@/components/filter-panel"
 import type { Client, TaxRegime } from "@/lib/types"
 import { TAX_REGIME_LABELS, TAX_REGIME_COLORS } from "@/lib/types"
 import { saveClient, deleteClient, DuplicateClientError } from "@/features/clients/services"
@@ -284,95 +284,63 @@ export function ClientList({ clients, onUpdate }: ClientListProps) {
             className="pl-10"
           />
         </div>
-        <Button variant="outline" onClick={() => setShowFilters(!showFilters)}>
-          <Filter className="size-4 mr-2" />
-          Filtros
-          {activeFilterCount > 0 && (
-            <Badge variant="secondary" className="ml-2 size-5 rounded-full p-0 flex items-center justify-center">
-              {activeFilterCount}
-            </Badge>
-          )}
-        </Button>
       </div>
 
-      {/* Chips de filtros ativos */}
-      {(() => {
-        const chips: ActiveChip[] = []
-        if (regimeFilter !== "all") {
-          chips.push({ label: `Regime: ${TAX_REGIME_LABELS[regimeFilter as TaxRegime] ?? regimeFilter}`, onRemove: () => setRegimeFilter("all") })
-        }
-        if (statusFilter !== "all") {
-          chips.push({ label: `Status: ${statusFilter === "active" ? "Ativos" : "Inativos"}`, onRemove: () => setStatusFilter("all") })
-        }
-        if (activityFilter !== "all") {
-          chips.push({ label: `Atividade: ${BUSINESS_ACTIVITY_LABELS[activityFilter as BusinessActivity] ?? activityFilter}`, onRemove: () => setActivityFilter("all") })
-        }
-        if (stateFilter !== "all") {
-          chips.push({ label: `Estado: ${stateFilter}`, onRemove: () => setStateFilter("all") })
-        }
-        return (
-          <ActiveFilterChips
-            chips={chips}
-            onClearAll={() => {
-              setRegimeFilter("all")
-              setStatusFilter("all")
-              setActivityFilter("all")
-              setStateFilter("all")
-            }}
-          />
-        )
-      })()}
-
-      {showFilters && (
-        <FilterShell cols={4}>
-          <FilterField icon={<Scale className="size-3.5" />} label="Regime tributário" active={regimeFilter !== "all"}>
-            <Select value={regimeFilter} onValueChange={setRegimeFilter}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todos os regimes</SelectItem>
-                {(Object.entries(TAX_REGIME_LABELS) as [TaxRegime, string][]).map(([v, l]) => (
-                  <SelectItem key={v} value={v}>{l}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </FilterField>
-          <FilterField icon={<ToggleLeft className="size-3.5" />} label="Status" active={statusFilter !== "all"}>
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Ativos e inativos</SelectItem>
-                <SelectItem value="active">Apenas ativos</SelectItem>
-                <SelectItem value="inactive">Apenas inativos</SelectItem>
-              </SelectContent>
-            </Select>
-          </FilterField>
-          <FilterField icon={<Briefcase className="size-3.5" />} label="Atividade" active={activityFilter !== "all"}>
-            <Select value={activityFilter} onValueChange={setActivityFilter}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todas</SelectItem>
-                {(Object.entries(BUSINESS_ACTIVITY_LABELS) as [BusinessActivity, string][]).map(([v, l]) => (
-                  <SelectItem key={v} value={v}>{l}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </FilterField>
-          <FilterField icon={<MapPin className="size-3.5" />} label="Estado (UF)" active={stateFilter !== "all"}>
-            <Select value={stateFilter} onValueChange={setStateFilter}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todos</SelectItem>
-                {availableStates.length === 0 && (
-                  <SelectItem value="__none__" disabled>(nenhum estado cadastrado)</SelectItem>
-                )}
-                {availableStates.map((uf) => (
-                  <SelectItem key={uf} value={uf}>{uf}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </FilterField>
-        </FilterShell>
-      )}
+      {/* Filtros estilo pill */}
+      <FilterBar
+        activeCount={activeFilterCount}
+        onClearAll={() => {
+          setRegimeFilter("all")
+          setStatusFilter("all")
+          setActivityFilter("all")
+          setStateFilter("all")
+        }}
+      >
+        <FilterPill
+          icon={<Scale className="size-3.5" />}
+          label="Regime"
+          value={regimeFilter}
+          onChange={setRegimeFilter}
+          options={[
+            { value: "all", label: "Todos os regimes" },
+            ...(Object.entries(TAX_REGIME_LABELS) as [TaxRegime, string][]).map(([v, l]) => ({ value: v, label: l })),
+          ]}
+        />
+        <FilterPill
+          icon={<ToggleLeft className="size-3.5" />}
+          label="Status"
+          value={statusFilter}
+          onChange={setStatusFilter}
+          options={[
+            { value: "all", label: "Ativos e inativos" },
+            { value: "active", label: "Apenas ativos" },
+            { value: "inactive", label: "Apenas inativos" },
+          ]}
+        />
+        <FilterPill
+          icon={<Briefcase className="size-3.5" />}
+          label="Atividade"
+          value={activityFilter}
+          onChange={setActivityFilter}
+          options={[
+            { value: "all", label: "Todas as atividades" },
+            ...(Object.entries(BUSINESS_ACTIVITY_LABELS) as [BusinessActivity, string][]).map(([v, l]) => ({ value: v, label: l })),
+          ]}
+        />
+        <FilterPill
+          icon={<MapPin className="size-3.5" />}
+          label="Estado"
+          value={stateFilter}
+          onChange={setStateFilter}
+          searchable={availableStates.length > 5}
+          options={[
+            { value: "all", label: "Todos os estados" },
+            ...(availableStates.length === 0
+              ? [{ value: "__none__", label: "(nenhum estado cadastrado)" }]
+              : availableStates.map((uf) => ({ value: uf, label: uf }))),
+          ]}
+        />
+      </FilterBar>
 
       <BulkActionsBar
         selectedCount={selectedIds.size}
