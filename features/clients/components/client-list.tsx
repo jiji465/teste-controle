@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { ResizableTableHead } from "@/components/ui/resizable-table-head"
 import { Badge } from "@/components/ui/badge"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { BulkActionsBar } from "@/components/bulk-actions-bar"
@@ -373,18 +374,19 @@ export function ClientList({ clients, onUpdate }: ClientListProps) {
                   aria-label="Selecionar todas"
                 />
               </TableHead>
-              <TableHead>Nome / Razão Social</TableHead>
-              <TableHead>CNPJ</TableHead>
-              <TableHead>Regime Tributário</TableHead>
-              <TableHead>E-mail / Telefone</TableHead>
-              <TableHead>Status</TableHead>
+              <ResizableTableHead defaultWidth={280} storageKey="clientes-name">Nome / Razão Social</ResizableTableHead>
+              <ResizableTableHead defaultWidth={170} storageKey="clientes-cnpj">CNPJ</ResizableTableHead>
+              <ResizableTableHead defaultWidth={170} storageKey="clientes-regime">Regime Tributário</ResizableTableHead>
+              <ResizableTableHead defaultWidth={220} storageKey="clientes-contact">E-mail / Telefone</ResizableTableHead>
+              <ResizableTableHead defaultWidth={140} storageKey="clientes-estado">Estado</ResizableTableHead>
+              <ResizableTableHead defaultWidth={110} storageKey="clientes-status">Status</ResizableTableHead>
               <TableHead className="w-[50px]"></TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {filteredClients.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
+                <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
                   <div className="flex flex-col items-center justify-center text-center p-8">
                     <Building2 className="h-12 w-12 text-muted-foreground mb-4 opacity-20" />
                     <h3 className="text-lg font-medium text-foreground">Nenhuma empresa encontrada</h3>
@@ -444,6 +446,18 @@ export function ClientList({ clients, onUpdate }: ClientListProps) {
                       {client.email && <p>{client.email}</p>}
                       {client.phone && <p className="text-muted-foreground">{client.phone}</p>}
                     </div>
+                  </TableCell>
+                  <TableCell>
+                    {client.state ? (
+                      <div className="text-sm">
+                        <p className="font-medium">{client.state.toUpperCase()}</p>
+                        {client.city && (
+                          <p className="text-xs text-muted-foreground truncate">{client.city}</p>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">—</span>
+                    )}
                   </TableCell>
                   <TableCell>
                     <Badge
