@@ -137,16 +137,8 @@ export default function DashboardPage() {
     await refreshData()
   }
 
-  if (!isMounted || isLoading) {
-    return (
-      <div className="px-4 lg:px-6 py-12 flex items-center justify-center min-h-[60vh]">
-        <div className="animate-pulse text-muted-foreground">Carregando dashboard...</div>
-      </div>
-    )
-  }
-
   // Memoizadas pra evitar refiltragem a cada render (perf).
-  // Recalculam só quando obligations/installments/isInPeriod mudam.
+  // IMPORTANTE: TODAS antes de qualquer early return — Rules of Hooks.
   const criticalAlerts = useMemo(
     () =>
       obligations.filter(
@@ -195,6 +187,14 @@ export default function DashboardPage() {
       }),
     [installments, isInPeriod],
   )
+
+  if (!isMounted || isLoading) {
+    return (
+      <div className="px-4 lg:px-6 py-12 flex items-center justify-center min-h-[60vh]">
+        <div className="animate-pulse text-muted-foreground">Carregando dashboard...</div>
+      </div>
+    )
+  }
 
   const totalCriticalCount = criticalAlerts.length + criticalInstallments.length
   const totalThisWeekCount = thisWeekObligations.length + thisWeekInstallments.length
