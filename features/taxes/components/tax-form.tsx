@@ -79,6 +79,7 @@ export function TaxForm({ tax, clients, open, onOpenChange, onSave }: TaxFormPro
           description: tax.description || "",
           competencyMonth: tax.competencyMonth || "",
           dueDay: tax.dueDay,
+          dueMonth: tax.dueMonth,
           status: tax.status,
           priority: tax.priority,
           recurrence: tax.recurrence || "monthly",
@@ -127,6 +128,8 @@ export function TaxForm({ tax, clients, open, onOpenChange, onSave }: TaxFormPro
       description: data.description || undefined,
       competencyMonth: data.competencyMonth || undefined,
       dueDay: data.dueDay && data.dueDay > 0 ? Number(data.dueDay) : undefined,
+      // dueMonth só faz sentido pra anual; ignora pra outras recorrências
+      dueMonth: data.recurrence === "annual" && data.dueMonth ? Number(data.dueMonth) : undefined,
       status: data.status,
       priority: data.priority,
       recurrence: data.recurrence,
@@ -441,6 +444,47 @@ export function TaxForm({ tax, clients, open, onOpenChange, onSave }: TaxFormPro
                     </FormItem>
                   )}
                 />
+
+                {/* Mês fixo — só pra anual */}
+                {form.watch("recurrence") === "annual" && (
+                  <FormField
+                    control={form.control}
+                    name="dueMonth"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>
+                          Mês de vencimento{" "}
+                          <span className="text-xs text-muted-foreground font-normal">(opcional, ano seguinte)</span>
+                        </FormLabel>
+                        <Select
+                          onValueChange={(v) => field.onChange(v === "auto" ? undefined : Number(v))}
+                          value={field.value ? String(field.value) : "auto"}
+                        >
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="auto">Mês seguinte à competência (padrão)</SelectItem>
+                            <SelectItem value="1">Janeiro</SelectItem>
+                            <SelectItem value="2">Fevereiro</SelectItem>
+                            <SelectItem value="3">Março</SelectItem>
+                            <SelectItem value="4">Abril</SelectItem>
+                            <SelectItem value="5">Maio</SelectItem>
+                            <SelectItem value="6">Junho</SelectItem>
+                            <SelectItem value="7">Julho</SelectItem>
+                            <SelectItem value="8">Agosto</SelectItem>
+                            <SelectItem value="9">Setembro</SelectItem>
+                            <SelectItem value="10">Outubro</SelectItem>
+                            <SelectItem value="11">Novembro</SelectItem>
+                            <SelectItem value="12">Dezembro</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </FormItem>
+                    )}
+                  />
+                )}
 
                 <FormField
                   control={form.control}

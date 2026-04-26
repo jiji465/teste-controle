@@ -11,6 +11,9 @@ export const obligationSchema = z.object({
   scope: obligationScopeSchema.optional(),
   applicableRegimes: z.array(taxRegimeSchema).default([]),
   dueDay: z.coerce.number().min(1, "Dia inválido").max(31, "Dia inválido"),
+  /** Mês fixo (1-12) só usado quando recorrência é ANUAL com data fixa.
+   *  Ex: DEFIS = 3 (vence 31/03 do ano seguinte). undefined = mês seguinte à competência. */
+  dueMonth: z.coerce.number().min(1).max(12).optional(),
   /** Mês-base do fato gerador no formato "YYYY-MM" (ex: "2026-01" = competência janeiro/2026). */
   competencyMonth: z
     .string()

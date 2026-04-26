@@ -406,6 +406,41 @@ export function BulkAddItemToTemplatesDialog({ open, onOpenChange, targets, onSu
                   </div>
                 </div>
 
+                {/* Mês fixo — só pra anual (DEFIS, DASN-SIMEI etc) */}
+                {customItem.recurrence === "annual" && (
+                  <div className="space-y-1.5 p-3 rounded-lg bg-amber-50/50 dark:bg-amber-950/20 border border-amber-200/50 dark:border-amber-900/30">
+                    <Label className="text-xs">
+                      Mês fixo de vencimento{" "}
+                      <span className="text-[10px] text-muted-foreground font-normal">(opcional, ano seguinte)</span>
+                    </Label>
+                    <Select
+                      value={customItem.dueMonth ? String(customItem.dueMonth) : "auto"}
+                      onValueChange={(v) =>
+                        setCustomItem({ ...customItem, dueMonth: v === "auto" ? undefined : Number(v) })
+                      }
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="auto">Mês seguinte à competência (padrão)</SelectItem>
+                        <SelectItem value="1">Janeiro</SelectItem>
+                        <SelectItem value="2">Fevereiro</SelectItem>
+                        <SelectItem value="3">Março (ex: DEFIS)</SelectItem>
+                        <SelectItem value="4">Abril</SelectItem>
+                        <SelectItem value="5">Maio (ex: DASN-SIMEI)</SelectItem>
+                        <SelectItem value="6">Junho</SelectItem>
+                        <SelectItem value="7">Julho</SelectItem>
+                        <SelectItem value="8">Agosto</SelectItem>
+                        <SelectItem value="9">Setembro</SelectItem>
+                        <SelectItem value="10">Outubro</SelectItem>
+                        <SelectItem value="11">Novembro</SelectItem>
+                        <SelectItem value="12">Dezembro</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+
                 <div className="space-y-1.5">
                   <Label className="text-xs">Fim de semana / feriado</Label>
                   <Select

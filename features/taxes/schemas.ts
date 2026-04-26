@@ -20,6 +20,9 @@ export const taxSchema = z.object({
     .max(31, "O dia deve ser até 31")
     .optional()
     .or(z.literal(0)),
+  /** Mês fixo (1-12) só usado quando recorrência é ANUAL com data fixa
+   *  (ex: DEFIS=3, DASN-SIMEI=5). undefined = mês seguinte à competência. */
+  dueMonth: z.coerce.number().min(1).max(12).optional(),
   status: z.enum(["pending", "in_progress", "completed", "overdue"]).default("pending"),
   priority: z.enum(["low", "medium", "high", "urgent"]).default("medium"),
   recurrence: z
