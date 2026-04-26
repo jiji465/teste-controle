@@ -118,28 +118,28 @@ const PRESUMIDO_INDUSTRIA: ObligationTemplate[] = [
   { name: "IPI", description: "Imposto sobre Produtos Industrializados", category: "tax_guide", scope: "federal", dueDay: 25, frequency: "monthly", recurrence: "monthly", weekendRule: "anticipate", priority: "high" },
 ]
 
+// Lucro Real ainda existe no código (caso volte como template no futuro), mas
+// segue as mesmas regras: sem ECD/ECF, sem FGTS/RAIS/DIRF, com scope, e
+// weekendRule por esfera (federal antecipa, estadual/municipal posterga).
 const REAL_SERVICOS: ObligationTemplate[] = [
-  { name: "IRPJ Mensal (CSLL)", description: "Estimativa mensal IRPJ - Lucro Real", category: "tax_guide", dueDay: 30, frequency: "monthly", recurrence: "monthly", weekendRule: "anticipate", priority: "urgent" },
-  { name: "CSLL Mensal", description: "Contribuição Social - estimativa mensal", category: "tax_guide", dueDay: 30, frequency: "monthly", recurrence: "monthly", weekendRule: "anticipate", priority: "high" },
-  { name: "PIS Não-Cumulativo", description: "PIS regime não-cumulativo", category: "tax_guide", dueDay: 25, frequency: "monthly", recurrence: "monthly", weekendRule: "postpone", priority: "high" },
-  { name: "COFINS Não-Cumulativo", description: "COFINS regime não-cumulativo", category: "tax_guide", dueDay: 25, frequency: "monthly", recurrence: "monthly", weekendRule: "postpone", priority: "high" },
-  { name: "ISS", description: "Imposto Sobre Serviços", category: "tax_guide", dueDay: 10, frequency: "monthly", recurrence: "monthly", weekendRule: "postpone", priority: "high" },
-  { name: "DCTF", description: "Declaração de Débitos e Créditos Tributários Federais", category: "declaration", dueDay: 15, frequency: "monthly", recurrence: "monthly", weekendRule: "postpone", priority: "high" },
-  { name: "EFD-Contribuições", description: "Escrituração Fiscal Digital de Contribuições", category: "sped", dueDay: 10, frequency: "monthly", recurrence: "monthly", weekendRule: "postpone", priority: "high" },
-  { name: "ECF", description: "Escrituração Contábil Fiscal", category: "sped", dueDay: 31, frequency: "annual", recurrence: "annual", weekendRule: "anticipate", priority: "high" },
-  { name: "ECD", description: "Escrituração Contábil Digital", category: "sped", dueDay: 31, frequency: "annual", recurrence: "annual", weekendRule: "anticipate", priority: "high" },
-  { name: "LALUR", description: "Livro de Apuração do Lucro Real", category: "declaration", dueDay: 31, frequency: "annual", recurrence: "annual", weekendRule: "anticipate", priority: "medium" },
+  { name: "IRPJ Mensal (CSLL)", description: "Estimativa mensal IRPJ - Lucro Real", category: "tax_guide", scope: "federal", dueDay: 30, frequency: "monthly", recurrence: "monthly", weekendRule: "anticipate", priority: "urgent" },
+  { name: "CSLL Mensal", description: "Contribuição Social - estimativa mensal", category: "tax_guide", scope: "federal", dueDay: 30, frequency: "monthly", recurrence: "monthly", weekendRule: "anticipate", priority: "high" },
+  { name: "PIS Não-Cumulativo", description: "PIS regime não-cumulativo", category: "tax_guide", scope: "federal", dueDay: 25, frequency: "monthly", recurrence: "monthly", weekendRule: "anticipate", priority: "high" },
+  { name: "COFINS Não-Cumulativo", description: "COFINS regime não-cumulativo", category: "tax_guide", scope: "federal", dueDay: 25, frequency: "monthly", recurrence: "monthly", weekendRule: "anticipate", priority: "high" },
+  { name: "ISS", description: "Imposto Sobre Serviços", category: "tax_guide", scope: "municipal", dueDay: 10, frequency: "monthly", recurrence: "monthly", weekendRule: "postpone", priority: "high" },
+  { name: "DCTF", description: "Declaração de Débitos e Créditos Tributários Federais", category: "declaration", scope: "federal", dueDay: 15, frequency: "monthly", recurrence: "monthly", weekendRule: "anticipate", priority: "high" },
+  { name: "EFD-Contribuições", description: "Escrituração Fiscal Digital de Contribuições", category: "sped", scope: "federal", dueDay: 10, frequency: "monthly", recurrence: "monthly", weekendRule: "anticipate", priority: "high" },
 ]
 
 const REAL_COMERCIO: ObligationTemplate[] = [
   ...REAL_SERVICOS.filter(t => t.name !== "ISS"),
-  { name: "ICMS", description: "Imposto sobre Circulação de Mercadorias e Serviços", category: "tax_guide", dueDay: 9, frequency: "monthly", recurrence: "monthly", weekendRule: "postpone", priority: "high" },
-  { name: "SPED Fiscal (EFD ICMS/IPI)", description: "Escrituração Fiscal Digital", category: "sped", dueDay: 15, frequency: "monthly", recurrence: "monthly", weekendRule: "postpone", priority: "high" },
+  { name: "ICMS", description: "Imposto sobre Circulação de Mercadorias e Serviços", category: "tax_guide", scope: "estadual", dueDay: 9, frequency: "monthly", recurrence: "monthly", weekendRule: "postpone", priority: "high" },
+  { name: "SPED Fiscal (EFD ICMS/IPI)", description: "Escrituração Fiscal Digital", category: "sped", scope: "estadual", dueDay: 15, frequency: "monthly", recurrence: "monthly", weekendRule: "postpone", priority: "high" },
 ]
 
 const REAL_INDUSTRIA: ObligationTemplate[] = [
   ...REAL_COMERCIO,
-  { name: "IPI", description: "Imposto sobre Produtos Industrializados", category: "tax_guide", dueDay: 25, frequency: "monthly", recurrence: "monthly", weekendRule: "postpone", priority: "high" },
+  { name: "IPI", description: "Imposto sobre Produtos Industrializados", category: "tax_guide", scope: "federal", dueDay: 25, frequency: "monthly", recurrence: "monthly", weekendRule: "anticipate", priority: "high" },
 ]
 
 // ─── Variantes: Lucro Presumido com IRPJ/CSLL Mensal ─────────────────────────
@@ -171,23 +171,23 @@ const PRESUMIDO_MENSAL_MISTO: ObligationTemplate[] = [
 
 // ─── Variantes: Lucro Real Trimestral ────────────────────────────────────────
 // Algumas empresas Lucro Real optam pela apuração trimestral em vez da
-// estimativa mensal. Mantém o restante dos itens (PIS/COFINS, ECD, ECF, etc).
+// estimativa mensal. Sem ECD/ECF/LALUR/RAIS/DIRF/FGTS (tirados a pedido).
 
 const REAL_TRIMESTRAL_SERVICOS: ObligationTemplate[] = [
-  { name: "IRPJ Trimestral", description: "IRPJ - Lucro Real Trimestral", category: "tax_guide", dueDay: 30, frequency: "quarterly", recurrence: "quarterly", weekendRule: "anticipate", priority: "urgent" },
-  { name: "CSLL Trimestral", description: "CSLL - Lucro Real Trimestral", category: "tax_guide", dueDay: 30, frequency: "quarterly", recurrence: "quarterly", weekendRule: "anticipate", priority: "high" },
+  { name: "IRPJ Trimestral", description: "IRPJ - Lucro Real Trimestral", category: "tax_guide", scope: "federal", dueDay: 30, frequency: "quarterly", recurrence: "quarterly", weekendRule: "anticipate", priority: "urgent" },
+  { name: "CSLL Trimestral", description: "CSLL - Lucro Real Trimestral", category: "tax_guide", scope: "federal", dueDay: 30, frequency: "quarterly", recurrence: "quarterly", weekendRule: "anticipate", priority: "high" },
   ...REAL_SERVICOS.filter((t) => t.name !== "IRPJ Mensal (CSLL)" && t.name !== "CSLL Mensal"),
 ]
 
 const REAL_TRIMESTRAL_COMERCIO: ObligationTemplate[] = [
   ...REAL_TRIMESTRAL_SERVICOS.filter((t) => t.name !== "ISS"),
-  { name: "ICMS", description: "Imposto sobre Circulação de Mercadorias e Serviços", category: "tax_guide", dueDay: 9, frequency: "monthly", recurrence: "monthly", weekendRule: "postpone", priority: "high" },
-  { name: "SPED Fiscal (EFD ICMS/IPI)", description: "Escrituração Fiscal Digital", category: "sped", dueDay: 15, frequency: "monthly", recurrence: "monthly", weekendRule: "postpone", priority: "high" },
+  { name: "ICMS", description: "Imposto sobre Circulação de Mercadorias e Serviços", category: "tax_guide", scope: "estadual", dueDay: 9, frequency: "monthly", recurrence: "monthly", weekendRule: "postpone", priority: "high" },
+  { name: "SPED Fiscal (EFD ICMS/IPI)", description: "Escrituração Fiscal Digital", category: "sped", scope: "estadual", dueDay: 15, frequency: "monthly", recurrence: "monthly", weekendRule: "postpone", priority: "high" },
 ]
 
 const REAL_TRIMESTRAL_INDUSTRIA: ObligationTemplate[] = [
   ...REAL_TRIMESTRAL_COMERCIO,
-  { name: "IPI", description: "Imposto sobre Produtos Industrializados", category: "tax_guide", dueDay: 25, frequency: "monthly", recurrence: "monthly", weekendRule: "postpone", priority: "high" },
+  { name: "IPI", description: "Imposto sobre Produtos Industrializados", category: "tax_guide", scope: "federal", dueDay: 25, frequency: "monthly", recurrence: "monthly", weekendRule: "anticipate", priority: "high" },
 ]
 
 const REAL_TRIMESTRAL_MISTO: ObligationTemplate[] = [
@@ -226,12 +226,12 @@ const TEMPLATES: Partial<Record<TemplateKey, ObligationTemplate[]>> = {
   lucro_real_trimestral_industria: [...COMMON_ALL, ...REAL_TRIMESTRAL_INDUSTRIA],
   lucro_real_trimestral_misto: [...COMMON_ALL, ...REAL_TRIMESTRAL_MISTO],
   mei_servicos: [
-    { name: "DAS-MEI", description: "Documento de Arrecadação do MEI", category: "tax_guide", dueDay: 20, frequency: "monthly", recurrence: "monthly", weekendRule: "postpone", priority: "urgent" },
-    { name: "DASN-SIMEI", description: "Declaração Anual do MEI", category: "declaration", dueDay: 31, frequency: "annual", recurrence: "annual", weekendRule: "anticipate", priority: "high" },
+    { name: "DAS-MEI", description: "Documento de Arrecadação do MEI", category: "tax_guide", scope: "federal", dueDay: 20, frequency: "monthly", recurrence: "monthly", weekendRule: "anticipate", priority: "urgent" },
+    { name: "DASN-SIMEI", description: "Declaração Anual do MEI", category: "declaration", scope: "federal", dueDay: 31, frequency: "annual", recurrence: "annual", weekendRule: "anticipate", priority: "high" },
   ],
   mei_comercio: [
-    { name: "DAS-MEI", description: "Documento de Arrecadação do MEI", category: "tax_guide", dueDay: 20, frequency: "monthly", recurrence: "monthly", weekendRule: "postpone", priority: "urgent" },
-    { name: "DASN-SIMEI", description: "Declaração Anual do MEI", category: "declaration", dueDay: 31, frequency: "annual", recurrence: "annual", weekendRule: "anticipate", priority: "high" },
+    { name: "DAS-MEI", description: "Documento de Arrecadação do MEI", category: "tax_guide", scope: "federal", dueDay: 20, frequency: "monthly", recurrence: "monthly", weekendRule: "anticipate", priority: "urgent" },
+    { name: "DASN-SIMEI", description: "Declaração Anual do MEI", category: "declaration", scope: "federal", dueDay: 31, frequency: "annual", recurrence: "annual", weekendRule: "anticipate", priority: "high" },
   ],
 }
 

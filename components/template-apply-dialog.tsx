@@ -58,6 +58,12 @@ const PRIORITY_COLORS: Record<string, string> = {
   low: "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300",
 }
 
+const SCOPE_META: Record<string, { label: string; color: string }> = {
+  federal: { label: "Federal", color: "bg-violet-100 text-violet-700 dark:bg-violet-950 dark:text-violet-300" },
+  estadual: { label: "Estadual", color: "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300" },
+  municipal: { label: "Municipal", color: "bg-teal-100 text-teal-700 dark:bg-teal-950 dark:text-teal-300" },
+}
+
 const itemKey = (item: TemplateItem): string => item.sourceTaxId ?? `tpl:${item.name}`
 
 export function TemplateApplyDialog({
@@ -386,6 +392,11 @@ function Section({ title, subtitle, icon, items, selected, onToggle }: SectionPr
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="font-medium text-sm">{t.name}</span>
+                  {t.scope && SCOPE_META[t.scope] && (
+                    <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${SCOPE_META[t.scope].color}`}>
+                      {SCOPE_META[t.scope].label}
+                    </span>
+                  )}
                   <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${PRIORITY_COLORS[t.priority]}`}>
                     {t.priority === "urgent" ? "Urgente" : t.priority === "high" ? "Alta" : t.priority === "medium" ? "Média" : "Baixa"}
                   </span>
