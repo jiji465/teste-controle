@@ -397,10 +397,18 @@ export default function ImpostosPage() {
     return arr
   }, [searchedTaxes, sortBy, sortOrder, clients])
 
-  const pendingTaxes = sortedTaxes.filter((t) => t.status === "pending")
+  // Calcula status efetivo: pending com data passada vira overdue dinamicamente
+  // (assim não aparece em 2 tabs ao mesmo tempo + Atrasadas reflete o real).
+  const taxEffectiveStatus = (t: Tax): Tax["status"] => {
+    if (t.status !== "pending") return t.status
+    const due = calculateDueDateFromCompetency(t.competencyMonth, t.dueDay, t.weekendRule)
+    if (!due) return t.status
+    return isOverdue(due) ? "overdue" : "pending"
+  }
+  const pendingTaxes = sortedTaxes.filter((t) => taxEffectiveStatus(t) === "pending")
   const inProgressTaxes = sortedTaxes.filter((t) => t.status === "in_progress")
   const completedTaxes = sortedTaxes.filter((t) => t.status === "completed")
-  const overdueTaxes = sortedTaxes.filter((t) => t.status === "overdue")
+  const overdueTaxes = sortedTaxes.filter((t) => taxEffectiveStatus(t) === "overdue")
 
   const taxExportColumns: ExportColumn<Tax>[] = [
     { header: "Nome", width: 24, accessor: (t) => t.name },

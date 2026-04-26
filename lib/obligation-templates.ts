@@ -434,7 +434,27 @@ const saveSeededNames = (names: Set<string>): void => {
 // Cleanup one-shot: remove templates de MEI/Lucro Real que vieram de seeds
 // antigos. Não voltam mesmo que o usuário clique em "Restaurar padrões",
 // porque foram removidos de DEFAULT_TEMPLATE_DEFINITIONS.
-const MEI_REAL_CLEANUP_FLAG = "fiscal_templates_mei_real_cleanup_v1"
+//
+// IMPORTANTE: usa LISTA EXATA dos nomes antigos (não prefixo) pra preservar
+// templates manuais que o usuário possa ter criado com nome similar.
+// Ex: se user criou manualmente "Padrão · MEI · Custom Empresa X", esse fica.
+const MEI_REAL_CLEANUP_FLAG = "fiscal_templates_mei_real_cleanup_v2"
+
+const LEGACY_DEFAULT_NAMES_TO_REMOVE = new Set<string>([
+  // MEI (removidos do seed)
+  "Padrão · MEI · Serviços",
+  "Padrão · MEI · Comércio",
+  // Lucro Real (removidos do seed)
+  "Padrão · Lucro Real · Serviços",
+  "Padrão · Lucro Real · Comércio",
+  "Padrão · Lucro Real · Indústria",
+  "Padrão · Lucro Real · Misto",
+  // Variantes Trimestral (removidas do seed)
+  "Padrão · Lucro Real Trimestral · Serviços",
+  "Padrão · Lucro Real Trimestral · Comércio",
+  "Padrão · Lucro Real Trimestral · Indústria",
+  "Padrão · Lucro Real Trimestral · Misto",
+])
 
 async function cleanupLegacyMeiAndRealTemplates(
   allTemplates: CustomTemplatePackage[],
@@ -443,9 +463,8 @@ async function cleanupLegacyMeiAndRealTemplates(
   if (typeof window === "undefined") return false
   if (localStorage.getItem(MEI_REAL_CLEANUP_FLAG) === "true") return false
 
-  const targets = allTemplates.filter(
-    (t) => t.name.startsWith("Padrão · MEI") || t.name.startsWith("Padrão · Lucro Real"),
-  )
+  // Match EXATO. Templates manuais com prefixo similar não são afetados.
+  const targets = allTemplates.filter((t) => LEGACY_DEFAULT_NAMES_TO_REMOVE.has(t.name))
   for (const t of targets) {
     try {
       await deleteAsync(t.id)
