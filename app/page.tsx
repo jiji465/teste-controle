@@ -23,6 +23,8 @@ const RegimeDistributionChart = dynamic(
 import { getObligationsWithDetails, calculateDashboardStats } from "@/lib/dashboard-utils"
 import { calculateDueDateFromCompetency } from "@/lib/date-utils"
 import { getCurrentPeriod } from "@/lib/recurrence-engine"
+import { getGreetingMeta } from "@/lib/weather"
+import { WeatherGreeting } from "@/components/weather-greeting"
 import { TrendingUp, CalendarIcon, AlertCircle, CreditCard, BarChart3, ListChecks, Activity } from "lucide-react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -36,12 +38,8 @@ import { useSelectedPeriod } from "@/hooks/use-selected-period"
 import { CheckCircle2 } from "lucide-react"
 import { toast } from "sonner"
 
-function getGreeting(): string {
-  const hour = new Date().getHours()
-  if (hour < 12) return "Bom dia"
-  if (hour < 18) return "Boa tarde"
-  return "Boa noite"
-}
+// getGreeting() foi movido pra lib/weather.ts (getGreetingMeta) — agora retorna
+// também gradient + accent dinâmicos por horário (manhã/tarde/entardecer/noite).
 
 export default function DashboardPage() {
   const { clients, taxes, obligations: rawObligations, installments, lockedPeriods, isLoading, refreshData, togglePeriodLock } = useData()
@@ -192,83 +190,95 @@ export default function DashboardPage() {
       <ConfirmDialog state={confirmState} onClose={() => setConfirmState(null)} />
       <div className="mx-auto max-w-screen-2xl px-4 lg:px-6 py-5">
         <div className="space-y-5">
-          {/* Hero rico — saudação + data + indicador de saúde do mês */}
-          <div className="relative overflow-hidden rounded-xl border bg-gradient-to-br from-primary/5 via-card to-card p-5">
-            <div
-              className="absolute -top-20 -right-20 size-48 rounded-full bg-primary/10 blur-3xl pointer-events-none"
-              aria-hidden
-            />
-            <div className="relative flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-              <div className="space-y-0.5">
-                <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
-                  {new Date().toLocaleDateString("pt-BR", {
-                    weekday: "long",
-                    day: "numeric",
-                    month: "long",
-                    year: "numeric",
-                  })}
-                </p>
-                <div className="flex items-center gap-2 flex-wrap">
-                  <h1 className="text-2xl font-bold tracking-tight">
-                    {getGreeting()}
-                  </h1>
-                  {isFiltering && periodLabel && (
-                    <Badge variant="outline" className="gap-1 border-primary/30 text-primary">
-                      <CalendarIcon className="size-3" />
-                      Filtrando: {periodLabel}
-                    </Badge>
-                  )}
-                </div>
-                <p className="text-sm text-muted-foreground max-w-xl">
-                  {isFiltering
-                    ? `Mostrando dados de ${periodLabel}.`
-                    : hasCritical
-                      ? `Você tem ${totalCriticalCount} ${totalCriticalCount === 1 ? "item crítico" : "itens críticos"} pra resolver hoje.`
-                      : hasThisWeek
-                        ? `Tudo em dia. ${totalThisWeekCount} ${totalThisWeekCount === 1 ? "item vence" : "itens vencem"} nos próximos 7 dias.`
-                        : "Nenhuma pendência crítica. Bom trabalho! 🎉"}
-                </p>
-              </div>
-
-              {/* Indicador de saúde do mês */}
-              {stats && stats.totalObligations > 0 && (() => {
-                const healthRate = Math.round(
-                  (stats.completedThisMonth / Math.max(1, stats.totalObligations)) * 100
-                )
-                const healthColor =
-                  healthRate >= 80
-                    ? "text-emerald-600 dark:text-emerald-400"
-                    : healthRate >= 50
-                      ? "text-amber-600 dark:text-amber-400"
-                      : "text-red-600 dark:text-red-400"
-                const healthBg =
-                  healthRate >= 80
-                    ? "bg-emerald-500/10"
-                    : healthRate >= 50
-                      ? "bg-amber-500/10"
-                      : "bg-red-500/10"
-                return (
-                  <div className={`shrink-0 rounded-xl ${healthBg} p-3.5 min-w-[150px]`}>
-                    <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
-                      Progresso do mês
+          {/* Hero rico — saudação dinâmica por horário + tempo + saúde do mês */}
+          {(() => {
+            const meta = getGreetingMeta()
+            return (
+              <div
+                className={`relative overflow-hidden rounded-xl border bg-gradient-to-br ${meta.gradient} p-5`}
+              >
+                <div
+                  className={`absolute -top-20 -right-20 size-48 rounded-full ${meta.accent.replace("text-", "bg-").replace("dark:text-", "dark:bg-").replace("-600", "-500/20").replace("-400", "-400/20")} blur-3xl pointer-events-none`}
+                  aria-hidden
+                />
+                <div className="relative flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+                  <div className="space-y-0.5 flex-1 min-w-0">
+                    <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
+                      {new Date().toLocaleDateString("pt-BR", {
+                        weekday: "long",
+                        day: "numeric",
+                        month: "long",
+                        year: "numeric",
+                      })}
                     </p>
-                    <p className={`text-2xl font-bold mt-0.5 ${healthColor}`}>{healthRate}%</p>
-                    <div className="h-1 mt-1.5 bg-background/60 rounded-full overflow-hidden">
-                      <div
-                        className={`h-full rounded-full ${
-                          healthRate >= 80 ? "bg-emerald-500" : healthRate >= 50 ? "bg-amber-500" : "bg-red-500"
-                        } transition-all`}
-                        style={{ width: `${healthRate}%` }}
-                      />
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h1 className={`text-2xl font-bold tracking-tight ${meta.accent}`}>
+                        {meta.greeting}
+                      </h1>
+                      {isFiltering && periodLabel && (
+                        <Badge variant="outline" className="gap-1 border-primary/30 text-primary">
+                          <CalendarIcon className="size-3" />
+                          Filtrando: {periodLabel}
+                        </Badge>
+                      )}
                     </div>
-                    <p className="text-[11px] text-muted-foreground mt-1.5">
-                      {stats.completedThisMonth} de {stats.totalObligations}
+                    <p className="text-sm text-muted-foreground max-w-xl">
+                      {isFiltering
+                        ? `Mostrando dados de ${periodLabel}.`
+                        : hasCritical
+                          ? `Você tem ${totalCriticalCount} ${totalCriticalCount === 1 ? "item crítico" : "itens críticos"} pra resolver hoje.`
+                          : hasThisWeek
+                            ? `Tudo em dia. ${totalThisWeekCount} ${totalThisWeekCount === 1 ? "item vence" : "itens vencem"} nos próximos 7 dias.`
+                            : "Nenhuma pendência crítica. Bom trabalho! 🎉"}
                     </p>
                   </div>
-                )
-              })()}
-            </div>
-          </div>
+
+                  {/* Lado direito: clima + saúde do mês */}
+                  <div className="flex flex-wrap items-stretch gap-3">
+                    <WeatherGreeting accent={meta.accent} />
+
+                    {/* Indicador de saúde do mês */}
+                    {stats && stats.totalObligations > 0 && (() => {
+                      const healthRate = Math.round(
+                        (stats.completedThisMonth / Math.max(1, stats.totalObligations)) * 100,
+                      )
+                      const healthColor =
+                        healthRate >= 80
+                          ? "text-emerald-600 dark:text-emerald-400"
+                          : healthRate >= 50
+                            ? "text-amber-600 dark:text-amber-400"
+                            : "text-red-600 dark:text-red-400"
+                      const healthBg =
+                        healthRate >= 80
+                          ? "bg-emerald-500/10"
+                          : healthRate >= 50
+                            ? "bg-amber-500/10"
+                            : "bg-red-500/10"
+                      return (
+                        <div className={`shrink-0 rounded-xl ${healthBg} p-3.5 min-w-[150px] border border-border/50`}>
+                          <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+                            Progresso do mês
+                          </p>
+                          <p className={`text-2xl font-bold mt-0.5 ${healthColor}`}>{healthRate}%</p>
+                          <div className="h-1 mt-1.5 bg-background/60 rounded-full overflow-hidden">
+                            <div
+                              className={`h-full rounded-full ${
+                                healthRate >= 80 ? "bg-emerald-500" : healthRate >= 50 ? "bg-amber-500" : "bg-red-500"
+                              } transition-all`}
+                              style={{ width: `${healthRate}%` }}
+                            />
+                          </div>
+                          <p className="text-[11px] text-muted-foreground mt-1.5">
+                            {stats.completedThisMonth} de {stats.totalObligations}
+                          </p>
+                        </div>
+                      )
+                    })()}
+                  </div>
+                </div>
+              </div>
+            )
+          })()}
 
           {/* Resumo Geral */}
           {stats && (
