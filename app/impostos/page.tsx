@@ -433,7 +433,7 @@ export default function ImpostosPage() {
     const isCalculatedOverdue =
       status !== "completed" &&
       calculatedDueDate &&
-      isOverdue(calculatedDueDate.toISOString().split("T")[0])
+      isOverdue(calculatedDueDate)
 
     switch (status) {
       case "completed":
@@ -856,7 +856,7 @@ export default function ImpostosPage() {
                           const isTaxOverdue =
                             calculatedDueDate &&
                             tax.status !== "completed" &&
-                            isOverdue(calculatedDueDate.toISOString().split("T")[0])
+                            isOverdue(calculatedDueDate)
                           return (
                           <TableRow
                             key={tax.id}

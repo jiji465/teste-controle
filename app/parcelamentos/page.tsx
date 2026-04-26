@@ -137,21 +137,24 @@ export default function ParcelamentosPage() {
   ]
 
   const statusCounts = useMemo(() => {
+    // Respeita o filtro global de período (PeriodSwitcher) — igual a filteredInstallments
+    const inPeriod = installments.filter((inst) => isInPeriod(calculateDueDate(inst)))
+
     const counts = {
-      all: installments.length,
+      all: inPeriod.length,
       pending: 0,
       in_progress: 0,
       completed: 0,
       overdue: 0,
     }
 
-    installments.forEach((installment) => {
+    inPeriod.forEach((installment) => {
       const status = getStatus(installment)
       counts[status]++
     })
 
     return counts
-  }, [installments])
+  }, [installments, isInPeriod])
 
   const handleEdit = (installment: Installment) => {
     setSelectedInstallment(installment)

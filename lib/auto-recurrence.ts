@@ -17,15 +17,15 @@ import {
   generateTaxForPeriod,
   generateInstallmentForPeriod,
 } from "./recurrence-engine"
-import { buildSafeDate } from "./date-utils"
+import { buildSafeDate, toLocalDateString } from "./date-utils"
 
 export async function checkAndGenerateRecurrences(): Promise<void> {
   const now = new Date()
   const currentPeriod = getCurrentPeriod()
   const lastCheck = getLastRecurrenceCheck()
 
-  // Verifica se já rodou hoje
-  const today = now.toISOString().split("T")[0]
+  // Verifica se já rodou hoje (usa data LOCAL pra não shiftar à noite UTC-3)
+  const today = toLocalDateString(now)
   if (lastCheck === today) {
     return
   }

@@ -21,8 +21,9 @@ const RegimeDistributionChart = dynamic(
   },
 )
 import { getObligationsWithDetails, calculateDashboardStats } from "@/lib/dashboard-utils"
+import { calculateDueDateFromCompetency } from "@/lib/date-utils"
 import { getCurrentPeriod } from "@/lib/recurrence-engine"
-import { TrendingUp, CalendarIcon, AlertCircle, CreditCard, BarChart3 } from "lucide-react"
+import { TrendingUp, CalendarIcon, AlertCircle, CreditCard, BarChart3, ListChecks, Activity } from "lucide-react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -112,6 +113,24 @@ export default function DashboardPage() {
     )
   }, [rawObligations, clients, taxes, isLoading, isInPeriod])
 
+  // Taxes filtradas pelo período selecionado (mesma lógica de obrigações)
+  const filteredTaxes = useMemo(() => {
+    if (isLoading) return []
+    return taxes.filter((t) => {
+      const date = calculateDueDateFromCompetency(t.competencyMonth, t.dueDay, t.weekendRule)
+      return date ? isInPeriod(date) : true
+    })
+  }, [taxes, isLoading, isInPeriod])
+
+  // Contagem total de taxes/obligations fora do filtro pra mostrar contexto quando vazio
+  const totalsOutsidePeriod = useMemo(() => {
+    if (!isFiltering) return { taxes: 0, obligations: 0 }
+    return {
+      taxes: taxes.filter((t) => t.status !== "completed").length - filteredTaxes.filter((t) => t.status !== "completed").length,
+      obligations: rawObligations.filter((o) => o.status !== "completed").length - obligations.filter((o) => o.status !== "completed").length,
+    }
+  }, [isFiltering, taxes, filteredTaxes, rawObligations, obligations])
+
   useEffect(() => {
     if (!isLoading && clients.length > 0) {
       setStats(calculateDashboardStats(clients, obligations))
@@ -140,6 +159,7 @@ export default function DashboardPage() {
     const monthsToAdd = inst.currentInstallment - 1
     const dueDate = new Date(firstDue.getFullYear(), firstDue.getMonth() + monthsToAdd, inst.dueDay)
     const adjustedDueDate = adjustForWeekend(dueDate, inst.weekendRule)
+    if (!isInPeriod(adjustedDueDate)) return false
     return adjustedDueDate <= new Date()
   })
 
@@ -156,6 +176,7 @@ export default function DashboardPage() {
     const monthsToAdd = inst.currentInstallment - 1
     const dueDate = new Date(firstDue.getFullYear(), firstDue.getMonth() + monthsToAdd, inst.dueDay)
     const adjustedDueDate = adjustForWeekend(dueDate, inst.weekendRule)
+    if (!isInPeriod(adjustedDueDate)) return false
     const today = new Date()
     const nextWeek = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000)
     return adjustedDueDate >= today && adjustedDueDate <= nextWeek
@@ -249,8 +270,19 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* Stats Cards */}
-          {stats && <DashboardStatsCards stats={stats} />}
+          {/* Resumo Geral */}
+          {stats && (
+            <div>
+              <h2 className="text-xl font-semibold mb-3 flex items-center gap-2">
+                <BarChart3 className="size-5" />
+                Resumo Geral
+                {isFiltering && periodLabel && (
+                  <span className="text-sm font-normal text-muted-foreground">· {periodLabel}</span>
+                )}
+              </h2>
+              <DashboardStatsCards stats={stats} />
+            </div>
+          )}
 
           {/* Linha 1: Alertas Críticos + Vencendo 7 dias (lado a lado quando ambos existem) */}
           {(hasCritical || hasThisWeek) && (
@@ -391,7 +423,43 @@ export default function DashboardPage() {
             </div>
           )}
 
-          {/* Linha 2: Distribuição por Regime + Estado + Status (3 colunas) */}
+          {/* Próximos Vencimentos: Obrigações + Guias de Imposto */}
+          <div>
+            <h2 className="text-xl font-semibold mb-3 flex items-center gap-2">
+              <ListChecks className="size-5" />
+              Próximos Vencimentos
+              {isFiltering && periodLabel && (
+                <span className="text-sm font-normal text-muted-foreground">· {periodLabel}</span>
+              )}
+            </h2>
+            <div className="grid gap-4 lg:grid-cols-2">
+              <UpcomingObligations
+                obligations={obligations}
+                periodLabel={periodLabel}
+                outsidePeriodCount={totalsOutsidePeriod.obligations}
+              />
+              <UpcomingTaxes
+                taxes={filteredTaxes}
+                clients={clients}
+                periodLabel={periodLabel}
+                outsidePeriodCount={totalsOutsidePeriod.taxes}
+              />
+            </div>
+          </div>
+
+          {/* Indicadores de Produtividade */}
+          <div>
+            <h2 className="text-xl font-semibold mb-3 flex items-center gap-2">
+              <TrendingUp className="size-5" />
+              Indicadores de Produtividade
+              {isFiltering && periodLabel && (
+                <span className="text-sm font-normal text-muted-foreground">· {periodLabel}</span>
+              )}
+            </h2>
+            <ProductivityStats obligations={obligations} periodLabel={periodLabel} />
+          </div>
+
+          {/* Distribuição (3 donut charts) */}
           <div>
             <h2 className="text-xl font-semibold mb-3 flex items-center gap-2">
               <BarChart3 className="size-5" />
@@ -400,24 +468,16 @@ export default function DashboardPage() {
             <RegimeDistributionChart obligations={obligations} clients={clients} />
           </div>
 
-          {/* Indicadores de Produtividade */}
+          {/* Clientes & Atividade */}
           <div>
             <h2 className="text-xl font-semibold mb-3 flex items-center gap-2">
-              <TrendingUp className="size-5" />
-              Indicadores de Produtividade
+              <Activity className="size-5" />
+              Clientes & Atividade
             </h2>
-            <ProductivityStats obligations={obligations} />
-          </div>
-
-          {/* Linha 3: Próximas Obrigações + Próximas Guias + Visão de Clientes + Atividade */}
-          <div className="grid gap-4 lg:grid-cols-2">
-            <UpcomingObligations obligations={obligations} />
-            <UpcomingTaxes taxes={taxes} clients={clients} />
-          </div>
-
-          <div className="grid gap-4 lg:grid-cols-2">
-            <ClientOverview clients={clients} obligations={obligations} />
-            <RecentActivity obligations={obligations} />
+            <div className="grid gap-4 lg:grid-cols-2">
+              <ClientOverview clients={clients} obligations={obligations} />
+              <RecentActivity obligations={obligations} />
+            </div>
           </div>
         </div>
       </div>
