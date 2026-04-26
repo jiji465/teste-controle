@@ -848,8 +848,26 @@ export const ObligationList = forwardRef<ObligationListHandle, ObligationListPro
                   </TableCell>
                   <TableCell>
                     <div className="space-y-1">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <div className="font-medium">{obligation.name}</div>
+                        {obligation.scope && (
+                          <Badge
+                            variant="outline"
+                            className={
+                              obligation.scope === "federal"
+                                ? "border-violet-500 text-violet-700 dark:text-violet-400"
+                                : obligation.scope === "estadual"
+                                  ? "border-amber-500 text-amber-700 dark:text-amber-400"
+                                  : "border-teal-500 text-teal-700 dark:text-teal-400"
+                            }
+                          >
+                            {obligation.scope === "federal"
+                              ? "Federal"
+                              : obligation.scope === "estadual"
+                                ? "Estadual"
+                                : "Municipal"}
+                          </Badge>
+                        )}
                         {obligation.priority && obligation.priority !== "medium" && (
                           <Badge
                             variant="outline"
