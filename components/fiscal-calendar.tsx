@@ -21,7 +21,7 @@ import {
   EyeOff,
 } from "lucide-react"
 import type { Client, Tax, ObligationWithDetails, InstallmentWithDetails } from "@/lib/types"
-import { buildSafeDate, isHoliday, isWeekend, calculateDueDateFromCompetency } from "@/lib/date-utils"
+import { buildSafeDate, isHoliday, isWeekend, calculateDueDateFromCompetency, getHolidayName } from "@/lib/date-utils"
 import { useSelectedPeriod } from "@/hooks/use-selected-period"
 
 type CalendarItemKind = "obligation" | "tax" | "installment"
@@ -383,8 +383,13 @@ export function FiscalCalendar({ obligations, taxes = [], installments = [], cli
                       </div>
                     </div>
 
-                    {holiday && !items.length && (
-                      <p className="text-[10px] text-orange-600 dark:text-orange-400 font-medium">Feriado</p>
+                    {holiday && (
+                      <p
+                        className="text-[10px] text-orange-600 dark:text-orange-400 font-medium truncate"
+                        title={getHolidayName(day) ?? "Feriado"}
+                      >
+                        🎉 {getHolidayName(day)}
+                      </p>
                     )}
 
                     <div className="space-y-1">
@@ -454,10 +459,17 @@ export function FiscalCalendar({ obligations, taxes = [], installments = [], cli
                 <CalendarCheck className="size-5 text-primary" />
                 {selectedDay && formatDate(selectedDay)}
                 {selectedDay && isHoliday(selectedDay) && (
-                  <Badge variant="outline" className="text-orange-600 border-orange-200">Feriado</Badge>
+                  <Badge
+                    variant="outline"
+                    className="text-orange-600 border-orange-200 dark:border-orange-900"
+                  >
+                    🎉 {getHolidayName(selectedDay)}
+                  </Badge>
                 )}
                 {selectedDay && isWeekend(selectedDay) && (
-                  <Badge variant="outline" className="text-muted-foreground">Fim de semana</Badge>
+                  <Badge variant="outline" className="text-muted-foreground">
+                    {selectedDay.getDay() === 0 ? "Domingo" : "Sábado"}
+                  </Badge>
                 )}
               </DialogTitle>
               <DialogDescription>
