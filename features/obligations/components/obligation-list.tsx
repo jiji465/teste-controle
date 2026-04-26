@@ -29,6 +29,7 @@ import {
   Clock,
   RotateCcw,
   Copy,
+  FileText,
 } from "lucide-react"
 import type { ObligationWithDetails, Client, Tax, Priority, TaxRegime } from "@/lib/types"
 import { TAX_REGIME_LABELS, TAX_REGIME_COLORS } from "@/lib/types"
@@ -787,15 +788,15 @@ export const ObligationList = forwardRef<ObligationListHandle, ObligationListPro
                 </Button>
               </ResizableTableHead>
               <ResizableTableHead defaultWidth={160} storageKey="obrigacoes-regimes">Regimes</ResizableTableHead>
-              <ResizableTableHead defaultWidth={140} storageKey="obrigacoes-status">
-                <Button variant="ghost" size="sm" onClick={() => toggleSort("status")} className="-ml-3">
-                  Status
-                  <ArrowUpDown className="ml-2 size-3" />
-                </Button>
-              </ResizableTableHead>
               <ResizableTableHead defaultWidth={180} storageKey="obrigacoes-due">
                 <Button variant="ghost" size="sm" onClick={() => toggleSort("dueDate")} className="-ml-3">
                   Vencimento
+                  <ArrowUpDown className="ml-2 size-3" />
+                </Button>
+              </ResizableTableHead>
+              <ResizableTableHead defaultWidth={140} storageKey="obrigacoes-status">
+                <Button variant="ghost" size="sm" onClick={() => toggleSort("status")} className="-ml-3">
+                  Status
                   <ArrowUpDown className="ml-2 size-3" />
                 </Button>
               </ResizableTableHead>
@@ -809,7 +810,7 @@ export const ObligationList = forwardRef<ObligationListHandle, ObligationListPro
                 <TableCell colSpan={8} className="py-12">
                   <div className="flex flex-col items-center justify-center text-center gap-2">
                     <div className="size-12 rounded-full bg-muted flex items-center justify-center mb-1">
-                      <CheckCircle2 className="size-6 text-muted-foreground" />
+                      <FileText className="size-6 text-muted-foreground" />
                     </div>
                     <p className="font-medium">Nenhuma obrigação encontrada</p>
                     <p className="text-sm text-muted-foreground max-w-md">
@@ -895,7 +896,6 @@ export const ObligationList = forwardRef<ObligationListHandle, ObligationListPro
                       <span className="text-xs text-muted-foreground">Todos</span>
                     )}
                   </TableCell>
-                  <TableCell>{getStatusBadge(obligation)}</TableCell>
                   <TableCell>
                     <div className="space-y-1">
                       <div className="font-mono text-sm font-medium">{formatDate(obligation.calculatedDueDate)}</div>
@@ -914,6 +914,7 @@ export const ObligationList = forwardRef<ObligationListHandle, ObligationListPro
                       )}
                     </div>
                   </TableCell>
+                  <TableCell>{getStatusBadge(obligation)}</TableCell>
                   <TableCell>
                     <QuickActionButtons obligation={obligation} />
                   </TableCell>

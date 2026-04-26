@@ -10,6 +10,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Label } from "@/components/ui/label"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { ConfirmDialog, type ConfirmState } from "@/components/ui/confirm-dialog"
 import { ExportButton } from "@/components/export-button"
 import type { ExportColumn } from "@/lib/export-utils"
@@ -21,7 +22,7 @@ import { getObligationsWithDetails } from "@/lib/dashboard-utils"
 import { saveInstallment, deleteInstallment } from "@/lib/supabase/database"
 import { matchesText } from "@/lib/utils"
 import type { Installment } from "@/lib/types"
-import { Plus, Search, Pencil, Trash2, Play, CheckCircle2, AlertCircle, Flame, TrendingUp, Zap, Clock, PlayCircle, AlertTriangle, Filter, RotateCcw, Calendar as CalendarIcon } from "lucide-react"
+import { Plus, Search, Pencil, Trash2, Play, CheckCircle2, AlertCircle, Clock, PlayCircle, AlertTriangle, Filter, RotateCcw, Calendar as CalendarIcon, MoreVertical, CreditCard } from "lucide-react"
 import { formatDate, adjustForWeekend } from "@/lib/date-utils"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useData } from "@/contexts/data-context"
@@ -388,19 +389,6 @@ export default function ParcelamentosPage() {
     }
   }
 
-  const getPriorityIcon = (priority: string) => {
-    switch (priority) {
-      case "urgent":
-        return <Zap className="h-4 w-4 text-destructive" />
-      case "high":
-        return <Flame className="h-4 w-4 text-warning" />
-      case "medium":
-        return <AlertCircle className="h-4 w-4 text-info" />
-      default:
-        return <TrendingUp className="h-4 w-4 text-muted-foreground" />
-    }
-  }
-
   return (
     <div className="mx-auto max-w-screen-2xl px-4 lg:px-6 py-5">
       <ConfirmDialog state={confirmState} onClose={() => setConfirmState(null)} />
@@ -504,7 +492,7 @@ export default function ParcelamentosPage() {
           </div>
 
           {showFilters && (
-            <div className="grid sm:grid-cols-2 gap-4 p-4 border rounded-lg bg-muted/50">
+            <div className="grid sm:grid-cols-3 gap-4 p-4 border rounded-lg bg-muted/50">
               <div className="grid gap-2">
                 <label className="text-sm font-medium">Cliente</label>
                 <Select value={clientFilter} onValueChange={setClientFilter}>
@@ -638,10 +626,10 @@ export default function ParcelamentosPage() {
                 <ResizableTableHead defaultWidth={240} storageKey="parc-client">Cliente</ResizableTableHead>
                 <ResizableTableHead defaultWidth={140} storageKey="parc-tax">Imposto</ResizableTableHead>
                 <ResizableTableHead defaultWidth={100} storageKey="parc-num">Parcela</ResizableTableHead>
-                <ResizableTableHead defaultWidth={140} storageKey="parc-due">Vencimento</ResizableTableHead>
-                <ResizableTableHead defaultWidth={120} storageKey="parc-prio">Prioridade</ResizableTableHead>
-                <ResizableTableHead defaultWidth={130} storageKey="parc-status">Status</ResizableTableHead>
-                <TableHead className="text-right">Ações</TableHead>
+                <ResizableTableHead defaultWidth={180} storageKey="parc-due">Vencimento</ResizableTableHead>
+                <ResizableTableHead defaultWidth={140} storageKey="parc-status">Status</ResizableTableHead>
+                <ResizableTableHead defaultWidth={180} storageKey="parc-actions">Ações Rápidas</ResizableTableHead>
+                <TableHead className="w-[50px]"></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -649,10 +637,10 @@ export default function ParcelamentosPage() {
                 <TableRow>
                   <TableCell colSpan={9} className="py-12">
                     <div className="flex flex-col items-center justify-center text-center gap-2">
-                      <div className="size-10 rounded-full bg-muted flex items-center justify-center mb-1">
-                        <Plus className="size-5 text-muted-foreground" />
+                      <div className="size-12 rounded-full bg-muted flex items-center justify-center mb-1">
+                        <CreditCard className="size-6 text-muted-foreground" />
                       </div>
-                      <p className="font-medium">Nenhum parcelamento cadastrado</p>
+                      <p className="font-medium">Nenhum parcelamento encontrado</p>
                       <p className="text-sm text-muted-foreground max-w-md">
                         Cadastre parcelamentos de impostos (REFIS, parcelamentos especiais, etc).
                       </p>
@@ -663,7 +651,7 @@ export default function ParcelamentosPage() {
                         }}
                         className="mt-2 gap-2"
                       >
-                        <Plus className="size-4" /> Novo Parcelamento
+                        Novo Parcelamento
                       </Button>
                     </div>
                   </TableCell>
@@ -691,34 +679,85 @@ export default function ParcelamentosPage() {
                           aria-label={`Selecionar ${installment.name}`}
                         />
                       </TableCell>
-                      <TableCell className="font-medium">{installment.name}</TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <div className="font-medium">{installment.name}</div>
+                          {installment.priority && installment.priority !== "medium" && (
+                            <Badge
+                              variant="outline"
+                              className={
+                                installment.priority === "urgent"
+                                  ? "border-red-500 text-red-700 dark:text-red-400"
+                                  : installment.priority === "high"
+                                    ? "border-orange-500 text-orange-700 dark:text-orange-400"
+                                    : "border-blue-500 text-blue-700 dark:text-blue-400"
+                              }
+                            >
+                              {installment.priority === "urgent"
+                                ? "Urgente"
+                                : installment.priority === "high"
+                                  ? "Alta"
+                                  : "Baixa"}
+                            </Badge>
+                          )}
+                        </div>
+                      </TableCell>
                       <TableCell>{getClientName(installment.clientId)}</TableCell>
                       <TableCell>{getTaxName(installment.taxId)}</TableCell>
                       <TableCell>
                         {installment.currentInstallment}/{installment.installmentCount}
                       </TableCell>
-                      <TableCell>{formatDate(dueDate)}</TableCell>
-                      <TableCell>{getPriorityIcon(installment.priority)}</TableCell>
+                      <TableCell>
+                        <div className="font-mono text-sm font-medium">{formatDate(dueDate)}</div>
+                      </TableCell>
                       <TableCell>{getStatusBadge(installment)}</TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex justify-end gap-2">
-                          {status === "pending" && (
-                            <Button size="sm" variant="outline" onClick={() => handleStartInstallment(installment)}>
-                              <Play className="h-4 w-4" />
+                      <TableCell>
+                        {status !== "completed" && (
+                          <div className="flex gap-1">
+                            {status === "pending" && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => handleStartInstallment(installment)}
+                                className="h-7 text-xs"
+                              >
+                                <PlayCircle className="size-3 mr-1" />
+                                Iniciar
+                              </Button>
+                            )}
+                            <Button
+                              size="sm"
+                              variant="default"
+                              onClick={() => handleCompleteInstallment(installment)}
+                              className="h-7 text-xs bg-green-600 hover:bg-green-700"
+                            >
+                              <CheckCircle2 className="size-3 mr-1" />
+                              Concluir
                             </Button>
-                          )}
-                          {(status === "pending" || status === "in_progress") && (
-                            <Button size="sm" variant="outline" onClick={() => handleCompleteInstallment(installment)}>
-                              <CheckCircle2 className="h-4 w-4" />
+                          </div>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon">
+                              <MoreVertical className="size-4" />
                             </Button>
-                          )}
-                          <Button size="sm" variant="outline" onClick={() => handleEdit(installment)}>
-                            <Pencil className="h-4 w-4" />
-                          </Button>
-                          <Button size="sm" variant="outline" onClick={() => handleDelete(installment.id)}>
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={() => handleEdit(installment)}>
+                              <Pencil className="size-4 mr-2" />
+                              Editar
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => handleDelete(installment.id)}
+                              className="text-destructive"
+                            >
+                              <Trash2 className="size-4 mr-2" />
+                              Excluir
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </TableCell>
                     </TableRow>
                   )
