@@ -28,6 +28,7 @@ import {
   ListChecks,
   RotateCcw,
   Circle,
+  Send,
 } from "lucide-react"
 import type { Installment, Client, Tax, Priority } from "@/lib/types"
 import { adjustForWeekend, buildSafeDate, formatDate, isOverdue } from "@/lib/date-utils"
@@ -60,10 +61,13 @@ type InstallmentDetailsProps = {
   open: boolean
   onOpenChange: (open: boolean) => void
   onEdit?: (installment: Installment) => void
-  /** Chamado ao clicar "Pagar parcela X/N" — quem chama é responsável
-   *  por persistir e refazer o load. */
+  /** Atalho "envia + paga" da parcela atual (1 clique = guia mandada e cliente pagou). */
   onPay?: (installment: Installment) => void | Promise<void>
-  /** Chamado ao clicar "Desfazer último pagamento". */
+  /** "Marquei pronto" — guia mandada ao cliente, mas pagamento ainda não confirmado. */
+  onMarkAsSent?: (installment: Installment) => void | Promise<void>
+  /** Cliente pagou a parcela X — confirma pagamento. */
+  onConfirmPayment?: (installment: Installment, parcelNumber: number) => void | Promise<void>
+  /** Desfaz último envio (e seu pagamento, se houver). */
   onUndoLastPayment?: (installment: Installment) => void | Promise<void>
 }
 
@@ -75,6 +79,8 @@ export function InstallmentDetails({
   onOpenChange,
   onEdit,
   onPay,
+  onMarkAsSent,
+  onConfirmPayment,
   onUndoLastPayment,
 }: InstallmentDetailsProps) {
   const client = clients.find((c) => c.id === installment.clientId)
@@ -97,10 +103,12 @@ export function InstallmentDetails({
   const overdue = installment.status !== "completed" && isOverdue(calcDueDate)
   const effectiveStatus = overdue ? "overdue" : installment.status
 
-  // Progresso baseado em parcelas EFETIVAMENTE pagas (paidInstallments).
-  // Mais correto que (currentInstallment - 1) caso exista discrepância.
+  // Progresso baseado em parcelas EFETIVAMENTE pagas (com paidAt).
+  // O array paidInstallments agora pode conter parcelas só enviadas
+  // (sentAt) sem pagamento — essas NÃO contam pra "pagas".
   const paidList = installment.paidInstallments ?? []
-  const paidCount = paidList.length
+  const paidCount = paidList.filter((p) => !!p.paidAt).length
+  const sentNotPaidCount = paidList.filter((p) => !!p.sentAt && !p.paidAt).length
   const progress = Math.min(
     100,
     Math.round((paidCount / Math.max(1, installment.installmentCount)) * 100),
@@ -181,22 +189,42 @@ export function InstallmentDetails({
               </p>
             </div>
 
-            {/* Ação principal: pagar parcela atual */}
-            {!allPaid && onPay && (
-              <div className="flex items-center gap-2">
-                <Button
-                  onClick={() => onPay(installment)}
-                  className="flex-1 gap-2 bg-green-600 hover:bg-green-700 text-white"
-                >
-                  <CheckCircle2 className="size-4" />
-                  Pagar parcela {installment.currentInstallment}/{installment.installmentCount}
-                </Button>
+            {/* Ações rápidas no header — fluxo de 2 etapas:
+                1. "Marcar enviada" da parcela atual (azul, tipo "minha parte está feita")
+                2. "Atalho: enviada + paga" pra quem sabe que cliente pagou na hora
+                Os botões contextuais da linha do cronograma cobrem o resto. */}
+            {!allPaid && (
+              <div className="flex items-center gap-2 flex-wrap">
+                {onMarkAsSent &&
+                  installment.currentInstallment <= installment.installmentCount &&
+                  !paidByNumber.get(installment.currentInstallment)?.sentAt && (
+                    <Button
+                      onClick={() => onMarkAsSent(installment)}
+                      variant="outline"
+                      className="flex-1 gap-2 border-blue-500/50 text-blue-700 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-950/30"
+                    >
+                      <Send className="size-4" />
+                      Marcar {installment.currentInstallment}/{installment.installmentCount} enviada
+                    </Button>
+                  )}
+                {onPay &&
+                  installment.currentInstallment <= installment.installmentCount &&
+                  !paidByNumber.get(installment.currentInstallment)?.sentAt && (
+                    <Button
+                      onClick={() => onPay(installment)}
+                      className="flex-1 gap-2 bg-green-600 hover:bg-green-700 text-white"
+                      title="Atalho: marca como enviada e paga em um clique"
+                    >
+                      <CheckCircle2 className="size-4" />
+                      Atalho: enviada + paga
+                    </Button>
+                  )}
                 {paidCount > 0 && onUndoLastPayment && (
                   <Button
                     variant="outline"
                     onClick={() => onUndoLastPayment(installment)}
                     className="gap-2"
-                    title="Desfazer último pagamento"
+                    title="Desfazer último envio"
                   >
                     <RotateCcw className="size-4" />
                   </Button>
@@ -260,64 +288,102 @@ export function InstallmentDetails({
               {Array.from({ length: installment.installmentCount }, (_, i) => i + 1).map(
                 (n) => {
                   const due = dueDateFor(n)
-                  const paidEntry = paidByNumber.get(n)
-                  const isPaid = !!paidEntry
-                  const isCurrent =
-                    !isPaid && n === installment.currentInstallment && !allPaid
-                  const isFuture = !isPaid && !isCurrent
-                  const dueOverdue = isCurrent && isOverdue(due)
+                  const record = paidByNumber.get(n)
+                  // 4 estados visuais:
+                  //  - PAID: tem paidAt → ✅ verde
+                  //  - SENT_OVERDUE: enviada, sem pagamento, vencida → ⚠️ vermelho
+                  //  - SENT: enviada, sem pagamento, no prazo → 📧 azul
+                  //  - PENDING: parcela atual, ainda não enviada → ⏳ âmbar
+                  //  - FUTURE: ainda não chegou a vez → ⚪ cinza
+                  const isPaid = !!record?.paidAt
+                  const isSent = !!record?.sentAt && !record.paidAt
+                  const isOverdueSent = isSent && isOverdue(due)
+                  const isCurrentToSend =
+                    !record &&
+                    n === installment.currentInstallment &&
+                    !allPaid
+                  const isFuture =
+                    !record && n !== installment.currentInstallment
+
+                  const rowBg = isPaid
+                    ? "bg-green-50/50 dark:bg-green-950/10"
+                    : isOverdueSent
+                      ? "bg-red-50/60 dark:bg-red-950/20"
+                      : isSent
+                        ? "bg-blue-50/50 dark:bg-blue-950/10"
+                        : isCurrentToSend
+                          ? "bg-amber-50/50 dark:bg-amber-950/10"
+                          : ""
+
                   return (
                     <li
                       key={n}
-                      className={`flex items-center gap-3 px-3 py-2 text-sm ${
-                        isPaid
-                          ? "bg-green-50/50 dark:bg-green-950/10"
-                          : isCurrent
-                            ? dueOverdue
-                              ? "bg-red-50/60 dark:bg-red-950/20"
-                              : "bg-amber-50/50 dark:bg-amber-950/10"
-                            : ""
-                      }`}
+                      className={`flex items-center gap-3 px-3 py-2 text-sm flex-wrap ${rowBg}`}
                     >
                       <span className="shrink-0">
                         {isPaid ? (
                           <CheckCircle2 className="size-4 text-green-600" />
-                        ) : isCurrent ? (
-                          dueOverdue ? (
-                            <AlertTriangle className="size-4 text-red-600" />
-                          ) : (
-                            <Clock className="size-4 text-amber-600" />
-                          )
+                        ) : isOverdueSent ? (
+                          <AlertTriangle className="size-4 text-red-600" />
+                        ) : isSent ? (
+                          <Send className="size-4 text-blue-600" />
+                        ) : isCurrentToSend ? (
+                          <Clock className="size-4 text-amber-600" />
                         ) : (
                           <Circle className="size-4 text-muted-foreground/40" />
                         )}
                       </span>
-                      <span className="font-mono text-xs tabular-nums w-16 shrink-0">
+                      <span className="font-mono text-xs tabular-nums w-14 shrink-0">
                         {n}/{installment.installmentCount}
                       </span>
                       <span className="font-mono text-xs tabular-nums w-24 shrink-0 text-muted-foreground">
                         {formatDate(due)}
                       </span>
                       <span className="flex-1 min-w-0 text-xs">
-                        {isPaid ? (
+                        {isPaid && record?.paidAt ? (
                           <span className="text-green-700 dark:text-green-400 truncate block">
-                            Paga em {formatDate(paidEntry.paidAt)}
-                            {paidEntry.paidBy && ` por ${paidEntry.paidBy}`}
+                            Paga em {formatDate(record.paidAt)}
+                            {record.paidBy && ` por ${record.paidBy}`}
                           </span>
-                        ) : isCurrent ? (
-                          <span
-                            className={
-                              dueOverdue
-                                ? "text-red-700 dark:text-red-400 font-medium"
-                                : "text-amber-700 dark:text-amber-400 font-medium"
-                            }
-                          >
-                            {dueOverdue ? "Atrasada" : "Próxima a pagar"}
+                        ) : isOverdueSent ? (
+                          <span className="text-red-700 dark:text-red-400 font-medium">
+                            Atrasada — enviada em {formatDate(record!.sentAt!)} sem pagamento
+                          </span>
+                        ) : isSent ? (
+                          <span className="text-blue-700 dark:text-blue-400">
+                            Enviada em {formatDate(record!.sentAt!)} — aguardando pagamento
+                          </span>
+                        ) : isCurrentToSend ? (
+                          <span className="text-amber-700 dark:text-amber-400 font-medium">
+                            Próxima a enviar
                           </span>
                         ) : (
                           <span className="text-muted-foreground/60">A vencer</span>
                         )}
                       </span>
+                      {/* Botões contextuais por linha */}
+                      <div className="flex gap-1 shrink-0">
+                        {isCurrentToSend && onMarkAsSent && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => onMarkAsSent(installment)}
+                            className="h-7 text-[11px] gap-1 border-blue-500/50 text-blue-700 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-950/30"
+                          >
+                            <Send className="size-3" /> Enviada
+                          </Button>
+                        )}
+                        {(isSent || isOverdueSent) && onConfirmPayment && (
+                          <Button
+                            size="sm"
+                            variant="default"
+                            onClick={() => onConfirmPayment(installment, n)}
+                            className="h-7 text-[11px] gap-1 bg-green-600 hover:bg-green-700"
+                          >
+                            <CheckCircle2 className="size-3" /> Confirmar pgto
+                          </Button>
+                        )}
+                      </div>
                     </li>
                   )
                 },

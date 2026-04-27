@@ -14,16 +14,21 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { ConfirmDialog, type ConfirmState } from "@/components/ui/confirm-dialog"
 import { ExportButton } from "@/components/export-button"
 import type { ExportColumn } from "@/lib/export-utils"
-import { useUrlState } from "@/hooks/use-url-state"
 import { InstallmentForm } from "@/features/installments/components/installment-form"
 import { InstallmentDetails } from "@/features/installments/components/installment-details"
-import { payCurrentInstallment, undoLastPayment } from "@/features/installments/actions"
+import { InstallmentQuickActions } from "@/features/installments/components/installment-quick-actions"
+import {
+  payCurrentInstallment,
+  undoLastPayment,
+  markCurrentInstallmentAsSent,
+  confirmInstallmentPayment,
+} from "@/features/installments/actions"
 import { BulkActionsBar } from "@/components/bulk-actions-bar"
 import { GlobalSearch } from "@/components/global-search"
 import { saveInstallment, deleteInstallment } from "@/lib/supabase/database"
 import { matchesText } from "@/lib/utils"
 import type { Installment } from "@/lib/types"
-import { Plus, Search, Pencil, Trash2, Play, CheckCircle2, AlertCircle, Clock, PlayCircle, AlertTriangle, Filter, RotateCcw, Calendar as CalendarIcon, MoreVertical, CreditCard, Building2, AlertCircle as PriorityIcon, Eye, ArrowUpDown } from "lucide-react"
+import { Plus, Search, Pencil, Trash2, Play, CheckCircle2, AlertCircle, Clock, PlayCircle, AlertTriangle, Filter, RotateCcw, Calendar as CalendarIcon, MoreVertical, CreditCard, Building2, AlertCircle as PriorityIcon, Eye, ArrowUpDown, Send } from "lucide-react"
 import { FilterBar, FilterPill } from "@/components/filter-panel"
 import { formatDate, adjustForWeekend, buildSafeDate } from "@/lib/date-utils"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -34,9 +39,11 @@ import { toast } from "sonner"
 export default function ParcelamentosPage() {
   const { installments, clients, taxes, obligations: rawObligations, obligationsWithDetails, isLoading: loading, refreshData } = useData()
   const { isInPeriod, periodLabel, isFiltering } = useSelectedPeriod()
-  const [statusFilter, setStatusFilter] = useUrlState("tab")
-  const [clientFilter, setClientFilter] = useUrlState("client")
-  const [priorityFilter, setPriorityFilter] = useUrlState("priority")
+  // Filtros como state local (eram useUrlState — havia caso onde a URL
+  // atualizava mas a tabela não refletia. State local é mais previsível).
+  const [statusFilter, setStatusFilter] = useState<string>("all")
+  const [clientFilter, setClientFilter] = useState<string>("all")
+  const [priorityFilter, setPriorityFilter] = useState<string>("all")
   const [searchTerm, setSearchTerm] = useState("")
   const [selectedInstallment, setSelectedInstallment] = useState<Installment | undefined>()
   const [isFormOpen, setIsFormOpen] = useState(false)
@@ -99,20 +106,43 @@ export default function ParcelamentosPage() {
     return taxes.find((t) => t.id === taxId)?.name || "-"
   }
 
-  const calculateDueDate = (installment: Installment): Date => {
+  /** Vencimento de uma parcela específica (1..N), aplicando weekend rule. */
+  const calculateDueDateFor = (installment: Installment, parcelNumber: number): Date => {
     const firstDue = new Date(installment.firstDueDate)
-    const monthsToAdd = installment.currentInstallment - 1
+    const monthsToAdd = parcelNumber - 1
     const dueDate = buildSafeDate(firstDue.getFullYear(), firstDue.getMonth() + monthsToAdd, installment.dueDay)
     return adjustForWeekend(dueDate, installment.weekendRule)
   }
 
+  /** Vencimento da parcela ATUAL (próxima a enviar). Mantida pra
+   *  compatibilidade com código existente. */
+  const calculateDueDate = (installment: Installment): Date =>
+    calculateDueDateFor(installment, installment.currentInstallment)
+
+  /** Status efetivo do parcelamento como um todo. Reflete o modelo novo
+   *  com 2 etapas (enviada/paga). */
   const getStatus = (installment: Installment): "pending" | "in_progress" | "completed" | "overdue" => {
-    if (installment.status === "completed") return "completed"
-    const dueDate = calculateDueDate(installment)
+    const records = installment.paidInstallments ?? []
+    const allPaid =
+      records.length === installment.installmentCount &&
+      records.every((r) => r.paidAt)
+    if (installment.status === "completed" || allPaid) return "completed"
+
     const today = new Date()
     today.setHours(0, 0, 0, 0)
-    if (dueDate < today) return "overdue"
-    return installment.status
+
+    // Alguma parcela enviada com vencimento passado e sem pagamento → atrasada
+    for (const r of records) {
+      if (r.sentAt && !r.paidAt) {
+        const dueDate = calculateDueDateFor(installment, r.number)
+        if (dueDate < today) return "overdue"
+      }
+    }
+
+    // Tem parcela enviada aguardando pagamento → em andamento
+    if (records.some((r) => r.sentAt && !r.paidAt)) return "in_progress"
+
+    return "pending"
   }
 
   const filteredInstallments = useMemo(() => {
@@ -218,16 +248,6 @@ export default function ParcelamentosPage() {
     })
   }
 
-  const handleStartInstallment = async (installment: Installment) => {
-    try {
-      const updated = { ...installment, status: "in_progress" as const }
-      await saveInstallment(updated)
-      await loadData()
-    } catch (error) {
-      console.error("[v0] Error starting installment:", error)
-    }
-  }
-
   const handlePayInstallment = async (installment: Installment) => {
     try {
       const result = payCurrentInstallment(installment)
@@ -245,6 +265,45 @@ export default function ParcelamentosPage() {
     } catch (error) {
       console.error("[parcelamentos] Error paying installment:", error)
       toast.error("Erro ao registrar pagamento")
+    }
+  }
+
+  /** Marca a parcela atual como ENVIADA ao cliente (sem confirmar pagamento). */
+  const handleMarkAsSent = async (installment: Installment) => {
+    try {
+      const result = markCurrentInstallmentAsSent(installment)
+      await saveInstallment(result.updated)
+      toast.success(
+        `Parcela ${result.sentNumber}/${installment.installmentCount} marcada como enviada. Aguardando pagamento do cliente.`,
+      )
+      await loadData()
+    } catch (error) {
+      console.error("[parcelamentos] Error marking as sent:", error)
+      toast.error("Erro ao marcar como enviada")
+    }
+  }
+
+  /** Confirma que o cliente pagou a parcela informada. */
+  const handleConfirmPayment = async (
+    installment: Installment,
+    parcelNumber: number,
+  ) => {
+    try {
+      const result = confirmInstallmentPayment(installment, parcelNumber)
+      await saveInstallment(result.updated)
+      if (result.isFullyPaid) {
+        toast.success(
+          `Parcela ${parcelNumber}/${installment.installmentCount} paga — parcelamento concluído!`,
+        )
+      } else {
+        toast.success(
+          `Pagamento da parcela ${parcelNumber}/${installment.installmentCount} confirmado.`,
+        )
+      }
+      await loadData()
+    } catch (error) {
+      console.error("[parcelamentos] Error confirming payment:", error)
+      toast.error("Erro ao confirmar pagamento")
     }
   }
 
@@ -334,18 +393,30 @@ export default function ParcelamentosPage() {
     })
   }
 
-  const handleBulkInProgress = () => {
+  const handleBulkMarkAsSent = () => {
     if (selectedIds.size === 0) return
     setConfirmState({
-      title: `Iniciar ${selectedIds.size} parcelamentos`,
-      description: `Marcar ${selectedIds.size} parcelamentos como "Em andamento"?`,
-      confirmLabel: "Iniciar",
+      title: `Marcar parcela atual de ${selectedIds.size} parcelamentos como enviada`,
+      description:
+        "Para cada parcelamento selecionado, marca a parcela atual como enviada ao cliente. A próxima parcela vira a 'atual'. Não confirma pagamento — isso é separado.",
+      confirmLabel: "Marcar enviadas",
       onConfirm: async () => {
         setBulkLoading(true)
         try {
-          const targets = installments.filter((i) => selectedIds.has(i.id) && i.status !== "in_progress")
-          await Promise.all(targets.map((i) => saveInstallment({ ...i, status: "in_progress" })))
-          toast.success(`${targets.length} parcelamentos em andamento`)
+          const targets = installments.filter(
+            (i) =>
+              selectedIds.has(i.id) &&
+              i.status !== "completed" &&
+              i.currentInstallment <= i.installmentCount,
+          )
+          const now = new Date()
+          await Promise.all(
+            targets.map((i) => {
+              const result = markCurrentInstallmentAsSent(i, "Contador", now)
+              return saveInstallment(result.updated)
+            }),
+          )
+          toast.success(`${targets.length} parcelas marcadas como enviadas`)
           clearSelection()
           await loadData()
         } finally {
@@ -593,7 +664,7 @@ export default function ParcelamentosPage() {
             onClear={clearSelection}
             actions={[
               { label: "Pagar parcela atual", icon: <CheckCircle2 className="size-3.5" />, tone: "success", onClick: handleBulkComplete, disabled: bulkLoading },
-              { label: "Em andamento", icon: <PlayCircle className="size-3.5" />, onClick: handleBulkInProgress, disabled: bulkLoading },
+              { label: "Marcar atual enviada", icon: <Send className="size-3.5" />, onClick: handleBulkMarkAsSent, disabled: bulkLoading },
               { label: "Desfazer pagamento", icon: <RotateCcw className="size-3.5" />, onClick: handleBulkReopen, disabled: bulkLoading },
               { label: "Editar", icon: <Pencil className="size-3.5" />, onClick: openBulkEdit, disabled: bulkLoading },
               { label: "Excluir", icon: <Trash2 className="size-3.5" />, tone: "destructive", onClick: handleBulkDelete, disabled: bulkLoading },
@@ -604,7 +675,16 @@ export default function ParcelamentosPage() {
           <div className="md:hidden space-y-2">
             {sortedInstallments.length === 0 ? (
               <div className="rounded-lg border py-8 text-center text-sm text-muted-foreground">
-                Nenhum parcelamento encontrado
+                {installments.length === 0
+                  ? "Nenhum parcelamento cadastrado"
+                  : statusFilter !== "all"
+                    ? `Nenhum parcelamento ${
+                        statusFilter === "pending" ? "pendente" :
+                        statusFilter === "in_progress" ? "em andamento" :
+                        statusFilter === "completed" ? "concluído" :
+                        statusFilter === "overdue" ? "atrasado" : ""
+                      } neste filtro`
+                    : "Nenhum parcelamento corresponde aos filtros"}
               </div>
             ) : (
               sortedInstallments.map((installment) => {
@@ -650,24 +730,15 @@ export default function ParcelamentosPage() {
                       </div>
                     </div>
 
-                    <div className="ml-6 flex flex-wrap gap-1.5" onClick={(e) => e.stopPropagation()}>
-                      {status === "pending" && (
-                        <Button size="sm" variant="outline" onClick={() => handleStartInstallment(installment)} className="h-7 text-xs gap-1">
-                          <Play className="h-3 w-3" /> Iniciar
-                        </Button>
-                      )}
-                      {(status === "pending" || status === "in_progress") && (
-                        <Button size="sm" variant="default" onClick={() => handlePayInstallment(installment)} className="h-7 text-xs gap-1 bg-green-600 hover:bg-green-700">
-                          <CheckCircle2 className="h-3 w-3" /> Pagar {installment.currentInstallment}/{installment.installmentCount}
-                        </Button>
-                      )}
-                      <Button size="sm" variant="ghost" onClick={() => handleEdit(installment)} className="h-7 text-xs gap-1">
-                        <Pencil className="h-3 w-3" /> Editar
-                      </Button>
-                      <Button size="sm" variant="ghost" onClick={() => handleDelete(installment.id)} className="h-7 text-xs gap-1 text-destructive">
-                        <Trash2 className="h-3 w-3" />
-                      </Button>
-                    </div>
+                    <InstallmentQuickActions
+                      installment={installment}
+                      status={status}
+                      onMarkAsSent={handleMarkAsSent}
+                      onConfirmPayment={handleConfirmPayment}
+                      onEdit={handleEdit}
+                      onDelete={handleDelete}
+                      compact
+                    />
                   </div>
                 )
               })
@@ -734,19 +805,54 @@ export default function ParcelamentosPage() {
                       <div className="size-12 rounded-full bg-muted flex items-center justify-center mb-1">
                         <CreditCard className="size-6 text-muted-foreground" />
                       </div>
-                      <p className="font-medium">Nenhum parcelamento encontrado</p>
-                      <p className="text-sm text-muted-foreground max-w-md">
-                        Cadastre parcelamentos de impostos (REFIS, parcelamentos especiais, etc).
-                      </p>
-                      <Button
-                        onClick={() => {
-                          setSelectedInstallment(undefined)
-                          setIsFormOpen(true)
-                        }}
-                        className="mt-2 gap-2"
-                      >
-                        Novo Parcelamento
-                      </Button>
+                      {installments.length === 0 ? (
+                        <>
+                          <p className="font-medium">Nenhum parcelamento cadastrado</p>
+                          <p className="text-sm text-muted-foreground max-w-md">
+                            Cadastre parcelamentos de impostos (REFIS, parcelamentos especiais, etc).
+                          </p>
+                          <Button
+                            onClick={() => {
+                              setSelectedInstallment(undefined)
+                              setIsFormOpen(true)
+                            }}
+                            className="mt-2 gap-2"
+                          >
+                            Novo Parcelamento
+                          </Button>
+                        </>
+                      ) : statusFilter !== "all" ? (
+                        <>
+                          <p className="font-medium">
+                            Nenhum parcelamento {
+                              statusFilter === "pending" ? "pendente" :
+                              statusFilter === "in_progress" ? "em andamento" :
+                              statusFilter === "completed" ? "concluído" :
+                              statusFilter === "overdue" ? "atrasado" : ""
+                            } neste filtro
+                          </p>
+                          <p className="text-sm text-muted-foreground max-w-md">
+                            Total cadastrado: {installments.length}. Tente outra aba ou
+                            limpe os filtros.
+                          </p>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setStatusFilter("all")}
+                            className="mt-2"
+                          >
+                            Ver todos
+                          </Button>
+                        </>
+                      ) : (
+                        <>
+                          <p className="font-medium">Nenhum resultado pra esses filtros</p>
+                          <p className="text-sm text-muted-foreground max-w-md">
+                            Total cadastrado: {installments.length}. Ajuste os filtros
+                            (cliente, prioridade, busca) ou o período do topo.
+                          </p>
+                        </>
+                      )}
                     </div>
                   </TableCell>
                 </TableRow>
@@ -807,31 +913,12 @@ export default function ParcelamentosPage() {
                       </TableCell>
                       <TableCell>{getStatusBadge(installment)}</TableCell>
                       <TableCell onClick={(e) => e.stopPropagation()}>
-                        {status !== "completed" && (
-                          <div className="flex gap-1">
-                            {status === "pending" && (
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => handleStartInstallment(installment)}
-                                className="h-7 text-xs"
-                              >
-                                <PlayCircle className="size-3 mr-1" />
-                                Iniciar
-                              </Button>
-                            )}
-                            <Button
-                              size="sm"
-                              variant="default"
-                              onClick={() => handlePayInstallment(installment)}
-                              className="h-7 text-xs bg-green-600 hover:bg-green-700"
-                              title={`Marcar parcela ${installment.currentInstallment}/${installment.installmentCount} como paga`}
-                            >
-                              <CheckCircle2 className="size-3 mr-1" />
-                              Pagar {installment.currentInstallment}/{installment.installmentCount}
-                            </Button>
-                          </div>
-                        )}
+                        <InstallmentQuickActions
+                          installment={installment}
+                          status={status}
+                          onMarkAsSent={handleMarkAsSent}
+                          onConfirmPayment={handleConfirmPayment}
+                        />
                       </TableCell>
                       <TableCell onClick={(e) => e.stopPropagation()}>
                         <DropdownMenu>
@@ -890,6 +977,8 @@ export default function ParcelamentosPage() {
           onOpenChange={setIsDetailsOpen}
           onEdit={handleEdit}
           onPay={handlePayInstallment}
+          onMarkAsSent={handleMarkAsSent}
+          onConfirmPayment={handleConfirmPayment}
           onUndoLastPayment={handleUndoLastPayment}
         />
       )}

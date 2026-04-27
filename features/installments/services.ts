@@ -28,9 +28,12 @@ function mapInstallmentToDb(installment: Installment) {
     // Mapeia camelCase → snake_case para o JSONB do banco.
     // Se a coluna ainda não existir (migration 010 não rodada), o Supabase
     // ignora silenciosamente (não dá erro de upsert).
+    // Inclui sentAt/sentBy pra suportar o modelo "enviada vs paga".
     paid_installments: (installment.paidInstallments || []).map((p) => ({
       number: p.number,
-      paid_at: p.paidAt,
+      sent_at: p.sentAt ?? null,
+      sent_by: p.sentBy ?? null,
+      paid_at: p.paidAt ?? null,
       paid_by: p.paidBy ?? null,
     })),
   }
@@ -42,7 +45,9 @@ function mapDbToInstallment(row: any): Installment {
   const paid = Array.isArray(row.paid_installments)
     ? row.paid_installments.map((p: any) => ({
         number: Number(p.number),
-        paidAt: String(p.paid_at ?? p.paidAt ?? ""),
+        sentAt: p.sent_at ?? p.sentAt ?? undefined,
+        sentBy: p.sent_by ?? p.sentBy ?? undefined,
+        paidAt: p.paid_at ?? p.paidAt ?? undefined,
         paidBy: p.paid_by ?? p.paidBy ?? undefined,
       }))
     : []

@@ -162,15 +162,22 @@ export type Obligation = {
   amount?: number
 }
 
-/** Registro de pagamento de uma parcela individual de um parcelamento.
- *  É como o app sabe quais parcelas já foram pagas, em vez de inferir
- *  pelo `currentInstallment` (que só aponta a próxima a pagar). */
+/** Registro de uma parcela individual de um parcelamento — guarda dois eventos
+ *  separados: ENVIADA (você gerou a guia e mandou pro cliente) e PAGA (cliente
+ *  efetivamente pagou). Antes era só "paga"; agora separamos porque é comum
+ *  o contador descobrir tarde que o cliente não pagou e precisar marcar isso. */
 export type PaidInstallment = {
-  /** Número da parcela paga (1, 2, 3...). */
+  /** Número da parcela (1, 2, 3...). */
   number: number
-  /** Quando foi marcada como paga (ISO string). */
-  paidAt: string
-  /** Quem marcou (opcional). */
+  /** Quando o contador marcou como ENVIADA ao cliente (ISO string).
+   *  Vazio = parcela ainda não foi enviada. */
+  sentAt?: string
+  /** Quem marcou como enviada (opcional). */
+  sentBy?: string
+  /** Quando o cliente PAGOU (ISO string). Vazio = enviada mas ainda
+   *  não recebeu confirmação de pagamento. */
+  paidAt?: string
+  /** Quem confirmou o pagamento (opcional). */
   paidBy?: string
 }
 
