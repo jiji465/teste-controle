@@ -108,6 +108,15 @@ export function InstallmentDetails({
   const remaining = Math.max(0, installment.installmentCount - paidCount)
   const allPaid = paidCount >= installment.installmentCount
 
+  // Detecta estado inconsistente: parcelamento marcado como concluído
+  // (status=completed ou completedAt) MAS nenhuma parcela foi efetivamente
+  // paga. Acontece com registros antigos, antes do fix de auto-avanço,
+  // quando "Concluir" fechava o plano todo na 1ª parcela. O usuário precisa
+  // recadastrar pra normalizar.
+  const isInconsistentState =
+    (installment.status === "completed" || !!installment.completedAt) &&
+    paidCount === 0
+
   // Mapa { number → paidAt } pra busca rápida na renderização da lista
   const paidByNumber = new Map(paidList.map((p) => [p.number, p]))
 
@@ -198,6 +207,26 @@ export function InstallmentDetails({
         </div>
 
         <div className="px-6 py-5 space-y-5">
+          {/* Aviso de estado inconsistente */}
+          {isInconsistentState && (
+            <div className="rounded-lg border border-amber-300 dark:border-amber-900/60 bg-amber-50/70 dark:bg-amber-950/20 px-4 py-3">
+              <div className="flex items-start gap-3">
+                <AlertTriangle className="size-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                <div className="flex-1 min-w-0 text-sm">
+                  <p className="font-semibold text-amber-900 dark:text-amber-200">
+                    Estado inconsistente detectado
+                  </p>
+                  <p className="text-amber-800/80 dark:text-amber-200/80 mt-1">
+                    Esse parcelamento está marcado como concluído mas nenhuma
+                    parcela foi efetivamente paga. Provavelmente foi criado
+                    antes da correção do botão de pagamento. Recomendamos
+                    apagar e recadastrar pra normalizar.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Empresa & imposto */}
           <Section title="Empresa & imposto" icon={<Building2 className="size-4" />}>
             <InfoTile
@@ -310,7 +339,10 @@ export function InstallmentDetails({
             <InfoTile
               icon={<CalendarDays className="size-4" />}
               label="1º vencimento"
-              value={formatDate(installment.firstDueDate)}
+              // Mostra a data CALCULADA da parcela 1 (mesmo cálculo usado no
+              // resto do app), não o valor cru de firstDueDate. Evita divergência
+              // visual quando dueDay e o dia de firstDueDate não coincidem.
+              value={formatDate(dueDateFor(1))}
               mono
             />
             <InfoTile icon={<Hash className="size-4" />} label="Dia do vencimento" value={`Dia ${installment.dueDay}`} />
