@@ -16,12 +16,13 @@ import { ExportButton } from "@/components/export-button"
 import type { ExportColumn } from "@/lib/export-utils"
 import { useUrlState } from "@/hooks/use-url-state"
 import { InstallmentForm } from "@/features/installments/components/installment-form"
+import { InstallmentDetails } from "@/features/installments/components/installment-details"
 import { BulkActionsBar } from "@/components/bulk-actions-bar"
 import { GlobalSearch } from "@/components/global-search"
 import { saveInstallment, deleteInstallment } from "@/lib/supabase/database"
 import { matchesText } from "@/lib/utils"
 import type { Installment } from "@/lib/types"
-import { Plus, Search, Pencil, Trash2, Play, CheckCircle2, AlertCircle, Clock, PlayCircle, AlertTriangle, Filter, RotateCcw, Calendar as CalendarIcon, MoreVertical, CreditCard, Building2, AlertCircle as PriorityIcon } from "lucide-react"
+import { Plus, Search, Pencil, Trash2, Play, CheckCircle2, AlertCircle, Clock, PlayCircle, AlertTriangle, Filter, RotateCcw, Calendar as CalendarIcon, MoreVertical, CreditCard, Building2, AlertCircle as PriorityIcon, Eye } from "lucide-react"
 import { FilterBar, FilterPill } from "@/components/filter-panel"
 import { formatDate, adjustForWeekend, buildSafeDate } from "@/lib/date-utils"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -38,6 +39,8 @@ export default function ParcelamentosPage() {
   const [searchTerm, setSearchTerm] = useState("")
   const [selectedInstallment, setSelectedInstallment] = useState<Installment | undefined>()
   const [isFormOpen, setIsFormOpen] = useState(false)
+  const [viewingInstallment, setViewingInstallment] = useState<Installment | undefined>()
+  const [isDetailsOpen, setIsDetailsOpen] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [bulkLoading, setBulkLoading] = useState(false)
   const [bulkEditOpen, setBulkEditOpen] = useState(false)
@@ -154,6 +157,11 @@ export default function ParcelamentosPage() {
   const handleEdit = (installment: Installment) => {
     setSelectedInstallment(installment)
     setIsFormOpen(true)
+  }
+
+  const handleView = (installment: Installment) => {
+    setViewingInstallment(installment)
+    setIsDetailsOpen(true)
   }
 
   const handleDelete = (id: string) => {
@@ -534,20 +542,23 @@ export default function ParcelamentosPage() {
                 return (
                   <div
                     key={installment.id}
-                    className={`rounded-lg border p-3 space-y-2 ${
+                    className={`rounded-lg border p-3 space-y-2 cursor-pointer hover:bg-muted/30 transition-colors ${
                       selectedIds.has(installment.id)
                         ? "bg-primary/5 border-primary/40"
                         : status === "overdue"
                           ? "bg-destructive/5 border-destructive/30"
                           : "bg-card"
                     }`}
+                    onClick={() => handleView(installment)}
                   >
                     <div className="flex items-start gap-2">
-                      <Checkbox
-                        checked={selectedIds.has(installment.id)}
-                        onCheckedChange={() => toggleSelect(installment.id)}
-                        className="mt-0.5"
-                      />
+                      <div onClick={(e) => e.stopPropagation()}>
+                        <Checkbox
+                          checked={selectedIds.has(installment.id)}
+                          onCheckedChange={() => toggleSelect(installment.id)}
+                          className="mt-0.5"
+                        />
+                      </div>
                       <div className="flex-1 min-w-0">
                         <p className="font-medium text-sm">{installment.name}</p>
                         <p className="text-xs text-muted-foreground truncate">
@@ -568,7 +579,7 @@ export default function ParcelamentosPage() {
                       </div>
                     </div>
 
-                    <div className="ml-6 flex flex-wrap gap-1.5">
+                    <div className="ml-6 flex flex-wrap gap-1.5" onClick={(e) => e.stopPropagation()}>
                       {status === "pending" && (
                         <Button size="sm" variant="outline" onClick={() => handleStartInstallment(installment)} className="h-7 text-xs gap-1">
                           <Play className="h-3 w-3" /> Iniciar
@@ -652,13 +663,14 @@ export default function ParcelamentosPage() {
                     <TableRow
                       key={installment.id}
                       data-state={selectedIds.has(installment.id) ? "selected" : undefined}
-                      className={
+                      className={`cursor-pointer ${
                         selectedIds.has(installment.id)
                           ? "bg-primary/5"
                           : status === "overdue"
                             ? "bg-destructive/5"
                             : ""
-                      }
+                      }`}
+                      onClick={() => handleView(installment)}
                     >
                       <TableCell onClick={(e) => e.stopPropagation()}>
                         <Checkbox
@@ -669,7 +681,7 @@ export default function ParcelamentosPage() {
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">
-                          <div className="font-medium">{installment.name}</div>
+                          <div className="font-medium hover:underline">{installment.name}</div>
                           {installment.priority && installment.priority !== "medium" && (
                             <Badge
                               variant="outline"
@@ -699,7 +711,7 @@ export default function ParcelamentosPage() {
                         <div className="font-mono text-sm font-medium">{formatDate(dueDate)}</div>
                       </TableCell>
                       <TableCell>{getStatusBadge(installment)}</TableCell>
-                      <TableCell>
+                      <TableCell onClick={(e) => e.stopPropagation()}>
                         {status !== "completed" && (
                           <div className="flex gap-1">
                             {status === "pending" && (
@@ -725,7 +737,7 @@ export default function ParcelamentosPage() {
                           </div>
                         )}
                       </TableCell>
-                      <TableCell>
+                      <TableCell onClick={(e) => e.stopPropagation()}>
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
                             <Button variant="ghost" size="icon">
@@ -733,6 +745,10 @@ export default function ParcelamentosPage() {
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={() => handleView(installment)}>
+                              <Eye className="size-4 mr-2" />
+                              Ver detalhes
+                            </DropdownMenuItem>
                             <DropdownMenuItem onClick={() => handleEdit(installment)}>
                               <Pencil className="size-4 mr-2" />
                               Editar
@@ -762,6 +778,17 @@ export default function ParcelamentosPage() {
         onOpenChange={setIsFormOpen}
         onSave={loadData}
       />
+
+      {viewingInstallment && (
+        <InstallmentDetails
+          installment={viewingInstallment}
+          clients={clients}
+          taxes={taxes}
+          open={isDetailsOpen}
+          onOpenChange={setIsDetailsOpen}
+          onEdit={handleEdit}
+        />
+      )}
 
       <GlobalSearch
         open={searchOpen}

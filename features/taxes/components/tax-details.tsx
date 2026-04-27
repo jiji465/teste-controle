@@ -5,33 +5,40 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import {
+  Receipt,
   Calendar,
   Clock,
-  User,
-  FileText,
   Building2,
-  Receipt,
+  FileText,
+  Layers,
+  AlertCircle,
+  Tag,
+  Hash,
+  CalendarClock,
+  CalendarDays,
+  Repeat,
   CheckCircle2,
   PlayCircle,
   AlertTriangle,
   Pencil,
-  Hash,
-  CalendarDays,
-  Layers,
-  AlertCircle,
-  CalendarClock,
-  Repeat,
-  Tag,
-  History,
   Copy,
   Scale,
-  FolderOpen,
+  User,
+  History,
 } from "lucide-react"
-import type { ObligationWithDetails, Priority, TaxRegime } from "@/lib/types"
+import type { Tax, Client, TaxRegime, Priority } from "@/lib/types"
 import { TAX_REGIME_LABELS, TAX_REGIME_COLORS, TAX_SCOPE_LABELS } from "@/lib/types"
-import { formatDate, isOverdue } from "@/lib/date-utils"
-import { getRecurrenceDescription } from "@/lib/recurrence-utils"
+import { calculateDueDateFromCompetency, formatDate, isOverdue } from "@/lib/date-utils"
 import { toast } from "sonner"
+
+const RECURRENCE_LABELS: Record<string, string> = {
+  monthly: "Mensal",
+  bimonthly: "Bimestral",
+  quarterly: "Trimestral",
+  semiannual: "Semestral",
+  annual: "Anual",
+  custom: "Personalizada",
+}
 
 const PRIORITY_LABELS: Record<Priority, string> = {
   low: "Baixa",
@@ -53,14 +60,6 @@ const SCOPE_COLORS: Record<string, string> = {
   municipal: "bg-teal-100 text-teal-800 dark:bg-teal-950 dark:text-teal-300",
 }
 
-const CATEGORY_LABELS: Record<string, string> = {
-  sped: "SPED",
-  tax_guide: "Guia de Imposto",
-  certificate: "Certidão",
-  declaration: "Declaração",
-  other: "Outro",
-}
-
 const MONTH_LABELS = [
   "janeiro", "fevereiro", "março", "abril", "maio", "junho",
   "julho", "agosto", "setembro", "outubro", "novembro", "dezembro",
@@ -74,17 +73,25 @@ function formatCompetency(c?: string): string {
   return `${MONTH_LABELS[idx]}/${y}`
 }
 
-type ObligationDetailsProps = {
-  obligation: ObligationWithDetails
+type TaxDetailsProps = {
+  tax: Tax
+  clients: Client[]
   open: boolean
   onOpenChange: (open: boolean) => void
-  onEdit?: (obligation: ObligationWithDetails) => void
+  onEdit?: (tax: Tax) => void
 }
 
-export function ObligationDetails({ obligation, open, onOpenChange, onEdit }: ObligationDetailsProps) {
+export function TaxDetails({ tax, clients, open, onOpenChange, onEdit }: TaxDetailsProps) {
+  const client = clients.find((c) => c.id === tax.clientId)
+  const calculatedDueDate = calculateDueDateFromCompetency(
+    tax.competencyMonth,
+    tax.dueDay,
+    tax.weekendRule,
+    tax.dueMonth,
+  )
   const overdue =
-    obligation.status !== "completed" && isOverdue(obligation.calculatedDueDate)
-  const effectiveStatus = overdue ? "overdue" : obligation.status
+    tax.status !== "completed" && calculatedDueDate && isOverdue(calculatedDueDate)
+  const effectiveStatus: Tax["status"] = overdue ? "overdue" : tax.status
 
   const handleCopy = (label: string, value?: string) => {
     if (!value) return
@@ -110,39 +117,33 @@ export function ObligationDetails({ obligation, open, onOpenChange, onEdit }: Ob
           <DialogHeader className="space-y-3">
             <div className="flex items-start gap-4">
               <div className="size-14 rounded-xl bg-background/80 border flex items-center justify-center shrink-0 shadow-sm">
-                <FileText className="size-6 text-primary" />
+                <Receipt className="size-6 text-primary" />
               </div>
               <div className="flex-1 min-w-0">
-                <DialogTitle className="text-xl leading-tight break-words">{obligation.name}</DialogTitle>
-                {obligation.description && (
-                  <p className="text-sm text-muted-foreground mt-0.5 break-words">{obligation.description}</p>
+                <DialogTitle className="text-xl leading-tight break-words">{tax.name}</DialogTitle>
+                {tax.description && (
+                  <p className="text-sm text-muted-foreground mt-0.5 break-words">{tax.description}</p>
                 )}
                 <div className="flex flex-wrap gap-1.5 mt-2">
-                  <StatusBadge status={effectiveStatus} completedAt={obligation.completedAt} />
-                  {obligation.scope && (
+                  <StatusBadge status={effectiveStatus} completedAt={tax.completedAt} />
+                  {tax.scope && (
                     <span
-                      className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${SCOPE_COLORS[obligation.scope]}`}
+                      className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${SCOPE_COLORS[tax.scope]}`}
                     >
                       <Layers className="size-3 mr-1" />
-                      {TAX_SCOPE_LABELS[obligation.scope]}
+                      {TAX_SCOPE_LABELS[tax.scope]}
                     </span>
                   )}
-                  {obligation.category && (
-                    <Badge variant="outline" className="gap-1">
-                      <FolderOpen className="size-3" />
-                      {CATEGORY_LABELS[obligation.category] || obligation.category}
-                    </Badge>
-                  )}
-                  {obligation.priority && obligation.priority !== "medium" && (
-                    <Badge variant="outline" className={`gap-1 ${PRIORITY_COLORS[obligation.priority]}`}>
+                  {tax.priority && tax.priority !== "medium" && (
+                    <Badge variant="outline" className={`gap-1 ${PRIORITY_COLORS[tax.priority]}`}>
                       <AlertCircle className="size-3" />
-                      {PRIORITY_LABELS[obligation.priority]}
+                      {PRIORITY_LABELS[tax.priority]}
                     </Badge>
                   )}
-                  {obligation.recurrence && (
+                  {tax.recurrence && (
                     <Badge variant="secondary" className="gap-1">
                       <Repeat className="size-3" />
-                      {getRecurrenceDescription(obligation)}
+                      {RECURRENCE_LABELS[tax.recurrence] || tax.recurrence}
                     </Badge>
                   )}
                 </div>
@@ -152,55 +153,47 @@ export function ObligationDetails({ obligation, open, onOpenChange, onEdit }: Ob
         </div>
 
         <div className="px-6 py-5 space-y-5">
-          {/* Empresa & imposto */}
-          <Section title="Empresa & imposto" icon={<Building2 className="size-4" />}>
+          {/* Cliente */}
+          <Section title="Empresa" icon={<Building2 className="size-4" />}>
             <InfoTile
               icon={<Building2 className="size-4" />}
               label="Empresa"
-              value={obligation.client.name}
-              hint={obligation.client.cnpj}
+              value={client?.name || "—"}
+              hint={client?.cnpj}
               wide
             />
-            {obligation.tax && (
-              <InfoTile
-                icon={<Receipt className="size-4" />}
-                label="Imposto vinculado"
-                value={obligation.tax.name}
-                wide
-              />
-            )}
           </Section>
 
           <Separator />
 
-          {/* Vencimento */}
-          <Section title="Vencimento e competência" icon={<Calendar className="size-4" />}>
+          {/* Vencimento e competência */}
+          <Section title="Vencimento e Competência" icon={<Calendar className="size-4" />}>
             <InfoTile
               icon={<Calendar className="size-4" />}
               label="Próximo vencimento"
-              value={formatDate(obligation.calculatedDueDate)}
+              value={calculatedDueDate ? formatDate(calculatedDueDate) : "—"}
               mono
               highlight={overdue ? "destructive" : undefined}
             />
             <InfoTile
               icon={<CalendarDays className="size-4" />}
               label="Competência"
-              value={formatCompetency(obligation.competencyMonth)}
+              value={formatCompetency(tax.competencyMonth)}
             />
-            {obligation.dueDay && (
-              <InfoTile icon={<Hash className="size-4" />} label="Dia do vencimento" value={`Dia ${obligation.dueDay}`} />
+            {tax.dueDay && (
+              <InfoTile icon={<Hash className="size-4" />} label="Dia do vencimento" value={`Dia ${tax.dueDay}`} />
             )}
-            {obligation.dueMonth && (
+            {tax.dueMonth && (
               <InfoTile
                 icon={<CalendarDays className="size-4" />}
                 label="Mês fixo"
-                value={MONTH_LABELS[obligation.dueMonth - 1] || `Mês ${obligation.dueMonth}`}
+                value={MONTH_LABELS[tax.dueMonth - 1] || `Mês ${tax.dueMonth}`}
               />
             )}
           </Section>
 
           {/* Regimes aplicáveis */}
-          {obligation.applicableRegimes && obligation.applicableRegimes.length > 0 && (
+          {tax.applicableRegimes && tax.applicableRegimes.length > 0 && (
             <>
               <Separator />
               <div>
@@ -211,7 +204,7 @@ export function ObligationDetails({ obligation, open, onOpenChange, onEdit }: Ob
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-1.5">
-                  {obligation.applicableRegimes.map((r) => (
+                  {tax.applicableRegimes.map((r) => (
                     <span
                       key={r}
                       className={`inline-flex items-center px-2 py-1 rounded-md text-xs font-medium ${TAX_REGIME_COLORS[r as TaxRegime]}`}
@@ -225,29 +218,29 @@ export function ObligationDetails({ obligation, open, onOpenChange, onEdit }: Ob
           )}
 
           {/* Protocolo / responsável */}
-          {(obligation.protocol || obligation.assignedTo) && (
+          {(tax.protocol || tax.assignedTo) && (
             <>
               <Separator />
               <Section title="Protocolo e responsável" icon={<User className="size-4" />}>
-                {obligation.protocol && (
+                {tax.protocol && (
                   <InfoTile
                     icon={<Hash className="size-4" />}
                     label="Protocolo"
-                    value={obligation.protocol}
+                    value={tax.protocol}
                     mono
                     copyable
-                    onCopy={() => handleCopy("Protocolo", obligation.protocol)}
+                    onCopy={() => handleCopy("Protocolo", tax.protocol)}
                   />
                 )}
-                {obligation.assignedTo && (
-                  <InfoTile icon={<User className="size-4" />} label="Responsável" value={obligation.assignedTo} />
+                {tax.assignedTo && (
+                  <InfoTile icon={<User className="size-4" />} label="Responsável" value={tax.assignedTo} />
                 )}
               </Section>
             </>
           )}
 
           {/* Tags */}
-          {obligation.tags && obligation.tags.length > 0 && (
+          {tax.tags && tax.tags.length > 0 && (
             <>
               <Separator />
               <div>
@@ -256,7 +249,7 @@ export function ObligationDetails({ obligation, open, onOpenChange, onEdit }: Ob
                   <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Tags</p>
                 </div>
                 <div className="flex flex-wrap gap-1.5">
-                  {obligation.tags.map((t) => (
+                  {tax.tags.map((t) => (
                     <Badge key={t} variant="secondary">
                       {t}
                     </Badge>
@@ -267,7 +260,7 @@ export function ObligationDetails({ obligation, open, onOpenChange, onEdit }: Ob
           )}
 
           {/* Observações */}
-          {obligation.notes && (
+          {tax.notes && (
             <>
               <Separator />
               <div>
@@ -276,14 +269,14 @@ export function ObligationDetails({ obligation, open, onOpenChange, onEdit }: Ob
                   <p className="text-sm font-semibold">Observações</p>
                 </div>
                 <div className="rounded-lg bg-muted/40 border px-3 py-2.5">
-                  <p className="text-sm text-muted-foreground whitespace-pre-wrap">{obligation.notes}</p>
+                  <p className="text-sm text-muted-foreground whitespace-pre-wrap">{tax.notes}</p>
                 </div>
               </div>
             </>
           )}
 
           {/* Histórico */}
-          {obligation.history && obligation.history.length > 0 && (
+          {tax.history && tax.history.length > 0 && (
             <>
               <Separator />
               <div>
@@ -292,7 +285,7 @@ export function ObligationDetails({ obligation, open, onOpenChange, onEdit }: Ob
                   <p className="text-sm font-semibold">Histórico</p>
                 </div>
                 <div className="space-y-3">
-                  {obligation.history.slice(-8).reverse().map((entry) => (
+                  {tax.history.slice(-5).reverse().map((entry) => (
                     <div key={entry.id} className="flex gap-3 text-sm">
                       <div className="size-2 rounded-full bg-primary mt-1.5 shrink-0" />
                       <div className="flex-1 min-w-0">
@@ -310,13 +303,13 @@ export function ObligationDetails({ obligation, open, onOpenChange, onEdit }: Ob
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
             <div className="flex items-center gap-1.5">
               <CalendarClock className="size-3.5" />
-              Criada em <span className="font-medium">{formatDate(obligation.createdAt)}</span>
+              Criado em <span className="font-medium">{formatDate(tax.createdAt)}</span>
             </div>
-            {obligation.completedAt && (
+            {tax.completedAt && (
               <div className="flex items-center gap-1.5">
                 <CheckCircle2 className="size-3.5 text-green-600" />
-                Concluída em <span className="font-medium">{formatDate(obligation.completedAt)}</span>
-                {obligation.completedBy && <span>por {obligation.completedBy}</span>}
+                Concluído em <span className="font-medium">{formatDate(tax.completedAt)}</span>
+                {tax.completedBy && <span>por {tax.completedBy}</span>}
               </div>
             )}
           </div>
@@ -331,7 +324,7 @@ export function ObligationDetails({ obligation, open, onOpenChange, onEdit }: Ob
             <Button
               onClick={() => {
                 onOpenChange(false)
-                onEdit(obligation)
+                onEdit(tax)
               }}
               className="gap-2"
             >
@@ -345,13 +338,13 @@ export function ObligationDetails({ obligation, open, onOpenChange, onEdit }: Ob
   )
 }
 
-function StatusBadge({ status, completedAt }: { status: string; completedAt?: string }) {
+function StatusBadge({ status, completedAt }: { status: Tax["status"]; completedAt?: string }) {
   switch (status) {
     case "completed":
       return (
         <Badge className="bg-green-600 hover:bg-green-700 text-white">
           <CheckCircle2 className="size-3 mr-1" />
-          Concluída {completedAt && `em ${formatDate(completedAt)}`}
+          Concluído {completedAt && `em ${formatDate(completedAt)}`}
         </Badge>
       )
     case "in_progress":
