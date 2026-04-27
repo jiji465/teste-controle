@@ -20,7 +20,7 @@ export default function RelatoriosPage() {
           <p className="text-sm text-muted-foreground">Análise detalhada de obrigações fiscais e produtividade</p>
         </div>
 
-        <ReportsPanel obligations={obligations} taxes={taxes} installments={installments} />
+        <ReportsPanel obligations={obligations} taxes={taxes} installments={installments} clients={clients} />
       </div>
     </div>
   )
