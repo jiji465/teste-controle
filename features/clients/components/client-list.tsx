@@ -12,7 +12,8 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
 import { BulkActionsBar } from "@/components/bulk-actions-bar"
 import { ConfirmDialog, type ConfirmState } from "@/components/ui/confirm-dialog"
 import { ClientForm } from "./client-form"
-import { MoreVertical, Pencil, Trash2, Search, Plus, Building2, Sparkles, Filter, CheckCircle2, XCircle, Scale, Briefcase, MapPin, ToggleLeft, ArrowUpDown } from "lucide-react"
+import { ClientDetails } from "./client-details"
+import { MoreVertical, Pencil, Trash2, Search, Plus, Building2, Sparkles, Filter, CheckCircle2, XCircle, Scale, Briefcase, MapPin, ToggleLeft, ArrowUpDown, Eye } from "lucide-react"
 import { FilterBar, FilterPill } from "@/components/filter-panel"
 import type { Client, TaxRegime } from "@/lib/types"
 import { TAX_REGIME_LABELS, TAX_REGIME_COLORS } from "@/lib/types"
@@ -34,6 +35,8 @@ export function ClientList({ clients, onUpdate }: ClientListProps) {
   const [search, setSearch] = useState("")
   const [editingClient, setEditingClient] = useState<Client | undefined>()
   const [isFormOpen, setIsFormOpen] = useState(false)
+  const [viewingClient, setViewingClient] = useState<Client | undefined>()
+  const [isDetailsOpen, setIsDetailsOpen] = useState(false)
   const [templateClient, setTemplateClient] = useState<Client | null>(null)
   const [bulkTemplateClients, setBulkTemplateClients] = useState<Client[] | null>(null)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
@@ -226,6 +229,11 @@ export function ClientList({ clients, onUpdate }: ClientListProps) {
   const handleOpenForm = (client?: Client) => {
     setEditingClient(client)
     setIsFormOpen(true)
+  }
+
+  const handleOpenDetails = (client: Client) => {
+    setViewingClient(client)
+    setIsDetailsOpen(true)
   }
 
   const handleApplyTemplate = async (templatesSelected: TemplateItem[], range: CompetencyRange) => {
@@ -460,7 +468,8 @@ export function ClientList({ clients, onUpdate }: ClientListProps) {
                 <TableRow
                   key={client.id}
                   data-state={selectedIds.has(client.id) ? "selected" : undefined}
-                  className={selectedIds.has(client.id) ? "bg-primary/5" : ""}
+                  className={`${selectedIds.has(client.id) ? "bg-primary/5" : ""} cursor-pointer`}
+                  onClick={() => handleOpenDetails(client)}
                 >
                   <TableCell onClick={(e) => e.stopPropagation()}>
                     <Checkbox
@@ -471,7 +480,7 @@ export function ClientList({ clients, onUpdate }: ClientListProps) {
                   </TableCell>
                   <TableCell>
                     <div>
-                      <p className="font-medium">{client.name}</p>
+                      <p className="font-medium hover:underline">{client.name}</p>
                       {(client.ie || client.im) && (
                         <p className="text-xs text-muted-foreground">
                           {client.ie && `IE: ${client.ie}`}
@@ -519,7 +528,7 @@ export function ClientList({ clients, onUpdate }: ClientListProps) {
                       {client.status === "active" ? "Ativo" : "Inativo"}
                     </Badge>
                   </TableCell>
-                  <TableCell className="text-right">
+                  <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <Button variant="ghost" className="h-8 w-8 p-0">
@@ -529,6 +538,9 @@ export function ClientList({ clients, onUpdate }: ClientListProps) {
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
                         <DropdownMenuLabel>Ações</DropdownMenuLabel>
+                        <DropdownMenuItem onClick={() => handleOpenDetails(client)}>
+                          <Eye className="mr-2 h-4 w-4" /> Ver detalhes
+                        </DropdownMenuItem>
                         <DropdownMenuItem onClick={() => navigator.clipboard.writeText(client.cnpj)}>
                           Copiar CNPJ
                         </DropdownMenuItem>
@@ -555,13 +567,22 @@ export function ClientList({ clients, onUpdate }: ClientListProps) {
         </Table>
       </div>
 
-      <ClientForm 
-        client={editingClient} 
-        open={isFormOpen} 
-        onOpenChange={setIsFormOpen} 
-        onSave={handleSave} 
+      <ClientForm
+        client={editingClient}
+        open={isFormOpen}
+        onOpenChange={setIsFormOpen}
+        onSave={handleSave}
         onObligationsCreated={onUpdate}
       />
+
+      {viewingClient && (
+        <ClientDetails
+          client={viewingClient}
+          open={isDetailsOpen}
+          onOpenChange={setIsDetailsOpen}
+          onEdit={(c) => handleOpenForm(c)}
+        />
+      )}
 
       {templateClient && (
         <TemplateApplyDialog

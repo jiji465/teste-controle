@@ -685,18 +685,21 @@ export const ObligationList = forwardRef<ObligationListHandle, ObligationListPro
             return (
               <div
                 key={obligation.id}
-                className={`border rounded-lg p-3 space-y-2 ${
+                className={`border rounded-lg p-3 space-y-2 cursor-pointer hover:bg-muted/30 transition-colors ${
                   selectedIds.has(obligation.id)
                     ? "bg-primary/5 border-primary/40"
                     : overdue ? "bg-red-50/50 dark:bg-red-950/10 border-red-200 dark:border-red-900" : "bg-card"
                 }`}
+                onClick={() => handleView(obligation)}
               >
                 <div className="flex items-start gap-2">
-                  <Checkbox
-                    checked={selectedIds.has(obligation.id)}
-                    onCheckedChange={() => toggleSelect(obligation.id)}
-                    className="mt-0.5"
-                  />
+                  <div onClick={(e) => e.stopPropagation()}>
+                    <Checkbox
+                      checked={selectedIds.has(obligation.id)}
+                      onCheckedChange={() => toggleSelect(obligation.id)}
+                      className="mt-0.5"
+                    />
+                  </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-medium text-sm">{obligation.name}</span>
@@ -712,27 +715,29 @@ export const ObligationList = forwardRef<ObligationListHandle, ObligationListPro
                     </div>
                     <p className="text-xs text-muted-foreground truncate">{obligation.client.name}</p>
                   </div>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="icon" className="size-7">
-                        <MoreVertical className="size-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem onClick={() => handleView(obligation)}>
-                        <Eye className="size-4 mr-2" /> Ver detalhes
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => handleEdit(obligation)}>
-                        <Pencil className="size-4 mr-2" /> Editar
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => handleDuplicate(obligation)}>
-                        <Copy className="size-4 mr-2" /> Duplicar
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => handleDelete(obligation.id)} className="text-destructive">
-                        <Trash2 className="size-4 mr-2" /> Excluir
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                  <div onClick={(e) => e.stopPropagation()}>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="icon" className="size-7">
+                          <MoreVertical className="size-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => handleView(obligation)}>
+                          <Eye className="size-4 mr-2" /> Ver detalhes
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => handleEdit(obligation)}>
+                          <Pencil className="size-4 mr-2" /> Editar
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => handleDuplicate(obligation)}>
+                          <Copy className="size-4 mr-2" /> Duplicar
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => handleDelete(obligation.id)} className="text-destructive">
+                          <Trash2 className="size-4 mr-2" /> Excluir
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
                 </div>
 
                 <div className="flex items-center justify-between gap-2 ml-6">
@@ -745,7 +750,7 @@ export const ObligationList = forwardRef<ObligationListHandle, ObligationListPro
                   </div>
                 </div>
 
-                <div className="ml-6">
+                <div className="ml-6" onClick={(e) => e.stopPropagation()}>
                   <QuickActionButtons obligation={obligation} />
                 </div>
               </div>
@@ -826,13 +831,14 @@ export const ObligationList = forwardRef<ObligationListHandle, ObligationListPro
                 <TableRow
                   key={obligation.id}
                   data-state={selectedIds.has(obligation.id) ? "selected" : undefined}
-                  className={
+                  className={`cursor-pointer ${
                     selectedIds.has(obligation.id)
                       ? "bg-primary/5"
                       : isOverdue(obligation.calculatedDueDate) && obligation.status !== "completed"
                         ? "bg-red-50/50 dark:bg-red-950/10"
                         : ""
-                  }
+                  }`}
+                  onClick={() => handleView(obligation)}
                 >
                   <TableCell onClick={(e) => e.stopPropagation()}>
                     <Checkbox
@@ -844,7 +850,7 @@ export const ObligationList = forwardRef<ObligationListHandle, ObligationListPro
                   <TableCell>
                     <div className="space-y-1">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <div className="font-medium">{obligation.name}</div>
+                        <div className="font-medium hover:underline">{obligation.name}</div>
                         {obligation.scope && (
                           <Badge
                             variant="outline"
@@ -947,10 +953,10 @@ export const ObligationList = forwardRef<ObligationListHandle, ObligationListPro
                     </div>
                   </TableCell>
                   <TableCell>{getStatusBadge(obligation)}</TableCell>
-                  <TableCell>
+                  <TableCell onClick={(e) => e.stopPropagation()}>
                     <QuickActionButtons obligation={obligation} />
                   </TableCell>
-                  <TableCell>
+                  <TableCell onClick={(e) => e.stopPropagation()}>
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <Button variant="ghost" size="icon">
@@ -990,7 +996,12 @@ export const ObligationList = forwardRef<ObligationListHandle, ObligationListPro
       />
 
       {viewingObligation && (
-        <ObligationDetails obligation={viewingObligation} open={isDetailsOpen} onOpenChange={setIsDetailsOpen} />
+        <ObligationDetails
+          obligation={viewingObligation}
+          open={isDetailsOpen}
+          onOpenChange={setIsDetailsOpen}
+          onEdit={handleEdit}
+        />
       )}
 
       <Dialog open={bulkEditOpen} onOpenChange={setBulkEditOpen}>

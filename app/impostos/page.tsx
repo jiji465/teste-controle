@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react"
 import { ConfirmDialog, type ConfirmState } from "@/components/ui/confirm-dialog"
 import { useUrlState } from "@/hooks/use-url-state"
 import { TaxForm } from "@/features/taxes/components/tax-form"
+import { TaxDetails } from "@/features/taxes/components/tax-details"
 import { GlobalSearch } from "@/components/global-search"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Card } from "@/components/ui/card"
@@ -44,6 +45,7 @@ import {
   Layers,
   Scale,
   AlertCircle as PriorityIcon,
+  Eye,
 } from "lucide-react"
 import { FilterBar, FilterPill, FilterPillMonth } from "@/components/filter-panel"
 import type { Tax, TaxRegime } from "@/lib/types"
@@ -78,6 +80,8 @@ export default function ImpostosPage() {
   const { isInPeriod, periodLabel, isFiltering } = useSelectedPeriod()
   const [editingTax, setEditingTax] = useState<Tax | undefined>()
   const [isFormOpen, setIsFormOpen] = useState(false)
+  const [viewingTax, setViewingTax] = useState<Tax | undefined>()
+  const [isDetailsOpen, setIsDetailsOpen] = useState(false)
   const [activeTab, setActiveTab] = useUrlState("tab")
   const [regimeFilter, setRegimeFilter] = useUrlState("regime")
   const [scopeFilter, setScopeFilter] = useUrlState("scope")
@@ -160,6 +164,11 @@ export default function ImpostosPage() {
   const handleEdit = (tax: Tax) => {
     setEditingTax(tax)
     setIsFormOpen(true)
+  }
+
+  const handleView = (tax: Tax) => {
+    setViewingTax(tax)
+    setIsDetailsOpen(true)
   }
 
   const handleNew = () => {
@@ -699,16 +708,19 @@ export default function ImpostosPage() {
                       return (
                       <div
                         key={tax.id}
-                        className={`border rounded-lg p-3 space-y-2 ${
+                        className={`border rounded-lg p-3 space-y-2 cursor-pointer hover:bg-muted/30 transition-colors ${
                           selectedIds.has(tax.id) ? "bg-primary/5 border-primary/40" : "bg-card"
                         }`}
+                        onClick={() => handleView(tax)}
                       >
                         <div className="flex items-start gap-2">
-                          <Checkbox
-                            checked={selectedIds.has(tax.id)}
-                            onCheckedChange={() => toggleSelect(tax.id)}
-                            className="mt-0.5"
-                          />
+                          <div onClick={(e) => e.stopPropagation()}>
+                            <Checkbox
+                              checked={selectedIds.has(tax.id)}
+                              onCheckedChange={() => toggleSelect(tax.id)}
+                              className="mt-0.5"
+                            />
+                          </div>
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 flex-wrap">
                               <span className="font-medium text-sm">{tax.name}</span>
@@ -754,7 +766,7 @@ export default function ImpostosPage() {
                           )}
                         </div>
 
-                        <div className="ml-6 flex flex-wrap gap-1.5">
+                        <div className="ml-6 flex flex-wrap gap-1.5" onClick={(e) => e.stopPropagation()}>
                           {tax.status !== "completed" && (
                             <>
                               {tax.status === "pending" && (
@@ -862,13 +874,14 @@ export default function ImpostosPage() {
                           <TableRow
                             key={tax.id}
                             data-state={selectedIds.has(tax.id) ? "selected" : undefined}
-                            className={
+                            className={`cursor-pointer ${
                               selectedIds.has(tax.id)
                                 ? "bg-primary/5"
                                 : isTaxOverdue
                                   ? "bg-red-50/50 dark:bg-red-950/10"
                                   : ""
-                            }
+                            }`}
+                            onClick={() => handleView(tax)}
                           >
                             <TableCell onClick={(e) => e.stopPropagation()}>
                               <Checkbox
@@ -880,7 +893,7 @@ export default function ImpostosPage() {
                             <TableCell className="max-w-[280px]">
                               <div className="space-y-1 min-w-0">
                                 <div className="flex items-center gap-2 flex-wrap">
-                                  <div className="font-medium truncate">{tax.name}</div>
+                                  <div className="font-medium truncate hover:underline">{tax.name}</div>
                                   {tax.priority && tax.priority !== "medium" && (
                                     <Badge
                                       variant="outline"
@@ -962,7 +975,7 @@ export default function ImpostosPage() {
                               </div>
                             </TableCell>
                             <TableCell>{getStatusBadge(tax.status, tax.completedAt, calculatedDueDate)}</TableCell>
-                            <TableCell>
+                            <TableCell onClick={(e) => e.stopPropagation()}>
                               {tax.status !== "completed" && (
                                 <div className="flex gap-1">
                                   {tax.status === "pending" && (
@@ -983,7 +996,7 @@ export default function ImpostosPage() {
                                 </div>
                               )}
                             </TableCell>
-                            <TableCell>
+                            <TableCell onClick={(e) => e.stopPropagation()}>
                               <DropdownMenu>
                                 <DropdownMenuTrigger asChild>
                                   <Button variant="ghost" size="icon">
@@ -991,6 +1004,10 @@ export default function ImpostosPage() {
                                   </Button>
                                 </DropdownMenuTrigger>
                                 <DropdownMenuContent align="end">
+                                  <DropdownMenuItem onClick={() => handleView(tax)}>
+                                    <Eye className="size-4 mr-2" />
+                                    Ver detalhes
+                                  </DropdownMenuItem>
                                   <DropdownMenuItem onClick={() => handleEdit(tax)}>
                                     <Pencil className="size-4 mr-2" />
                                     Editar
@@ -1015,6 +1032,15 @@ export default function ImpostosPage() {
         </div>
 
       <TaxForm tax={editingTax} clients={clients} open={isFormOpen} onOpenChange={setIsFormOpen} onSave={handleSave} />
+      {viewingTax && (
+        <TaxDetails
+          tax={viewingTax}
+          clients={clients}
+          open={isDetailsOpen}
+          onOpenChange={setIsDetailsOpen}
+          onEdit={handleEdit}
+        />
+      )}
       <GlobalSearch
         open={searchOpen}
         onOpenChange={setSearchOpen}
