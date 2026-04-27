@@ -20,6 +20,7 @@ import {
   ArrowRight,
   BarChart3,
   Download,
+  CreditCard,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useSelectedPeriod } from "@/hooks/use-selected-period"
@@ -36,7 +37,7 @@ import {
   Legend,
 } from "recharts"
 import type { ObligationWithDetails, Tax, Installment, Client } from "@/lib/types"
-import { formatDate } from "@/lib/date-utils"
+import { formatDate, buildSafeDate, adjustForWeekend } from "@/lib/date-utils"
 import { effectiveStatus } from "@/lib/obligation-status"
 import { getRecurrenceDescription } from "@/lib/recurrence-utils"
 
@@ -323,6 +324,45 @@ export function ReportsPanel({
     return map
   }, [filteredObligations])
 
+  // ─── Parcelamentos: parcelas vencendo no período filtrado ────────────
+  // Calcula a data da PARCELA ATUAL de cada parcelamento (1 registro = N parcelas).
+  // Aplica os mesmos filtros de período/cliente do resto do painel.
+  // Não usa scopeFilter porque parcelamento não tem campo "scope".
+  const installmentsInPeriod = useMemo(() => {
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    return installments
+      .map((inst) => {
+        const firstDue = new Date(inst.firstDueDate)
+        const monthsToAdd = inst.currentInstallment - 1
+        const dueDate = buildSafeDate(
+          firstDue.getFullYear(),
+          firstDue.getMonth() + monthsToAdd,
+          inst.dueDay,
+        )
+        const adjustedDueDate = adjustForWeekend(dueDate, inst.weekendRule)
+        let effStatus: "completed" | "overdue" | "pending"
+        if (inst.status === "completed") effStatus = "completed"
+        else if (adjustedDueDate < today) effStatus = "overdue"
+        else effStatus = "pending"
+        return { inst, dueDate: adjustedDueDate, effStatus }
+      })
+      .filter(({ dueDate, inst }) => {
+        if (!passesPeriodFilter(dueDate)) return false
+        if (clientFilter !== "all" && inst.clientId !== clientFilter) return false
+        return true
+      })
+      .sort((a, b) => a.dueDate.getTime() - b.dueDate.getTime())
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [installments, periodFilter, clientFilter, globalPeriod, globalIsFiltering])
+
+  const installmentPeriodStats = useMemo(() => {
+    const paid = installmentsInPeriod.filter((x) => x.effStatus === "completed")
+    const overdue = installmentsInPeriod.filter((x) => x.effStatus === "overdue")
+    const pending = installmentsInPeriod.filter((x) => x.effStatus === "pending")
+    return { paid, overdue, pending, total: installmentsInPeriod.length }
+  }, [installmentsInPeriod])
+
   // Visão geral combinada
   const taxesCompleted = taxes.filter((t) => t.status === "completed").length
   const installmentsCompleted = installments.filter((i) => i.status === "completed").length
@@ -488,8 +528,9 @@ export function ReportsPanel({
     })
   }
 
-  // Empty state
-  if (filteredObligations.length === 0) {
+  // Empty state — só esconde tudo se NÃO houver obrigações E NEM parcelamentos
+  // no filtro atual. Antes, ter só parcelamentos sumia o painel inteiro.
+  if (filteredObligations.length === 0 && installmentsInPeriod.length === 0) {
     return (
       <div className="space-y-6">
         <div className="flex items-center justify-between flex-wrap gap-3">
@@ -594,6 +635,114 @@ export function ReportsPanel({
               </p>
             </div>
           </div>
+        </CardContent>
+      </Card>
+
+      {/* Parcelamentos no período — vista consolidada de todas as parcelas
+          que vencem no filtro atual, com status individual de cada uma */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-start justify-between flex-wrap gap-3">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <CreditCard className="size-5 text-amber-600" />
+                Parcelamentos no período
+              </CardTitle>
+              <CardDescription>
+                Parcelas que caem no filtro selecionado, mostradas em ordem de vencimento
+              </CardDescription>
+            </div>
+            <div className="flex flex-wrap gap-2 text-xs">
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-muted">
+                <CreditCard className="size-3.5" />
+                {installmentPeriodStats.total} no total
+              </span>
+              {installmentPeriodStats.paid.length > 0 && (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-300">
+                  <CheckCircle2 className="size-3.5" />
+                  {installmentPeriodStats.paid.length} paga{installmentPeriodStats.paid.length !== 1 ? "s" : ""}
+                </span>
+              )}
+              {installmentPeriodStats.pending.length > 0 && (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300">
+                  <Clock className="size-3.5" />
+                  {installmentPeriodStats.pending.length} pendente{installmentPeriodStats.pending.length !== 1 ? "s" : ""}
+                </span>
+              )}
+              {installmentPeriodStats.overdue.length > 0 && (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300">
+                  <AlertTriangle className="size-3.5" />
+                  {installmentPeriodStats.overdue.length} atrasada{installmentPeriodStats.overdue.length !== 1 ? "s" : ""}
+                </span>
+              )}
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {installmentsInPeriod.length === 0 ? (
+            <div className="border-2 border-dashed rounded-lg py-8 px-4 text-center text-sm text-muted-foreground">
+              Nenhum parcelamento com parcela vencendo neste período/filtro.
+            </div>
+          ) : (
+            <div className="overflow-x-auto rounded-lg border">
+              <table className="w-full text-sm">
+                <thead className="bg-muted/50">
+                  <tr className="text-left">
+                    <th className="px-3 py-2 font-medium">Parcelamento</th>
+                    <th className="px-3 py-2 font-medium">Cliente</th>
+                    <th className="px-3 py-2 font-medium text-center w-20">Parcela</th>
+                    <th className="px-3 py-2 font-medium w-28">Vencimento</th>
+                    <th className="px-3 py-2 font-medium w-28">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {installmentsInPeriod.map(({ inst, dueDate, effStatus }) => {
+                    const client = clients.find((c) => c.id === inst.clientId)
+                    return (
+                      <tr
+                        key={inst.id}
+                        className={`border-t hover:bg-muted/30 transition-colors ${
+                          effStatus === "overdue" ? "bg-red-50/40 dark:bg-red-950/10" : ""
+                        }`}
+                      >
+                        <td className="px-3 py-2">
+                          <Link
+                            href={`/parcelamentos?clientId=${inst.clientId}`}
+                            className="font-medium hover:underline"
+                          >
+                            {inst.name}
+                          </Link>
+                        </td>
+                        <td className="px-3 py-2 text-muted-foreground">{client?.name ?? "—"}</td>
+                        <td className="px-3 py-2 text-center font-mono tabular-nums">
+                          {inst.currentInstallment}/{inst.installmentCount}
+                        </td>
+                        <td className="px-3 py-2 font-mono tabular-nums">{formatDate(dueDate)}</td>
+                        <td className="px-3 py-2">
+                          {effStatus === "completed" ? (
+                            <Badge className="bg-green-600 hover:bg-green-700 text-white">
+                              <CheckCircle2 className="size-3 mr-1" /> Paga
+                            </Badge>
+                          ) : effStatus === "overdue" ? (
+                            <Badge variant="destructive">
+                              <AlertTriangle className="size-3 mr-1" /> Atrasada
+                            </Badge>
+                          ) : (
+                            <Badge
+                              variant="secondary"
+                              className="bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300"
+                            >
+                              <Clock className="size-3 mr-1" /> Pendente
+                            </Badge>
+                          )}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
         </CardContent>
       </Card>
 

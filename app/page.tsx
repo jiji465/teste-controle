@@ -365,7 +365,7 @@ export default function DashboardPage() {
                           </div>
                         </div>
                       ))}
-                      {criticalInstallments.slice(0, 2).map((inst) => {
+                      {criticalInstallments.slice(0, 5).map((inst) => {
                         const client = clients.find((c) => c.id === inst.clientId)
                         return (
                           <Link
@@ -386,7 +386,7 @@ export default function DashboardPage() {
                           </Link>
                         )
                       })}
-                      {totalCriticalCount > 5 && (
+                      {(criticalAlerts.length > 3 || criticalInstallments.length > 5) && (
                         <Link
                           href="/obrigacoes?tab=overdue"
                           className="block text-sm text-muted-foreground text-center pt-2 hover:text-foreground transition-colors"
@@ -421,7 +421,7 @@ export default function DashboardPage() {
                           </p>
                         </div>
                       ))}
-                      {thisWeekInstallments.slice(0, 2).map((inst) => {
+                      {thisWeekInstallments.slice(0, 6).map((inst) => {
                         const client = clients.find((c) => c.id === inst.clientId)
                         const firstDue = new Date(inst.firstDueDate)
                         const monthsToAdd = inst.currentInstallment - 1
@@ -434,7 +434,7 @@ export default function DashboardPage() {
                               <p className="font-medium text-sm">{inst.name}</p>
                             </div>
                             <p className="text-xs text-muted-foreground">
-                              {client?.name} - {inst.currentInstallment}/{inst.installmentCount}
+                              {client?.name} - Parcela {inst.currentInstallment}/{inst.installmentCount}
                             </p>
                             <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
                               Vence: {adjustedDueDate.toLocaleDateString("pt-BR")}
@@ -442,6 +442,14 @@ export default function DashboardPage() {
                           </div>
                         )
                       })}
+                      {(thisWeekObligations.length > 4 || thisWeekInstallments.length > 6) && (
+                        <Link
+                          href="/relatorios"
+                          className="sm:col-span-2 block text-xs text-center text-muted-foreground hover:text-foreground transition-colors pt-1"
+                        >
+                          Ver todos os {totalThisWeekCount} itens dos próximos 7 dias →
+                        </Link>
+                      )}
                     </div>
                   </CardContent>
                 </Card>
