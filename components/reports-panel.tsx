@@ -19,8 +19,12 @@ import {
   Layers,
   ArrowRight,
   BarChart3,
+  Download,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { useSelectedPeriod } from "@/hooks/use-selected-period"
+import { exportMultiSheetXlsx, timestampFilename, type ExportColumn } from "@/lib/export-utils"
+import { TAX_REGIME_LABELS } from "@/lib/types"
 import {
   BarChart,
   Bar,
@@ -115,23 +119,57 @@ export function ReportsPanel({
   installments = [],
   clients = [],
 }: ReportsPanelProps) {
-  const [periodFilter, setPeriodFilter] = useState<string>("all")
+  // "global" = usa o PeriodSwitcher do topo da página
+  // "all" / "this_month" / "last_month" / "this_quarter" / "this_year" = filtro local
+  const [periodFilter, setPeriodFilter] = useState<string>("global")
   const [clientFilter, setClientFilter] = useState<string>("all")
   const [scopeFilter, setScopeFilter] = useState<string>("all")
+  const { period: globalPeriod, periodLabel: globalLabel, isInPeriod: isInGlobalPeriod, isFiltering: globalIsFiltering } =
+    useSelectedPeriod()
+
+  // Função de filtro principal — quando 'global', usa o PeriodSwitcher
+  const passesPeriodFilter = (date: Date): boolean => {
+    if (periodFilter === "global") {
+      // Se o switcher está em "all", deixa passar tudo
+      if (!globalIsFiltering) return true
+      return isInGlobalPeriod(date)
+    }
+    return isInPeriodFilter(date, periodFilter)
+  }
 
   // Filtra por período + cliente + esfera
   const filteredObligations = useMemo(() => {
     return obligations.filter((obl) => {
       const oblDate = new Date(obl.calculatedDueDate)
-      if (!isInPeriodFilter(oblDate, periodFilter)) return false
+      if (!passesPeriodFilter(oblDate)) return false
       if (clientFilter !== "all" && obl.clientId !== clientFilter) return false
       if (scopeFilter !== "all" && obl.scope !== scopeFilter) return false
       return true
     })
-  }, [obligations, periodFilter, clientFilter, scopeFilter])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [obligations, periodFilter, clientFilter, scopeFilter, globalPeriod])
 
   // Comparativo: mesmas obrigações, mas no período anterior
   const previousFilteredCount = useMemo(() => {
+    if (periodFilter === "global") {
+      // Pra "global", só dá pra comparar mês-a-mês — mesmo mês do mês anterior
+      if (!globalIsFiltering) return null
+      const m = globalPeriod.match(/^(\d{4})-(\d{2})$/)
+      if (!m) return null
+      const y = Number(m[1])
+      const mo = Number(m[2])
+      const prevY = mo === 1 ? y - 1 : y
+      const prevMo = mo === 1 ? 12 : mo - 1
+      const prevKey = `${prevY}-${String(prevMo).padStart(2, "0")}`
+      return obligations.filter((obl) => {
+        const d = new Date(obl.calculatedDueDate)
+        const k = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`
+        if (k !== prevKey) return false
+        if (clientFilter !== "all" && obl.clientId !== clientFilter) return false
+        if (scopeFilter !== "all" && obl.scope !== scopeFilter) return false
+        return true
+      }).length
+    }
     const prevRef = previousPeriodRef(periodFilter)
     if (!prevRef) return null
     return obligations.filter((obl) => {
@@ -141,7 +179,7 @@ export function ReportsPanel({
       if (scopeFilter !== "all" && obl.scope !== scopeFilter) return false
       return true
     }).length
-  }, [obligations, periodFilter, clientFilter, scopeFilter])
+  }, [obligations, periodFilter, clientFilter, scopeFilter, globalPeriod, globalIsFiltering])
 
   // Stats — usa effectiveStatus pra contar overdue corretamente
   // (pending com data passada vira overdue dinamicamente).
@@ -292,6 +330,164 @@ export function ReportsPanel({
   const totalCompletedAll = stats.completed.length + taxesCompleted + installmentsCompleted
   const overallRate = totalAll > 0 ? Math.round((totalCompletedAll / totalAll) * 100) : 0
 
+  // ─── Export Excel multi-sheet ─────────────────────────────────────────
+  const handleExportExcel = () => {
+    const periodLabel =
+      periodFilter === "global"
+        ? globalIsFiltering
+          ? globalLabel ?? "Todos"
+          : "Todos os períodos"
+        : periodFilter === "all"
+          ? "Todos os períodos"
+          : periodFilter === "this_month"
+            ? "Este mês"
+            : periodFilter === "last_month"
+              ? "Mês passado"
+              : periodFilter === "this_quarter"
+                ? "Este trimestre"
+                : "Este ano"
+
+    const formatDateBr = (d: string | Date | undefined) => {
+      if (!d) return ""
+      const date = typeof d === "string" ? new Date(d) : d
+      return date.toLocaleDateString("pt-BR")
+    }
+
+    type ResumoRow = { metrica: string; valor: string | number }
+    const resumoRows: ResumoRow[] = [
+      { metrica: "Período do filtro", valor: periodLabel },
+      { metrica: "Cliente filtrado", valor: clientFilter === "all" ? "Todos" : clients.find((c) => c.id === clientFilter)?.name ?? "" },
+      { metrica: "Esfera filtrada", valor: scopeFilter === "all" ? "Todas" : scopeFilter },
+      { metrica: "Total de obrigações", valor: filteredObligations.length },
+      { metrica: "Concluídas", valor: stats.completed.length },
+      { metrica: "Em andamento", valor: stats.inProgress.length },
+      { metrica: "Pendentes", valor: stats.pending.length },
+      { metrica: "Atrasadas", valor: stats.overdue.length },
+      { metrica: "Taxa de conclusão (%)", valor: completionRate },
+      { metrica: "Concluídas no prazo", valor: completedOnTime.length },
+      { metrica: "Taxa no prazo (%)", valor: onTimeRate },
+      { metrica: "Total de guias de imposto", valor: taxes.length },
+      { metrica: "Guias concluídas", valor: taxesCompleted },
+      { metrica: "Total de parcelamentos", valor: installments.length },
+      { metrica: "Parcelamentos concluídos", valor: installmentsCompleted },
+      { metrica: "Taxa global combinada (%)", valor: overallRate },
+    ]
+
+    exportMultiSheetXlsx({
+      filename: timestampFilename("relatorio_fiscal"),
+      sheets: [
+        {
+          name: "Resumo",
+          columns: [
+            { header: "Métrica", width: 32, accessor: (r: ResumoRow) => r.metrica },
+            { header: "Valor", width: 30, accessor: (r: ResumoRow) => r.valor },
+          ],
+          rows: resumoRows,
+        },
+        {
+          name: "Por Cliente",
+          columns: [
+            { header: "Cliente", width: 32, accessor: (r: typeof byClient[number]) => r.clientName },
+            { header: "Total", width: 8, accessor: (r) => r.total },
+            { header: "Concluídas", width: 12, accessor: (r) => r.completed },
+            { header: "Em andamento", width: 14, accessor: (r) => r.inProgress },
+            { header: "Pendentes", width: 12, accessor: (r) => r.pending },
+            { header: "Atrasadas", width: 12, accessor: (r) => r.overdue },
+            {
+              header: "Taxa conclusão (%)",
+              width: 18,
+              accessor: (r) => (r.total > 0 ? Math.round((r.completed / r.total) * 100) : 0),
+            },
+          ],
+          rows: byClient,
+        },
+        {
+          name: "Por Imposto",
+          columns: [
+            { header: "Imposto", width: 32, accessor: ([name]: [string, { total: number; completed: number; overdue: number }]) => name },
+            { header: "Total", width: 10, accessor: ([, t]) => t.total },
+            { header: "Concluídas", width: 12, accessor: ([, t]) => t.completed },
+            { header: "Atrasadas", width: 12, accessor: ([, t]) => t.overdue },
+            {
+              header: "Taxa conclusão (%)",
+              width: 18,
+              accessor: ([, t]) => (t.total > 0 ? Math.round((t.completed / t.total) * 100) : 0),
+            },
+          ],
+          rows: Object.entries(byTax).sort(([, a], [, b]) => b.total - a.total),
+        },
+        {
+          name: "Por Recorrência",
+          columns: [
+            { header: "Recorrência", width: 28, accessor: ([name]: [string, number]) => name },
+            { header: "Quantidade", width: 14, accessor: ([, n]) => n },
+          ],
+          rows: Object.entries(byRecurrence).sort(([, a], [, b]) => b - a),
+        },
+        {
+          name: "Evolução Mensal",
+          columns: [
+            { header: "Mês", width: 12, accessor: (r: typeof monthlyEvolution[number]) => r.label },
+            { header: "Concluídas", width: 12, accessor: (r) => r.concluidas },
+            { header: "Pendentes", width: 12, accessor: (r) => r.pendentes },
+            { header: "Atrasadas", width: 12, accessor: (r) => r.atrasadas },
+            { header: "Total", width: 10, accessor: (r) => r.concluidas + r.pendentes + r.atrasadas },
+          ],
+          rows: monthlyEvolution,
+        },
+        {
+          name: "Concluídas",
+          columns: [
+            { header: "Obrigação", width: 32, accessor: (o: ObligationWithDetails) => o.name },
+            { header: "Cliente", width: 28, accessor: (o) => o.client.name },
+            { header: "CNPJ", width: 18, accessor: (o) => o.client.cnpj || "" },
+            {
+              header: "Regime",
+              width: 18,
+              accessor: (o) => (o.client.taxRegime ? TAX_REGIME_LABELS[o.client.taxRegime as keyof typeof TAX_REGIME_LABELS] : ""),
+            },
+            { header: "Esfera", width: 12, accessor: (o) => o.scope ?? "" },
+            {
+              header: "Vencimento",
+              width: 14,
+              accessor: (o) => formatDateBr(o.calculatedDueDate),
+            },
+            {
+              header: "Concluída em",
+              width: 14,
+              accessor: (o) => (o.completedAt ? formatDateBr(o.completedAt) : ""),
+            },
+            { header: "Competência", width: 12, accessor: (o) => o.competencyMonth ?? "" },
+          ],
+          rows: stats.completed
+            .slice()
+            .sort((a, b) => {
+              const da = a.completedAt ? new Date(a.completedAt).getTime() : 0
+              const db = b.completedAt ? new Date(b.completedAt).getTime() : 0
+              return db - da
+            }),
+        },
+        {
+          name: "Atrasadas",
+          columns: [
+            { header: "Obrigação", width: 32, accessor: (o: ObligationWithDetails) => o.name },
+            { header: "Cliente", width: 28, accessor: (o) => o.client.name },
+            { header: "CNPJ", width: 18, accessor: (o) => o.client.cnpj || "" },
+            { header: "Esfera", width: 12, accessor: (o) => o.scope ?? "" },
+            { header: "Prioridade", width: 12, accessor: (o) => o.priority },
+            {
+              header: "Vencimento",
+              width: 14,
+              accessor: (o) => formatDateBr(o.calculatedDueDate),
+            },
+            { header: "Competência", width: 12, accessor: (o) => o.competencyMonth ?? "" },
+          ],
+          rows: stats.overdue,
+        },
+      ],
+    })
+  }
+
   // Empty state
   if (filteredObligations.length === 0) {
     return (
@@ -301,7 +497,7 @@ export function ReportsPanel({
             <h2 className="text-2xl font-bold">Relatórios</h2>
             <p className="text-sm text-muted-foreground">Análise de produtividade e desempenho fiscal</p>
           </div>
-          <PeriodSelect value={periodFilter} onChange={setPeriodFilter} />
+          <PeriodSelect value={periodFilter} onChange={setPeriodFilter} globalLabel={globalLabel} />
         </div>
         <div className="border-2 border-dashed rounded-xl py-16 px-6 text-center">
           <div className="size-12 rounded-full bg-muted flex items-center justify-center mx-auto mb-3">
@@ -353,7 +549,11 @@ export function ReportsPanel({
               <SelectItem value="municipal">Municipal</SelectItem>
             </SelectContent>
           </Select>
-          <PeriodSelect value={periodFilter} onChange={setPeriodFilter} />
+          <PeriodSelect value={periodFilter} onChange={setPeriodFilter} globalLabel={globalLabel} />
+          <Button variant="outline" size="sm" onClick={handleExportExcel} className="gap-2">
+            <Download className="size-4" />
+            Exportar Excel
+          </Button>
           <Button variant="outline" size="sm" onClick={() => window.print()} className="gap-2">
             <Printer className="size-4" />
             Imprimir
@@ -710,14 +910,25 @@ export function ReportsPanel({
 
 // ─── Subcomponente do Period Select ──────────────────────────────────────
 
-function PeriodSelect({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+function PeriodSelect({
+  value,
+  onChange,
+  globalLabel,
+}: {
+  value: string
+  onChange: (v: string) => void
+  globalLabel?: string | null
+}) {
   return (
     <Select value={value} onValueChange={onChange}>
-      <SelectTrigger className="w-[180px]">
+      <SelectTrigger className="w-[220px]">
         <Calendar className="size-3.5 mr-1.5" />
         <SelectValue />
       </SelectTrigger>
       <SelectContent>
+        <SelectItem value="global">
+          📌 Filtro do topo {globalLabel ? `(${globalLabel})` : "(Todos)"}
+        </SelectItem>
         <SelectItem value="all">Todos os períodos</SelectItem>
         <SelectItem value="this_month">Este mês</SelectItem>
         <SelectItem value="last_month">Mês passado</SelectItem>

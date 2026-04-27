@@ -39,6 +39,41 @@ export function exportToXlsx<T>(opts: {
 }
 
 /**
+ * Exporta MÚLTIPLAS abas para um único arquivo .xlsx.
+ * Útil pra relatórios consolidados (Resumo + Por Cliente + Por Imposto…).
+ */
+export function exportMultiSheetXlsx(opts: {
+  filename: string
+  sheets: Array<{
+    name: string
+    columns: ExportColumn<any>[]
+    rows: any[]
+  }>
+}): void {
+  const { filename, sheets } = opts
+  const wb = XLSX.utils.book_new()
+  for (const sheet of sheets) {
+    const headerRow = sheet.columns.map((c) => c.header)
+    const dataRows = sheet.rows.map((row) =>
+      sheet.columns.map((col) => {
+        const v = col.accessor(row)
+        if (v === null || v === undefined) return ""
+        if (v instanceof Date) return v
+        return v
+      }),
+    )
+    const ws = XLSX.utils.aoa_to_sheet([headerRow, ...dataRows])
+    ws["!cols"] = sheet.columns.map((c) => ({
+      wch: c.width ?? Math.max(c.header.length + 2, 12),
+    }))
+    // Limita nome a 31 chars (limite do Excel)
+    const safeName = sheet.name.length > 31 ? sheet.name.slice(0, 31) : sheet.name
+    XLSX.utils.book_append_sheet(wb, ws, safeName)
+  }
+  XLSX.writeFile(wb, ensureExt(filename, "xlsx"))
+}
+
+/**
  * Exporta uma lista para PDF tabelar usando jsPDF + autoTable.
  * Inclui título, subtitle (filtros) e contagem.
  */
