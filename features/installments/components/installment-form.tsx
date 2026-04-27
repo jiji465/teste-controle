@@ -8,7 +8,6 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Switch } from "@/components/ui/switch"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import {
   Form,
@@ -390,23 +389,9 @@ export function InstallmentForm({ installment, open, onOpenChange, onSave }: Ins
                 />
               )}
 
-              <FormField
-                control={form.control}
-                name="autoGenerate"
-                render={({ field }) => (
-                  <FormItem className="flex items-center justify-between rounded-lg border p-3">
-                    <div className="space-y-0.5">
-                      <FormLabel className="text-sm">Gerar próxima parcela automaticamente</FormLabel>
-                      <p className="text-xs text-muted-foreground">
-                        Quando a parcela atual for concluída, o sistema cria a seguinte.
-                      </p>
-                    </div>
-                    <FormControl>
-                      <Switch checked={field.value} onCheckedChange={field.onChange} />
-                    </FormControl>
-                  </FormItem>
-                )}
-              />
+              {/* Toggle "Gerar próxima parcela automaticamente" foi removido:
+                  o avanço já acontece automaticamente quando o usuário clica
+                  "Pagar parcela X/N". Não há nada pra ligar/desligar. */}
             </section>
 
             {/* 4. Gestão */}
