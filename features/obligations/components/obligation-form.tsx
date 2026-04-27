@@ -39,7 +39,7 @@ type ObligationFormProps = {
   taxes?: Tax[] // mantido para compatibilidade — não usado mais
   open: boolean
   onOpenChange: (open: boolean) => void
-  onSave: (obligation: Obligation) => void
+  onSave: (obligation: Obligation) => void | Promise<void>
 }
 
 const ALL_REGIMES = Object.keys(TAX_REGIME_LABELS) as TaxRegime[]
@@ -121,7 +121,9 @@ export function ObligationForm({ obligation, clients, open, onOpenChange, onSave
     }
   }, [obligation, open, form])
 
-  const onSubmit = (data: ObligationFormData) => {
+  const [isSaving, setIsSaving] = useState(false)
+
+  const onSubmit = async (data: ObligationFormData) => {
     const history = obligation?.history || []
     const newHistoryEntry = {
       id: crypto.randomUUID(),
@@ -162,8 +164,17 @@ export function ObligationForm({ obligation, clients, open, onOpenChange, onSave
       tags: data.tags || [],
     }
 
-    onSave(obligationData)
-    onOpenChange(false)
+    setIsSaving(true)
+    try {
+      await onSave(obligationData)
+      onOpenChange(false)
+    } catch (err) {
+      // Erro já é tratado com toast pelo caller; mantemos dialog aberto
+      // pra usuário corrigir e tentar de novo.
+      console.error("[obligation-form] save failed:", err)
+    } finally {
+      setIsSaving(false)
+    }
   }
 
   const addTag = () => {
@@ -653,10 +664,10 @@ export function ObligationForm({ obligation, clients, open, onOpenChange, onSave
             </div>
 
             <DialogFooter className="mt-4">
-              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+              <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={isSaving}>
                 Cancelar
               </Button>
-              <Button type="submit">Salvar Obrigação</Button>
+              <Button type="submit" disabled={isSaving}>{isSaving ? "Salvando…" : "Salvar Obrigação"}</Button>
             </DialogFooter>
           </form>
         </Form>

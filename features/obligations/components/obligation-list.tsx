@@ -37,6 +37,7 @@ import type { ObligationWithDetails, Client, Tax, Priority, TaxRegime } from "@/
 import { TAX_REGIME_LABELS, TAX_REGIME_COLORS } from "@/lib/types"
 import { saveObligation, deleteObligation } from "@/features/obligations/services"
 import { formatDate, isOverdue, calculateDueDateInfoFromCompetency } from "@/lib/date-utils"
+import { effectiveStatus } from "@/lib/obligation-status"
 import { getRecurrenceDescription } from "@/lib/recurrence-utils"
 import { matchesText } from "@/lib/utils"
 import { toast } from "sonner"
@@ -139,8 +140,12 @@ export const ObligationList = forwardRef<ObligationListHandle, ObligationListPro
       } else if (sortBy === "client") {
         comparison = a.client.name.localeCompare(b.client.name)
       } else if (sortBy === "status") {
-        const statusOrder = { overdue: 0, pending: 1, in_progress: 2, completed: 3 }
-        comparison = statusOrder[a.status] - statusOrder[b.status]
+        // Usa effectiveStatus pra que pendentes vencidas (que são overdue na realidade)
+        // sejam ordenadas como overdue, não como pending.
+        const statusOrder = { overdue: 0, pending: 1, in_progress: 2, completed: 3 } as const
+        const sa = effectiveStatus(a) as keyof typeof statusOrder
+        const sb = effectiveStatus(b) as keyof typeof statusOrder
+        comparison = (statusOrder[sa] ?? 99) - (statusOrder[sb] ?? 99)
       }
       return sortOrder === "asc" ? comparison : -comparison
     })
@@ -502,7 +507,7 @@ export const ObligationList = forwardRef<ObligationListHandle, ObligationListPro
             Concluída
           </Badge>
           {obligation.completedAt && (
-            <span className="text-xs text-muted-foreground">{formatDate(obligation.completedAt.split("T")[0])}</span>
+            <span className="text-xs text-muted-foreground">{formatDate(obligation.completedAt)}</span>
           )}
         </div>
       )
