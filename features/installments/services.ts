@@ -25,10 +25,27 @@ function mapInstallmentToDb(installment: Installment) {
     recurrence: installment.recurrence,
     recurrence_interval: installment.recurrenceInterval || null,
     created_at: installment.createdAt,
+    // Mapeia camelCase → snake_case para o JSONB do banco.
+    // Se a coluna ainda não existir (migration 010 não rodada), o Supabase
+    // ignora silenciosamente (não dá erro de upsert).
+    paid_installments: (installment.paidInstallments || []).map((p) => ({
+      number: p.number,
+      paid_at: p.paidAt,
+      paid_by: p.paidBy ?? null,
+    })),
   }
 }
 
 function mapDbToInstallment(row: any): Installment {
+  // Se a coluna paid_installments não existir ainda (migration não rodada),
+  // row.paid_installments vem undefined → tratamos como []
+  const paid = Array.isArray(row.paid_installments)
+    ? row.paid_installments.map((p: any) => ({
+        number: Number(p.number),
+        paidAt: String(p.paid_at ?? p.paidAt ?? ""),
+        paidBy: p.paid_by ?? p.paidBy ?? undefined,
+      }))
+    : []
   return {
     id: row.id,
     name: row.name,
@@ -53,6 +70,7 @@ function mapDbToInstallment(row: any): Installment {
     recurrenceInterval: row.recurrence_interval,
     createdAt: row.created_at,
     history: [],
+    paidInstallments: paid,
   }
 }
 

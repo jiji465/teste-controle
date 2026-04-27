@@ -162,6 +162,18 @@ export type Obligation = {
   amount?: number
 }
 
+/** Registro de pagamento de uma parcela individual de um parcelamento.
+ *  É como o app sabe quais parcelas já foram pagas, em vez de inferir
+ *  pelo `currentInstallment` (que só aponta a próxima a pagar). */
+export type PaidInstallment = {
+  /** Número da parcela paga (1, 2, 3...). */
+  number: number
+  /** Quando foi marcada como paga (ISO string). */
+  paidAt: string
+  /** Quem marcou (opcional). */
+  paidBy?: string
+}
+
 export type Installment = {
   id: string
   name: string
@@ -186,6 +198,9 @@ export type Installment = {
   autoGenerate: boolean
   recurrence: RecurrenceType
   recurrenceInterval?: number
+  /** Histórico de pagamentos parcela-a-parcela. Cresce conforme o usuário
+   *  marca cada parcela como paga. Vazio até a primeira ser paga. */
+  paidInstallments?: PaidInstallment[]
   /** @deprecated removido. */
   realizationDate?: string
   /** @deprecated removido. */

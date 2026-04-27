@@ -25,6 +25,9 @@ import {
   Receipt,
   AlertCircle,
   Layers,
+  ListChecks,
+  RotateCcw,
+  Circle,
 } from "lucide-react"
 import type { Installment, Client, Tax, Priority } from "@/lib/types"
 import { adjustForWeekend, buildSafeDate, formatDate, isOverdue } from "@/lib/date-utils"
@@ -57,6 +60,11 @@ type InstallmentDetailsProps = {
   open: boolean
   onOpenChange: (open: boolean) => void
   onEdit?: (installment: Installment) => void
+  /** Chamado ao clicar "Pagar parcela X/N" — quem chama é responsável
+   *  por persistir e refazer o load. */
+  onPay?: (installment: Installment) => void | Promise<void>
+  /** Chamado ao clicar "Desfazer último pagamento". */
+  onUndoLastPayment?: (installment: Installment) => void | Promise<void>
 }
 
 export function InstallmentDetails({
@@ -66,28 +74,42 @@ export function InstallmentDetails({
   open,
   onOpenChange,
   onEdit,
+  onPay,
+  onUndoLastPayment,
 }: InstallmentDetailsProps) {
   const client = clients.find((c) => c.id === installment.clientId)
   const tax = installment.taxId ? taxes.find((t) => t.id === installment.taxId) : undefined
 
-  const calcDueDate = (() => {
+  /** Calcula a data de vencimento de uma parcela específica (1..N) com base
+   *  na 1ª data + (N-1) meses. Aplica a regra de fim de semana/feriado. */
+  const dueDateFor = (parcelaNumber: number): Date => {
     const firstDue = new Date(installment.firstDueDate)
-    const monthsToAdd = installment.currentInstallment - 1
+    const monthsToAdd = parcelaNumber - 1
     const dueDate = buildSafeDate(
       firstDue.getFullYear(),
       firstDue.getMonth() + monthsToAdd,
       installment.dueDay,
     )
     return adjustForWeekend(dueDate, installment.weekendRule)
-  })()
+  }
 
+  const calcDueDate = dueDateFor(installment.currentInstallment)
   const overdue = installment.status !== "completed" && isOverdue(calcDueDate)
   const effectiveStatus = overdue ? "overdue" : installment.status
+
+  // Progresso baseado em parcelas EFETIVAMENTE pagas (paidInstallments).
+  // Mais correto que (currentInstallment - 1) caso exista discrepância.
+  const paidList = installment.paidInstallments ?? []
+  const paidCount = paidList.length
   const progress = Math.min(
     100,
-    Math.round(((installment.currentInstallment - 1) / Math.max(1, installment.installmentCount)) * 100),
+    Math.round((paidCount / Math.max(1, installment.installmentCount)) * 100),
   )
-  const remaining = Math.max(0, installment.installmentCount - installment.currentInstallment + 1)
+  const remaining = Math.max(0, installment.installmentCount - paidCount)
+  const allPaid = paidCount >= installment.installmentCount
+
+  // Mapa { number → paidAt } pra busca rápida na renderização da lista
+  const paidByNumber = new Map(paidList.map((p) => [p.number, p]))
 
   const handleCopy = (label: string, value?: string) => {
     if (!value) return
@@ -139,7 +161,7 @@ export function InstallmentDetails({
                   Progresso
                 </p>
                 <span className="text-xs font-medium tabular-nums">
-                  {installment.currentInstallment - 1}/{installment.installmentCount} pagas
+                  {paidCount}/{installment.installmentCount} pagas
                 </span>
               </div>
               <Progress value={progress} className="h-2" />
@@ -149,6 +171,29 @@ export function InstallmentDetails({
                   : "Todas as parcelas pagas"}
               </p>
             </div>
+
+            {/* Ação principal: pagar parcela atual */}
+            {!allPaid && onPay && (
+              <div className="flex items-center gap-2">
+                <Button
+                  onClick={() => onPay(installment)}
+                  className="flex-1 gap-2 bg-green-600 hover:bg-green-700 text-white"
+                >
+                  <CheckCircle2 className="size-4" />
+                  Pagar parcela {installment.currentInstallment}/{installment.installmentCount}
+                </Button>
+                {paidCount > 0 && onUndoLastPayment && (
+                  <Button
+                    variant="outline"
+                    onClick={() => onUndoLastPayment(installment)}
+                    className="gap-2"
+                    title="Desfazer último pagamento"
+                  >
+                    <RotateCcw className="size-4" />
+                  </Button>
+                )}
+              </div>
+            )}
           </DialogHeader>
         </div>
 
@@ -171,6 +216,85 @@ export function InstallmentDetails({
               />
             )}
           </Section>
+
+          <Separator />
+
+          {/* Cronograma completo das parcelas */}
+          <div>
+            <div className="flex items-center gap-2 mb-2.5">
+              <ListChecks className="size-4 text-muted-foreground" />
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Cronograma de parcelas
+              </p>
+            </div>
+            <ul className="rounded-lg border divide-y divide-border overflow-hidden">
+              {Array.from({ length: installment.installmentCount }, (_, i) => i + 1).map(
+                (n) => {
+                  const due = dueDateFor(n)
+                  const paidEntry = paidByNumber.get(n)
+                  const isPaid = !!paidEntry
+                  const isCurrent =
+                    !isPaid && n === installment.currentInstallment && !allPaid
+                  const isFuture = !isPaid && !isCurrent
+                  const dueOverdue = isCurrent && isOverdue(due)
+                  return (
+                    <li
+                      key={n}
+                      className={`flex items-center gap-3 px-3 py-2 text-sm ${
+                        isPaid
+                          ? "bg-green-50/50 dark:bg-green-950/10"
+                          : isCurrent
+                            ? dueOverdue
+                              ? "bg-red-50/60 dark:bg-red-950/20"
+                              : "bg-amber-50/50 dark:bg-amber-950/10"
+                            : ""
+                      }`}
+                    >
+                      <span className="shrink-0">
+                        {isPaid ? (
+                          <CheckCircle2 className="size-4 text-green-600" />
+                        ) : isCurrent ? (
+                          dueOverdue ? (
+                            <AlertTriangle className="size-4 text-red-600" />
+                          ) : (
+                            <Clock className="size-4 text-amber-600" />
+                          )
+                        ) : (
+                          <Circle className="size-4 text-muted-foreground/40" />
+                        )}
+                      </span>
+                      <span className="font-mono text-xs tabular-nums w-16 shrink-0">
+                        {n}/{installment.installmentCount}
+                      </span>
+                      <span className="font-mono text-xs tabular-nums w-24 shrink-0 text-muted-foreground">
+                        {formatDate(due)}
+                      </span>
+                      <span className="flex-1 min-w-0 text-xs">
+                        {isPaid ? (
+                          <span className="text-green-700 dark:text-green-400 truncate block">
+                            Paga em {formatDate(paidEntry.paidAt)}
+                            {paidEntry.paidBy && ` por ${paidEntry.paidBy}`}
+                          </span>
+                        ) : isCurrent ? (
+                          <span
+                            className={
+                              dueOverdue
+                                ? "text-red-700 dark:text-red-400 font-medium"
+                                : "text-amber-700 dark:text-amber-400 font-medium"
+                            }
+                          >
+                            {dueOverdue ? "Atrasada" : "Próxima a pagar"}
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground/60">A vencer</span>
+                        )}
+                      </span>
+                    </li>
+                  )
+                },
+              )}
+            </ul>
+          </div>
 
           <Separator />
 
