@@ -5,17 +5,14 @@ import {
 import {
   getObligations,
   getTaxes,
-  getInstallments,
   saveObligation,
   saveTax,
-  saveInstallment,
 } from "./supabase/database"
 import {
   shouldGenerateRecurrence,
   getCurrentPeriod,
   generateObligationForPeriod,
   generateTaxForPeriod,
-  generateInstallmentForPeriod,
 } from "./recurrence-engine"
 import { buildSafeDate, toLocalDateString } from "./date-utils"
 
@@ -112,19 +109,17 @@ export async function checkAndGenerateRecurrences(): Promise<void> {
       }
     }
 
-    // Gerar parcelas recorrentes (já tem cap natural via installmentCount)
-    const installments = await getInstallments()
-    const installmentsToGenerate = installments.filter(
-      (i) =>
-        i.autoGenerate &&
-        i.status !== "completed" &&
-        i.currentInstallment < i.installmentCount,
-    )
-
-    for (const installment of installmentsToGenerate) {
-      const newInstallment = generateInstallmentForPeriod(installment, currentPeriod)
-      await saveInstallment(newInstallment)
-    }
+    // NOTA: A geração automática de PARCELAMENTOS foi removida intencionalmente.
+    //
+    // No modelo atual, um parcelamento é UM ÚNICO registro com contador interno
+    // (currentInstallment / installmentCount). A próxima data de vencimento é
+    // calculada dinamicamente como `firstDueDate + (currentInstallment - 1) meses`.
+    // Quando o usuário marca a parcela atual como paga (via payCurrentInstallment),
+    // o contador avança e a próxima parcela "aparece" automaticamente — sem precisar
+    // duplicar registros no banco.
+    //
+    // O código antigo aqui clonava o registro com currentInstallment+1 todo dia 1
+    // do mês, gerando duplicatas infinitas. Bug corrigido.
 
     setLastRecurrenceCheck(today)
   } catch (error) {

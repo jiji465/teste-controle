@@ -8,7 +8,6 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Switch } from "@/components/ui/switch"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import {
   Form,
@@ -301,7 +300,27 @@ export function InstallmentForm({ installment, open, onOpenChange, onSave }: Ins
                     <FormItem>
                       <FormLabel>Primeiro vencimento *</FormLabel>
                       <FormControl>
-                        <Input type="date" {...field} />
+                        <Input
+                          type="date"
+                          {...field}
+                          onChange={(e) => {
+                            field.onChange(e)
+                            // Auto-sincroniza o "Dia do vencimento" com o dia
+                            // do primeiro vencimento. Evita o usuário deixar
+                            // os dois campos com dias diferentes (ex: dia 29
+                            // vs dia 31), o que gerava divergência no card
+                            // de detalhes. Usuário ainda pode sobrescrever
+                            // manualmente depois se quiser.
+                            const value = e.target.value
+                            const m = value.match(/^\d{4}-\d{2}-(\d{2})$/)
+                            if (m) {
+                              const day = Number(m[1])
+                              if (day >= 1 && day <= 31) {
+                                form.setValue("dueDay", day, { shouldDirty: true })
+                              }
+                            }
+                          }}
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -317,6 +336,10 @@ export function InstallmentForm({ installment, open, onOpenChange, onSave }: Ins
                       <FormControl>
                         <Input type="number" min={1} max={31} {...field} />
                       </FormControl>
+                      <p className="text-[11px] text-muted-foreground">
+                        Sincroniza automaticamente com o dia do 1º vencimento.
+                        Mude só se as parcelas seguintes vencem em dia diferente.
+                      </p>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -390,23 +413,9 @@ export function InstallmentForm({ installment, open, onOpenChange, onSave }: Ins
                 />
               )}
 
-              <FormField
-                control={form.control}
-                name="autoGenerate"
-                render={({ field }) => (
-                  <FormItem className="flex items-center justify-between rounded-lg border p-3">
-                    <div className="space-y-0.5">
-                      <FormLabel className="text-sm">Gerar próxima parcela automaticamente</FormLabel>
-                      <p className="text-xs text-muted-foreground">
-                        Quando a parcela atual for concluída, o sistema cria a seguinte.
-                      </p>
-                    </div>
-                    <FormControl>
-                      <Switch checked={field.value} onCheckedChange={field.onChange} />
-                    </FormControl>
-                  </FormItem>
-                )}
-              />
+              {/* Toggle "Gerar próxima parcela automaticamente" foi removido:
+                  o avanço já acontece automaticamente quando o usuário clica
+                  "Pagar parcela X/N". Não há nada pra ligar/desligar. */}
             </section>
 
             {/* 4. Gestão */}

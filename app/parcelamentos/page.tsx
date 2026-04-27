@@ -17,6 +17,7 @@ import type { ExportColumn } from "@/lib/export-utils"
 import { useUrlState } from "@/hooks/use-url-state"
 import { InstallmentForm } from "@/features/installments/components/installment-form"
 import { InstallmentDetails } from "@/features/installments/components/installment-details"
+import { payCurrentInstallment, undoLastPayment } from "@/features/installments/actions"
 import { BulkActionsBar } from "@/components/bulk-actions-bar"
 import { GlobalSearch } from "@/components/global-search"
 import { saveInstallment, deleteInstallment } from "@/lib/supabase/database"
@@ -73,6 +74,17 @@ export default function ParcelamentosPage() {
     window.addEventListener("keydown", handleKeyDown)
     return () => window.removeEventListener("keydown", handleKeyDown)
   }, [])
+
+  // Mantém o card de detalhes sincronizado quando a lista é recarregada
+  // (ex: depois de pagar uma parcela). Sem isso, o card mostra estado
+  // antigo até o usuário fechar e reabrir.
+  useEffect(() => {
+    if (!viewingInstallment) return
+    const fresh = installments.find((i) => i.id === viewingInstallment.id)
+    if (fresh && fresh !== viewingInstallment) {
+      setViewingInstallment(fresh)
+    }
+  }, [installments, viewingInstallment])
 
   const loadData = async () => {
     await refreshData()
@@ -216,17 +228,39 @@ export default function ParcelamentosPage() {
     }
   }
 
-  const handleCompleteInstallment = async (installment: Installment) => {
+  const handlePayInstallment = async (installment: Installment) => {
     try {
-      const updated = {
-        ...installment,
-        status: "completed" as const,
-        completedAt: new Date().toISOString(),
+      const result = payCurrentInstallment(installment)
+      await saveInstallment(result.updated)
+      if (result.isFinalPayment) {
+        toast.success(
+          `Última parcela paga (${result.paidNumber}/${installment.installmentCount}). Parcelamento concluído!`,
+        )
+      } else {
+        toast.success(
+          `Parcela ${result.paidNumber}/${installment.installmentCount} paga. Próxima: ${result.paidNumber + 1}/${installment.installmentCount}`,
+        )
       }
-      await saveInstallment(updated)
       await loadData()
     } catch (error) {
-      console.error("[v0] Error completing installment:", error)
+      console.error("[parcelamentos] Error paying installment:", error)
+      toast.error("Erro ao registrar pagamento")
+    }
+  }
+
+  const handleUndoLastPayment = async (installment: Installment) => {
+    if ((installment.paidInstallments ?? []).length === 0) {
+      toast.info("Nenhum pagamento registrado pra desfazer")
+      return
+    }
+    try {
+      const updated = undoLastPayment(installment)
+      await saveInstallment(updated)
+      toast.success("Último pagamento desfeito")
+      await loadData()
+    } catch (error) {
+      console.error("[parcelamentos] Error undoing payment:", error)
+      toast.error("Erro ao desfazer pagamento")
     }
   }
 
@@ -243,19 +277,33 @@ export default function ParcelamentosPage() {
   const handleBulkComplete = () => {
     if (selectedIds.size === 0) return
     setConfirmState({
-      title: `Concluir ${selectedIds.size} parcelamentos`,
-      description: `Marcar ${selectedIds.size} parcelamentos como concluídos?`,
-      confirmLabel: "Concluir",
+      title: `Pagar parcela atual de ${selectedIds.size} parcelamentos`,
+      description:
+        "Marca a parcela atual de cada parcelamento como paga. Se a parcela atual for a última, o parcelamento todo é finalizado.",
+      confirmLabel: "Pagar",
       onConfirm: async () => {
         setBulkLoading(true)
         try {
-          const now = new Date().toISOString()
-          await Promise.all(
-            installments
-              .filter((i) => selectedIds.has(i.id) && i.status !== "completed")
-              .map((i) => saveInstallment({ ...i, status: "completed", completedAt: now })),
+          const targets = installments.filter(
+            (i) => selectedIds.has(i.id) && i.status !== "completed",
           )
-          toast.success(`${selectedIds.size} parcelamentos concluídos`)
+          const now = new Date()
+          let finalCount = 0
+          let advancedCount = 0
+          await Promise.all(
+            targets.map((i) => {
+              const result = payCurrentInstallment(i, "Contador", now)
+              if (result.isFinalPayment) finalCount++
+              else advancedCount++
+              return saveInstallment(result.updated)
+            }),
+          )
+          const parts: string[] = []
+          if (advancedCount > 0)
+            parts.push(`${advancedCount} parcela${advancedCount > 1 ? "s" : ""} paga${advancedCount > 1 ? "s" : ""}`)
+          if (finalCount > 0)
+            parts.push(`${finalCount} parcelamento${finalCount > 1 ? "s" : ""} finalizado${finalCount > 1 ? "s" : ""}`)
+          toast.success(parts.join(" · ") || "Pagamentos registrados")
           clearSelection()
           await loadData()
         } finally {
@@ -310,19 +358,18 @@ export default function ParcelamentosPage() {
   const handleBulkReopen = () => {
     if (selectedIds.size === 0) return
     setConfirmState({
-      title: `Reabrir ${selectedIds.size} parcelamentos`,
-      description: `Volta para "Pendente" e limpa a data de conclusão.`,
-      confirmLabel: "Reabrir",
+      title: `Desfazer último pagamento de ${selectedIds.size} parcelamentos`,
+      description:
+        "Volta a parcela atual em 1 (desfaz o último pagamento). Útil quando você marcou pago por engano.",
+      confirmLabel: "Desfazer",
       onConfirm: async () => {
         setBulkLoading(true)
         try {
-          const targets = installments.filter((i) => selectedIds.has(i.id) && i.status === "completed")
-          await Promise.all(
-            targets.map((i) =>
-              saveInstallment({ ...i, status: "pending", completedAt: undefined, completedBy: undefined }),
-            ),
+          const targets = installments.filter(
+            (i) => selectedIds.has(i.id) && (i.paidInstallments ?? []).length > 0,
           )
-          toast.success(`${targets.length} parcelamentos reabertos`)
+          await Promise.all(targets.map((i) => saveInstallment(undoLastPayment(i))))
+          toast.success(`${targets.length} pagamentos desfeitos`)
           clearSelection()
           await loadData()
         } finally {
@@ -545,9 +592,9 @@ export default function ParcelamentosPage() {
             selectedCount={selectedIds.size}
             onClear={clearSelection}
             actions={[
-              { label: "Concluir", icon: <CheckCircle2 className="size-3.5" />, tone: "success", onClick: handleBulkComplete, disabled: bulkLoading },
+              { label: "Pagar parcela atual", icon: <CheckCircle2 className="size-3.5" />, tone: "success", onClick: handleBulkComplete, disabled: bulkLoading },
               { label: "Em andamento", icon: <PlayCircle className="size-3.5" />, onClick: handleBulkInProgress, disabled: bulkLoading },
-              { label: "Reabrir", icon: <RotateCcw className="size-3.5" />, onClick: handleBulkReopen, disabled: bulkLoading },
+              { label: "Desfazer pagamento", icon: <RotateCcw className="size-3.5" />, onClick: handleBulkReopen, disabled: bulkLoading },
               { label: "Editar", icon: <Pencil className="size-3.5" />, onClick: openBulkEdit, disabled: bulkLoading },
               { label: "Excluir", icon: <Trash2 className="size-3.5" />, tone: "destructive", onClick: handleBulkDelete, disabled: bulkLoading },
             ]}
@@ -610,8 +657,8 @@ export default function ParcelamentosPage() {
                         </Button>
                       )}
                       {(status === "pending" || status === "in_progress") && (
-                        <Button size="sm" variant="outline" onClick={() => handleCompleteInstallment(installment)} className="h-7 text-xs gap-1">
-                          <CheckCircle2 className="h-3 w-3" /> Concluir
+                        <Button size="sm" variant="default" onClick={() => handlePayInstallment(installment)} className="h-7 text-xs gap-1 bg-green-600 hover:bg-green-700">
+                          <CheckCircle2 className="h-3 w-3" /> Pagar {installment.currentInstallment}/{installment.installmentCount}
                         </Button>
                       )}
                       <Button size="sm" variant="ghost" onClick={() => handleEdit(installment)} className="h-7 text-xs gap-1">
@@ -776,11 +823,12 @@ export default function ParcelamentosPage() {
                             <Button
                               size="sm"
                               variant="default"
-                              onClick={() => handleCompleteInstallment(installment)}
+                              onClick={() => handlePayInstallment(installment)}
                               className="h-7 text-xs bg-green-600 hover:bg-green-700"
+                              title={`Marcar parcela ${installment.currentInstallment}/${installment.installmentCount} como paga`}
                             >
                               <CheckCircle2 className="size-3 mr-1" />
-                              Concluir
+                              Pagar {installment.currentInstallment}/{installment.installmentCount}
                             </Button>
                           </div>
                         )}
@@ -801,6 +849,12 @@ export default function ParcelamentosPage() {
                               <Pencil className="size-4 mr-2" />
                               Editar
                             </DropdownMenuItem>
+                            {(installment.paidInstallments ?? []).length > 0 && (
+                              <DropdownMenuItem onClick={() => handleUndoLastPayment(installment)}>
+                                <RotateCcw className="size-4 mr-2" />
+                                Desfazer último pagamento
+                              </DropdownMenuItem>
+                            )}
                             <DropdownMenuItem
                               onClick={() => handleDelete(installment.id)}
                               className="text-destructive"
@@ -835,6 +889,8 @@ export default function ParcelamentosPage() {
           open={isDetailsOpen}
           onOpenChange={setIsDetailsOpen}
           onEdit={handleEdit}
+          onPay={handlePayInstallment}
+          onUndoLastPayment={handleUndoLastPayment}
         />
       )}
 

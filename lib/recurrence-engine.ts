@@ -1,4 +1,4 @@
-import type { Obligation, Tax, Installment, RecurrenceType } from "./types"
+import type { Obligation, Tax, RecurrenceType } from "./types"
 import { adjustForWeekend, buildSafeDate } from "./date-utils"
 
 export function shouldGenerateRecurrence(date: Date): boolean {
@@ -102,37 +102,10 @@ export function generateTaxForPeriod(
   }
 }
 
-export function generateInstallmentForPeriod(
-  installment: Installment,
-  period: string, // formato: "2025-01"
-): Installment {
-  const [year, month] = period.split("-").map(Number)
-  const dueDate = buildSafeDate(year, month - 1, installment.dueDay)
-  const adjustedDueDate = adjustForWeekend(dueDate, installment.weekendRule)
-
-  // Incrementa a parcela atual
-  const nextInstallment = installment.currentInstallment + 1
-
-  return {
-    ...installment,
-    id: crypto.randomUUID(),
-    currentInstallment: nextInstallment,
-    status: "pending",
-    completedAt: undefined,
-    completedBy: undefined,
-    realizationDate: undefined,
-    createdAt: new Date().toISOString(),
-    history: [
-      {
-        id: crypto.randomUUID(),
-        action: "created",
-        description: `Parcela ${nextInstallment}/${installment.installmentCount} gerada automaticamente para ${period}`,
-        timestamp: new Date().toISOString(),
-        user: "Sistema",
-      },
-    ],
-  }
-}
+// generateInstallmentForPeriod removida: parcelamentos são UM registro
+// único com contador interno (currentInstallment), avançado pelo helper
+// payCurrentInstallment em features/installments/actions.ts. Não precisa
+// gerar registros mensais.
 
 export function getCurrentPeriod(): string {
   const now = new Date()
