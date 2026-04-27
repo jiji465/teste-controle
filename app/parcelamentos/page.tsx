@@ -31,7 +31,6 @@ import type { Installment } from "@/lib/types"
 import { Plus, Search, Pencil, Trash2, Play, CheckCircle2, AlertCircle, Clock, PlayCircle, AlertTriangle, Filter, RotateCcw, Calendar as CalendarIcon, MoreVertical, CreditCard, Building2, AlertCircle as PriorityIcon, Eye, ArrowUpDown, Send } from "lucide-react"
 import { FilterBar, FilterPill } from "@/components/filter-panel"
 import { formatDate, adjustForWeekend, buildSafeDate } from "@/lib/date-utils"
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useData } from "@/contexts/data-context"
 import { useSelectedPeriod } from "@/hooks/use-selected-period"
 import { toast } from "sonner"
@@ -575,42 +574,47 @@ export default function ParcelamentosPage() {
             </div>
           </div>
 
-          <Tabs value={statusFilter} onValueChange={setStatusFilter} className="w-full">
-            <TabsList className="grid w-full grid-cols-5 h-auto">
-              <TabsTrigger value="all" className="flex flex-col gap-1 py-3">
-                <span className="text-sm font-medium">Todas</span>
-                <Badge variant="secondary" className="text-xs">{statusCounts.all}</Badge>
-              </TabsTrigger>
-              <TabsTrigger value="pending" className="flex flex-col gap-1 py-3">
-                <div className="flex items-center gap-1.5">
-                  <Clock className="size-3.5" />
-                  <span className="text-sm font-medium">Pendentes</span>
-                </div>
-                <Badge variant="secondary" className="text-xs">{statusCounts.pending}</Badge>
-              </TabsTrigger>
-              <TabsTrigger value="in_progress" className="flex flex-col gap-1 py-3">
-                <div className="flex items-center gap-1.5">
-                  <PlayCircle className="size-3.5" />
-                  <span className="text-sm font-medium">Em Andamento</span>
-                </div>
-                <Badge variant="secondary" className="text-xs bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300">{statusCounts.in_progress}</Badge>
-              </TabsTrigger>
-              <TabsTrigger value="completed" className="flex flex-col gap-1 py-3">
-                <div className="flex items-center gap-1.5">
-                  <CheckCircle2 className="size-3.5" />
-                  <span className="text-sm font-medium">Concluídas</span>
-                </div>
-                <Badge variant="secondary" className="text-xs bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-300">{statusCounts.completed}</Badge>
-              </TabsTrigger>
-              <TabsTrigger value="overdue" className="flex flex-col gap-1 py-3">
-                <div className="flex items-center gap-1.5">
-                  <AlertTriangle className="size-3.5" />
-                  <span className="text-sm font-medium">Atrasadas</span>
-                </div>
-                <Badge variant="secondary" className="text-xs bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300">{statusCounts.overdue}</Badge>
-              </TabsTrigger>
-            </TabsList>
-          </Tabs>
+          {/* Antes era Radix Tabs com TabsList isolado (sem TabsContent),
+              o que causava o onValueChange de não disparar em alguns
+              navegadores. Trocado por botões diretos — comportamento
+              previsível e 100% funcional. */}
+          <div role="tablist" aria-label="Filtrar parcelamentos por status" className="grid w-full grid-cols-5 h-auto rounded-md bg-muted p-1 gap-1">
+            {([
+              { value: "all", label: "Todas", count: statusCounts.all, icon: null, badgeClass: "" },
+              { value: "pending", label: "Pendentes", count: statusCounts.pending, icon: <Clock className="size-3.5" />, badgeClass: "" },
+              { value: "in_progress", label: "Em Andamento", count: statusCounts.in_progress, icon: <PlayCircle className="size-3.5" />, badgeClass: "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300" },
+              { value: "completed", label: "Concluídas", count: statusCounts.completed, icon: <CheckCircle2 className="size-3.5" />, badgeClass: "bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-300" },
+              { value: "overdue", label: "Atrasadas", count: statusCounts.overdue, icon: <AlertTriangle className="size-3.5" />, badgeClass: "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300" },
+            ] as const).map((tab) => {
+              const isActive = statusFilter === tab.value
+              return (
+                <button
+                  key={tab.value}
+                  type="button"
+                  role="tab"
+                  aria-selected={isActive}
+                  onClick={() => setStatusFilter(tab.value)}
+                  className={`flex flex-col items-center justify-center gap-1 py-3 rounded-sm text-sm font-medium transition-all ${
+                    isActive
+                      ? "bg-background shadow-sm text-foreground"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {tab.icon ? (
+                    <div className="flex items-center gap-1.5">
+                      {tab.icon}
+                      <span>{tab.label}</span>
+                    </div>
+                  ) : (
+                    <span>{tab.label}</span>
+                  )}
+                  <Badge variant="secondary" className={`text-xs ${tab.badgeClass}`}>
+                    {tab.count}
+                  </Badge>
+                </button>
+              )
+            })}
+          </div>
 
           <div className="flex items-center justify-between gap-4 flex-wrap">
             <div className="relative flex-1 min-w-[280px]">
