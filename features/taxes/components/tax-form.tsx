@@ -38,13 +38,14 @@ type TaxFormProps = {
   clients: Client[]
   open: boolean
   onOpenChange: (open: boolean) => void
-  onSave: (tax: Tax) => void
+  onSave: (tax: Tax) => void | Promise<void>
 }
 
 const ALL_REGIMES = Object.keys(TAX_REGIME_LABELS) as TaxRegime[]
 
 export function TaxForm({ tax, clients, open, onOpenChange, onSave }: TaxFormProps) {
   const [newTag, setNewTag] = useState("")
+  const [isSaving, setIsSaving] = useState(false)
 
   const form = useForm<TaxFormData>({
     resolver: zodResolver(taxSchema),
@@ -119,7 +120,7 @@ export function TaxForm({ tax, clients, open, onOpenChange, onSave }: TaxFormPro
     }
   }, [tax, open, form])
 
-  const onSubmit = (data: TaxFormData) => {
+  const onSubmit = async (data: TaxFormData) => {
     const taxData: Tax = {
       id: data.id || crypto.randomUUID(),
       name: data.name,
@@ -145,8 +146,15 @@ export function TaxForm({ tax, clients, open, onOpenChange, onSave }: TaxFormPro
       completedBy: data.completedBy,
       createdAt: data.createdAt || new Date().toISOString(),
     }
-    onSave(taxData)
-    onOpenChange(false)
+    setIsSaving(true)
+    try {
+      await onSave(taxData)
+      onOpenChange(false)
+    } catch (err) {
+      console.error("[tax-form] save failed:", err)
+    } finally {
+      setIsSaving(false)
+    }
   }
 
   const addTag = () => {
@@ -636,10 +644,10 @@ export function TaxForm({ tax, clients, open, onOpenChange, onSave }: TaxFormPro
             </div>
 
             <DialogFooter className="mt-4">
-              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+              <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={isSaving}>
                 Cancelar
               </Button>
-              <Button type="submit">Salvar Guia</Button>
+              <Button type="submit" disabled={isSaving}>{isSaving ? "Salvando…" : "Salvar Guia"}</Button>
             </DialogFooter>
           </form>
         </Form>

@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { CheckCircle2, PlayCircle, AlertTriangle, FilePlus, History } from "lucide-react"
 import type { ObligationWithDetails } from "@/lib/types"
+import { effectiveStatus } from "@/lib/obligation-status"
 
 type RecentActivityProps = {
   obligations: ObligationWithDetails[]
@@ -76,7 +77,7 @@ export function RecentActivity({ obligations }: RecentActivityProps) {
           action: "completed",
           timestamp: new Date(o.completedAt),
         })
-      } else if (o.status === "overdue" || (o.status === "pending" && new Date(o.calculatedDueDate) < now)) {
+      } else if (effectiveStatus(o) === "overdue") {
         items.push({
           id: `${o.id}-overdue`,
           obligationName: o.name,

@@ -516,49 +516,43 @@ export function ReportsPanel({
 
   return (
     <div className="space-y-6">
-      {/* Header + Filtros */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h2 className="text-2xl font-bold">Análise de Desempenho</h2>
-          <p className="text-muted-foreground">Métricas e indicadores de produtividade</p>
-        </div>
-        <div className="flex items-center gap-2 no-print flex-wrap">
-          <Select value={clientFilter} onValueChange={setClientFilter}>
-            <SelectTrigger className="w-[200px]">
-              <Building2 className="size-3.5 mr-1.5" />
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Todos os clientes</SelectItem>
-              {clients.map((c) => (
-                <SelectItem key={c.id} value={c.id}>
-                  {c.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select value={scopeFilter} onValueChange={setScopeFilter}>
-            <SelectTrigger className="w-[160px]">
-              <Layers className="size-3.5 mr-1.5" />
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Todas as esferas</SelectItem>
-              <SelectItem value="federal">Federal</SelectItem>
-              <SelectItem value="estadual">Estadual</SelectItem>
-              <SelectItem value="municipal">Municipal</SelectItem>
-            </SelectContent>
-          </Select>
-          <PeriodSelect value={periodFilter} onChange={setPeriodFilter} globalLabel={globalLabel} />
-          <Button variant="outline" size="sm" onClick={handleExportExcel} className="gap-2">
-            <Download className="size-4" />
-            Exportar Excel
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => window.print()} className="gap-2">
-            <Printer className="size-4" />
-            Imprimir
-          </Button>
-        </div>
+      {/* Barra de filtros + ações (o header da página vem de app/relatorios/page.tsx) */}
+      <div className="flex items-center justify-end gap-2 no-print flex-wrap">
+        <Select value={clientFilter} onValueChange={setClientFilter}>
+          <SelectTrigger className="w-[200px]">
+            <Building2 className="size-3.5 mr-1.5" />
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Todos os clientes</SelectItem>
+            {clients.map((c) => (
+              <SelectItem key={c.id} value={c.id}>
+                {c.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select value={scopeFilter} onValueChange={setScopeFilter}>
+          <SelectTrigger className="w-[160px]">
+            <Layers className="size-3.5 mr-1.5" />
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Todas as esferas</SelectItem>
+            <SelectItem value="federal">Federal</SelectItem>
+            <SelectItem value="estadual">Estadual</SelectItem>
+            <SelectItem value="municipal">Municipal</SelectItem>
+          </SelectContent>
+        </Select>
+        <PeriodSelect value={periodFilter} onChange={setPeriodFilter} globalLabel={globalLabel} />
+        <Button variant="outline" size="sm" onClick={handleExportExcel} className="gap-2">
+          <Download className="size-4" />
+          Exportar Excel
+        </Button>
+        <Button variant="outline" size="sm" onClick={() => window.print()} className="gap-2">
+          <Printer className="size-4" />
+          Imprimir
+        </Button>
       </div>
 
       {/* Visão Geral Combinada */}
@@ -888,7 +882,7 @@ export function ReportsPanel({
                           <div className="text-sm text-muted-foreground truncate">{obl.client.name}</div>
                           {obl.completedAt && (
                             <div className="text-xs text-muted-foreground">
-                              Concluída em: {formatDate(obl.completedAt.split("T")[0])}
+                              Concluída em: {formatDate(obl.completedAt)}
                             </div>
                           )}
                         </div>

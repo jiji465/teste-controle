@@ -22,6 +22,7 @@ const RegimeDistributionChart = dynamic(
 )
 import { calculateDashboardStats } from "@/lib/dashboard-utils"
 import { calculateDueDateFromCompetency } from "@/lib/date-utils"
+import { isCriticalNow } from "@/lib/obligation-status"
 import { getCurrentPeriod } from "@/lib/recurrence-engine"
 import { getGreetingMeta } from "@/lib/weather"
 import { WeatherGreeting } from "@/components/weather-greeting"
@@ -80,7 +81,6 @@ export default function DashboardPage() {
               ...obl,
               status: "completed",
               completedAt: now,
-              realizationDate: now.split("T")[0],
               completedBy: "Contador",
               history: [
                 ...(obl.history || []),
@@ -140,10 +140,10 @@ export default function DashboardPage() {
   // Memoizadas pra evitar refiltragem a cada render (perf).
   // IMPORTANTE: TODAS antes de qualquer early return — Rules of Hooks.
   const criticalAlerts = useMemo(
-    () =>
-      obligations.filter(
-        (o) => o.status === "overdue" || (o.status === "pending" && new Date(o.calculatedDueDate) <= new Date()),
-      ),
+    // "Crítico" = vence hoje OU passou da data (e não está concluída).
+    // Usa isCriticalNow pra normalizar dia local — evita bug de timezone
+    // que faria itens vencendo amanhã virarem crítico ao final do dia.
+    () => obligations.filter((o) => isCriticalNow(o)),
     [obligations],
   )
 
