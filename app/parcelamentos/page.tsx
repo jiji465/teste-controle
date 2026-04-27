@@ -22,7 +22,7 @@ import { GlobalSearch } from "@/components/global-search"
 import { saveInstallment, deleteInstallment } from "@/lib/supabase/database"
 import { matchesText } from "@/lib/utils"
 import type { Installment } from "@/lib/types"
-import { Plus, Search, Pencil, Trash2, Play, CheckCircle2, AlertCircle, Clock, PlayCircle, AlertTriangle, Filter, RotateCcw, Calendar as CalendarIcon, MoreVertical, CreditCard, Building2, AlertCircle as PriorityIcon, Eye } from "lucide-react"
+import { Plus, Search, Pencil, Trash2, Play, CheckCircle2, AlertCircle, Clock, PlayCircle, AlertTriangle, Filter, RotateCcw, Calendar as CalendarIcon, MoreVertical, CreditCard, Building2, AlertCircle as PriorityIcon, Eye, ArrowUpDown } from "lucide-react"
 import { FilterBar, FilterPill } from "@/components/filter-panel"
 import { formatDate, adjustForWeekend, buildSafeDate } from "@/lib/date-utils"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -51,6 +51,12 @@ export default function ParcelamentosPage() {
   const [searchOpen, setSearchOpen] = useState(false)
   const [showFilters, setShowFilters] = useState(false)
   const [confirmState, setConfirmState] = useState<ConfirmState>(null)
+  const [sortBy, setSortBy] = useState<"name" | "client" | "tax" | "installment" | "dueDate" | "status">("dueDate")
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc")
+  const toggleSort = (field: typeof sortBy) => {
+    if (sortBy === field) setSortOrder(sortOrder === "asc" ? "desc" : "asc")
+    else { setSortBy(field); setSortOrder("asc") }
+  }
 
   const activeFilterCount =
     (clientFilter !== "all" ? 1 : 0) + (priorityFilter !== "all" ? 1 : 0)
@@ -122,6 +128,24 @@ export default function ParcelamentosPage() {
       return true
     })
   }, [installments, searchTerm, statusFilter, clientFilter, priorityFilter, clients, taxes, isInPeriod])
+
+  const sortedInstallments = useMemo(() => {
+    const arr = [...filteredInstallments]
+    arr.sort((a, b) => {
+      let cmp = 0
+      if (sortBy === "name") cmp = a.name.localeCompare(b.name, "pt-BR")
+      else if (sortBy === "client") cmp = getClientName(a.clientId).localeCompare(getClientName(b.clientId), "pt-BR")
+      else if (sortBy === "tax") cmp = getTaxName(a.taxId).localeCompare(getTaxName(b.taxId), "pt-BR")
+      else if (sortBy === "installment") cmp = a.currentInstallment - b.currentInstallment
+      else if (sortBy === "dueDate") cmp = calculateDueDate(a).getTime() - calculateDueDate(b).getTime()
+      else if (sortBy === "status") {
+        const order = { overdue: 0, pending: 1, in_progress: 2, completed: 3 } as const
+        cmp = (order[getStatus(a)] ?? 9) - (order[getStatus(b)] ?? 9)
+      }
+      return sortOrder === "asc" ? cmp : -cmp
+    })
+    return arr
+  }, [filteredInstallments, sortBy, sortOrder, clients, taxes])
 
   const installmentExportColumns: ExportColumn<Installment>[] = [
     { header: "Nome", width: 28, accessor: (i) => i.name },
@@ -531,12 +555,12 @@ export default function ParcelamentosPage() {
 
           {/* Mobile: cards (até md) */}
           <div className="md:hidden space-y-2">
-            {filteredInstallments.length === 0 ? (
+            {sortedInstallments.length === 0 ? (
               <div className="rounded-lg border py-8 text-center text-sm text-muted-foreground">
                 Nenhum parcelamento encontrado
               </div>
             ) : (
-              filteredInstallments.map((installment) => {
+              sortedInstallments.map((installment) => {
                 const status = getStatus(installment)
                 const dueDate = calculateDueDate(installment)
                 return (
@@ -611,28 +635,52 @@ export default function ParcelamentosPage() {
                 <TableHead className="w-10">
                   <Checkbox
                     checked={
-                      filteredInstallments.length > 0 &&
-                      filteredInstallments.every((i) => selectedIds.has(i.id))
+                      sortedInstallments.length > 0 &&
+                      sortedInstallments.every((i) => selectedIds.has(i.id))
                     }
                     onCheckedChange={(checked) => {
-                      if (checked) setSelectedIds(new Set(filteredInstallments.map((i) => i.id)))
+                      if (checked) setSelectedIds(new Set(sortedInstallments.map((i) => i.id)))
                       else clearSelection()
                     }}
                     aria-label="Selecionar todos"
                   />
                 </TableHead>
-                <ResizableTableHead defaultWidth={240} storageKey="parc-name">Parcelamento</ResizableTableHead>
-                <ResizableTableHead defaultWidth={240} storageKey="parc-client">Cliente</ResizableTableHead>
-                <ResizableTableHead defaultWidth={140} storageKey="parc-tax">Imposto</ResizableTableHead>
-                <ResizableTableHead defaultWidth={100} storageKey="parc-num">Parcela</ResizableTableHead>
-                <ResizableTableHead defaultWidth={180} storageKey="parc-due">Vencimento</ResizableTableHead>
-                <ResizableTableHead defaultWidth={140} storageKey="parc-status">Status</ResizableTableHead>
+                <ResizableTableHead defaultWidth={240} storageKey="parc-name">
+                  <Button variant="ghost" size="sm" onClick={() => toggleSort("name")} className="-ml-3">
+                    Parcelamento <ArrowUpDown className="ml-2 size-3" />
+                  </Button>
+                </ResizableTableHead>
+                <ResizableTableHead defaultWidth={240} storageKey="parc-client">
+                  <Button variant="ghost" size="sm" onClick={() => toggleSort("client")} className="-ml-3">
+                    Cliente <ArrowUpDown className="ml-2 size-3" />
+                  </Button>
+                </ResizableTableHead>
+                <ResizableTableHead defaultWidth={140} storageKey="parc-tax">
+                  <Button variant="ghost" size="sm" onClick={() => toggleSort("tax")} className="-ml-3">
+                    Imposto <ArrowUpDown className="ml-2 size-3" />
+                  </Button>
+                </ResizableTableHead>
+                <ResizableTableHead defaultWidth={100} storageKey="parc-num">
+                  <Button variant="ghost" size="sm" onClick={() => toggleSort("installment")} className="-ml-3">
+                    Parcela <ArrowUpDown className="ml-2 size-3" />
+                  </Button>
+                </ResizableTableHead>
+                <ResizableTableHead defaultWidth={180} storageKey="parc-due">
+                  <Button variant="ghost" size="sm" onClick={() => toggleSort("dueDate")} className="-ml-3">
+                    Vencimento <ArrowUpDown className="ml-2 size-3" />
+                  </Button>
+                </ResizableTableHead>
+                <ResizableTableHead defaultWidth={140} storageKey="parc-status">
+                  <Button variant="ghost" size="sm" onClick={() => toggleSort("status")} className="-ml-3">
+                    Status <ArrowUpDown className="ml-2 size-3" />
+                  </Button>
+                </ResizableTableHead>
                 <ResizableTableHead defaultWidth={180} storageKey="parc-actions">Ações Rápidas</ResizableTableHead>
                 <TableHead className="w-[50px]"></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredInstallments.length === 0 ? (
+              {sortedInstallments.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={9} className="py-12">
                     <div className="flex flex-col items-center justify-center text-center gap-2">
@@ -656,7 +704,7 @@ export default function ParcelamentosPage() {
                   </TableCell>
                 </TableRow>
               ) : (
-                filteredInstallments.map((installment) => {
+                sortedInstallments.map((installment) => {
                   const status = getStatus(installment)
                   const dueDate = calculateDueDate(installment)
                   return (

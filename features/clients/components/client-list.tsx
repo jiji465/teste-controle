@@ -46,7 +46,7 @@ export function ClientList({ clients, onUpdate }: ClientListProps) {
   const [statusFilter, setStatusFilter] = useState<string>("all")
   const [activityFilter, setActivityFilter] = useState<string>("all")
   const [stateFilter, setStateFilter] = useState<string>("all")
-  const [sortBy, setSortBy] = useState<"name" | "cnpj" | "regime" | "state" | "status">("name")
+  const [sortBy, setSortBy] = useState<"name" | "cnpj" | "regime" | "activity" | "contact" | "state" | "status">("name")
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc")
   const [confirmState, setConfirmState] = useState<ConfirmState>(null)
 
@@ -111,6 +111,16 @@ export function ClientList({ clients, onUpdate }: ClientListProps) {
         const ra = a.taxRegime ? TAX_REGIME_LABELS[a.taxRegime] : ""
         const rb = b.taxRegime ? TAX_REGIME_LABELS[b.taxRegime] : ""
         cmp = ra.localeCompare(rb, "pt-BR")
+      } else if (sortBy === "activity") {
+        const aa = a.businessActivity
+          ? BUSINESS_ACTIVITY_LABELS[a.businessActivity as BusinessActivity] ?? a.businessActivity
+          : ""
+        const bb = b.businessActivity
+          ? BUSINESS_ACTIVITY_LABELS[b.businessActivity as BusinessActivity] ?? b.businessActivity
+          : ""
+        cmp = aa.localeCompare(bb, "pt-BR")
+      } else if (sortBy === "contact") {
+        cmp = (a.email ?? "").localeCompare(b.email ?? "", "pt-BR")
       } else if (sortBy === "state") {
         cmp = (a.state ?? "").localeCompare(b.state ?? "")
       } else if (sortBy === "status") {
@@ -427,7 +437,18 @@ export function ClientList({ clients, onUpdate }: ClientListProps) {
                   <ArrowUpDown className="ml-2 size-3" />
                 </Button>
               </ResizableTableHead>
-              <ResizableTableHead defaultWidth={220} storageKey="clientes-contact">E-mail / Telefone</ResizableTableHead>
+              <ResizableTableHead defaultWidth={170} storageKey="clientes-activity">
+                <Button variant="ghost" size="sm" onClick={() => toggleSort("activity")} className="-ml-3">
+                  Atividade
+                  <ArrowUpDown className="ml-2 size-3" />
+                </Button>
+              </ResizableTableHead>
+              <ResizableTableHead defaultWidth={220} storageKey="clientes-contact">
+                <Button variant="ghost" size="sm" onClick={() => toggleSort("contact")} className="-ml-3">
+                  E-mail / Telefone
+                  <ArrowUpDown className="ml-2 size-3" />
+                </Button>
+              </ResizableTableHead>
               <ResizableTableHead defaultWidth={140} storageKey="clientes-estado">
                 <Button variant="ghost" size="sm" onClick={() => toggleSort("state")} className="-ml-3">
                   Estado
@@ -446,7 +467,7 @@ export function ClientList({ clients, onUpdate }: ClientListProps) {
           <TableBody>
             {filteredClients.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
+                <TableCell colSpan={9} className="text-center text-muted-foreground py-8">
                   <div className="flex flex-col items-center justify-center text-center p-8">
                     <Building2 className="h-12 w-12 text-muted-foreground mb-4 opacity-20" />
                     <h3 className="text-lg font-medium text-foreground">Nenhuma empresa encontrada</h3>
@@ -497,6 +518,16 @@ export function ClientList({ clients, onUpdate }: ClientListProps) {
                         className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${TAX_REGIME_COLORS[client.taxRegime]}`}
                       >
                         {TAX_REGIME_LABELS[client.taxRegime]}
+                      </span>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">—</span>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    {client.businessActivity ? (
+                      <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                        <Briefcase className="size-3" />
+                        {BUSINESS_ACTIVITY_LABELS[client.businessActivity as BusinessActivity] ?? client.businessActivity}
                       </span>
                     ) : (
                       <span className="text-xs text-muted-foreground">—</span>
