@@ -85,7 +85,7 @@ export const ObligationList = forwardRef<ObligationListHandle, ObligationListPro
   const [viewingObligation, setViewingObligation] = useState<ObligationWithDetails | undefined>()
   const [isFormOpen, setIsFormOpen] = useState(false)
   const [isDetailsOpen, setIsDetailsOpen] = useState(false)
-  const [sortBy, setSortBy] = useState<"dueDate" | "client" | "status">("dueDate")
+  const [sortBy, setSortBy] = useState<"dueDate" | "client" | "status" | "name">("dueDate")
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc")
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [bulkEditOpen, setBulkEditOpen] = useState(false)
@@ -139,6 +139,8 @@ export const ObligationList = forwardRef<ObligationListHandle, ObligationListPro
         comparison = new Date(a.calculatedDueDate).getTime() - new Date(b.calculatedDueDate).getTime()
       } else if (sortBy === "client") {
         comparison = a.client.name.localeCompare(b.client.name)
+      } else if (sortBy === "name") {
+        comparison = a.name.localeCompare(b.name, "pt-BR")
       } else if (sortBy === "status") {
         // Usa effectiveStatus pra que pendentes vencidas (que são overdue na realidade)
         // sejam ordenadas como overdue, não como pending.
@@ -536,7 +538,7 @@ export const ObligationList = forwardRef<ObligationListHandle, ObligationListPro
     )
   }
 
-  const toggleSort = (field: "dueDate" | "client" | "status") => {
+  const toggleSort = (field: "dueDate" | "client" | "status" | "name") => {
     if (sortBy === field) {
       setSortOrder(sortOrder === "asc" ? "desc" : "asc")
     } else {
@@ -780,7 +782,12 @@ export const ObligationList = forwardRef<ObligationListHandle, ObligationListPro
                   aria-label="Selecionar todas"
                 />
               </TableHead>
-              <ResizableTableHead defaultWidth={280} storageKey="obrigacoes-name">Obrigação</ResizableTableHead>
+              <ResizableTableHead defaultWidth={280} storageKey="obrigacoes-name">
+                <Button variant="ghost" size="sm" onClick={() => toggleSort("name")} className="-ml-3">
+                  Obrigação
+                  <ArrowUpDown className="ml-2 size-3" />
+                </Button>
+              </ResizableTableHead>
               <ResizableTableHead defaultWidth={260} storageKey="obrigacoes-client">
                 <Button variant="ghost" size="sm" onClick={() => toggleSort("client")} className="-ml-3">
                   Cliente
