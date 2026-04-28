@@ -101,7 +101,19 @@ export function InstallmentDetails({
 
   const calcDueDate = dueDateFor(installment.currentInstallment)
   const overdue = installment.status !== "completed" && isOverdue(calcDueDate)
-  const effectiveStatus = overdue ? "overdue" : installment.status
+  // Status efetivo alinhado com getStatus de app/parcelamentos/page.tsx:
+  // se há atividade (sentAt ou paidAt em qualquer parcela), está em
+  // andamento mesmo que i.status seja "pending" no banco.
+  const hasActivity = (installment.paidInstallments ?? []).some(
+    (p) => p.sentAt || p.paidAt,
+  )
+  const effectiveStatus = overdue
+    ? "overdue"
+    : installment.status === "completed"
+      ? "completed"
+      : hasActivity
+        ? "in_progress"
+        : installment.status
 
   // Progresso baseado em parcelas EFETIVAMENTE pagas (com paidAt).
   // O array paidInstallments agora pode conter parcelas só enviadas

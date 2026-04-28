@@ -138,16 +138,27 @@ export default function ParcelamentosPage() {
     return adjustForWeekend(date, i.weekendRule)
   }
 
-  /** Status efetivo — segue mesmo padrão de Impostos:
+  /** Status efetivo do parcelamento:
    *   - completed: status no banco === completed
    *   - overdue: data atual da parcela passou e não está concluído
-   *   - in_progress / pending: como está no banco */
+   *   - in_progress: tem qualquer parcela enviada ou paga (derivado), OU
+   *     o usuário clicou manualmente "Iniciar" (i.status === "in_progress")
+   *   - pending: nada enviado/pago e usuário não iniciou
+   *
+   * O derivado de "in_progress" via paidInstallments existe porque o card
+   * de detalhes permite "Marcar enviada" / "Confirmar pgto" sem passar
+   * pelo botão "Iniciar" — sem essa derivação, o badge ficava "Pendente"
+   * mesmo com parcelas pagas. Bug reportado e diagnosticado pelo agent
+   * debugger.
+   */
   const getStatus = (i: Installment): "pending" | "in_progress" | "completed" | "overdue" => {
     if (i.status === "completed") return "completed"
     const due = calculateDueDate(i)
     const today = new Date()
     today.setHours(0, 0, 0, 0)
     if (due < today) return "overdue"
+    const hasActivity = (i.paidInstallments ?? []).some((p) => p.sentAt || p.paidAt)
+    if (hasActivity) return "in_progress"
     return i.status
   }
 
