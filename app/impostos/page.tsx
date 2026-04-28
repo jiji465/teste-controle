@@ -52,6 +52,7 @@ import type { Tax, TaxRegime } from "@/lib/types"
 import { TAX_REGIME_LABELS, TAX_REGIME_COLORS } from "@/lib/types"
 import { useData } from "@/contexts/data-context"
 import { useSelectedPeriod } from "@/hooks/use-selected-period"
+import { statusLabel, priorityLabel } from "@/lib/labels"
 
 const RECURRENCE_LABELS: Record<string, string> = {
   monthly: "Mensal",
@@ -1102,24 +1103,4 @@ export default function ImpostosPage() {
       </Dialog>
     </div>
   )
-}
-
-function statusLabel(s: string): string {
-  switch (s) {
-    case "pending": return "Pendente"
-    case "in_progress": return "Em andamento"
-    case "completed": return "Concluído"
-    case "overdue": return "Atrasado"
-    default: return s
-  }
-}
-
-function priorityLabel(p: string): string {
-  switch (p) {
-    case "urgent": return "Urgente"
-    case "high": return "Alta"
-    case "medium": return "Média"
-    case "low": return "Baixa"
-    default: return p
-  }
 }

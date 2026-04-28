@@ -78,6 +78,8 @@ import {
 } from "@/lib/date-utils"
 import { useData } from "@/contexts/data-context"
 import { useSelectedPeriod } from "@/hooks/use-selected-period"
+import { useUrlState } from "@/hooks/use-url-state"
+import { statusLabel, priorityLabel } from "@/lib/labels"
 import { toast } from "sonner"
 
 export default function ParcelamentosPage() {
@@ -92,9 +94,12 @@ export default function ParcelamentosPage() {
   const { isInPeriod, periodLabel, isFiltering } = useSelectedPeriod()
 
   // ─── Estado de filtro / ordenação / UI ───────────────────────────────────
-  const [statusFilter, setStatusFilter] = useState<string>("all")
-  const [clientFilter, setClientFilter] = useState<string>("all")
-  const [priorityFilter, setPriorityFilter] = useState<string>("all")
+  // Filtros persistidos no URL pra permitir compartilhar links com filtros
+  // aplicados e que o histórico do navegador (voltar/avançar) preserve estado.
+  // Igual ao padrão de /impostos.
+  const [statusFilter, setStatusFilter] = useUrlState("tab")
+  const [clientFilter, setClientFilter] = useUrlState("client")
+  const [priorityFilter, setPriorityFilter] = useUrlState("priority")
   const [searchTerm, setSearchTerm] = useState("")
   const [sortBy, setSortBy] = useState<"name" | "client" | "dueDate" | "status">("dueDate")
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc")
@@ -232,7 +237,9 @@ export default function ParcelamentosPage() {
       await refreshData()
     } catch (e) {
       console.error("[parcelamentos] complete error:", e)
-      toast.error("Erro ao concluir parcela")
+      // Mensagem do erro vem do guard de actions.ts quando registro tá
+      // inconsistente. Senão usa fallback genérico.
+      toast.error(e instanceof Error ? e.message : "Erro ao concluir parcela")
     }
   }
 
@@ -315,16 +322,25 @@ export default function ParcelamentosPage() {
       onConfirm: async () => {
         setBulkLoading(true)
         try {
-          const targets = installments.filter(
-            (i) => selectedIds.has(i.id) && i.status !== "completed",
+          // Filtra também por currentInstallment válido pra evitar erro
+          // do guard em registros inconsistentes (silencia em vez de
+          // explodir o lote inteiro). Reportamos quantos foram pulados.
+          const all = installments.filter((i) => selectedIds.has(i.id) && i.status !== "completed")
+          const targets = all.filter(
+            (i) => i.currentInstallment >= 1 && i.currentInstallment <= i.installmentCount,
           )
+          const skipped = all.length - targets.length
           await Promise.all(
             targets.map((i) => {
               const result = payCurrentInstallment(i)
               return saveInstallment(result.updated)
             }),
           )
-          toast.success(`${targets.length} parcelas pagas`)
+          toast.success(
+            skipped > 0
+              ? `${targets.length} parcelas pagas · ${skipped} ignorada${skipped > 1 ? "s" : ""} (registro inconsistente)`
+              : `${targets.length} parcelas pagas`,
+          )
           clearSelection()
           await refreshData()
         } finally {
@@ -667,8 +683,144 @@ export default function ParcelamentosPage() {
               ]}
             />
 
-            {/* Tabela */}
-            <div className="border rounded-lg">
+            {/* Mobile: cards (até md) — mesmo padrão de /impostos.
+                Em telas pequenas a tabela horizontal fica difícil de ler;
+                cards com hierarquia vertical funcionam melhor. */}
+            <div className="md:hidden space-y-2">
+              {visibleInstallments.length === 0 ? (
+                <div className="border-2 border-dashed rounded-lg py-10 px-4 text-center">
+                  <div className="size-10 rounded-full bg-muted flex items-center justify-center mx-auto mb-2">
+                    <CreditCard className="size-5 text-muted-foreground" />
+                  </div>
+                  <p className="font-medium text-sm">
+                    {installments.length === 0
+                      ? "Nenhum parcelamento cadastrado"
+                      : "Nenhum parcelamento neste filtro"}
+                  </p>
+                  {installments.length === 0 && (
+                    <Button size="sm" onClick={handleNew} className="mt-3">
+                      <Plus className="size-3.5 mr-1.5" /> Novo Parcelamento
+                    </Button>
+                  )}
+                </div>
+              ) : (
+                visibleInstallments.map((i) => {
+                  const status = getStatus(i)
+                  const dueDate = calculateDueDate(i)
+                  const isSelected = selectedIds.has(i.id)
+                  return (
+                    <div
+                      key={i.id}
+                      className={`border rounded-lg p-3 space-y-2 cursor-pointer hover:bg-muted/30 transition-colors ${
+                        isSelected
+                          ? "bg-primary/5 border-primary/40"
+                          : status === "overdue"
+                            ? "bg-red-50/50 dark:bg-red-950/10 border-red-200 dark:border-red-900"
+                            : "bg-card"
+                      }`}
+                      onClick={() => handleView(i)}
+                    >
+                      <div className="flex items-start gap-2">
+                        <div onClick={(e) => e.stopPropagation()}>
+                          <Checkbox
+                            checked={isSelected}
+                            onCheckedChange={() => toggleSelect(i.id)}
+                            className="mt-0.5"
+                          />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-medium text-sm">{i.name}</span>
+                            {i.priority && i.priority !== "medium" && (
+                              <Badge
+                                variant="outline"
+                                className={`text-[10px] py-0 px-1.5 ${
+                                  i.priority === "urgent"
+                                    ? "border-red-500 text-red-700 dark:text-red-400"
+                                    : i.priority === "high"
+                                      ? "border-orange-500 text-orange-700 dark:text-orange-400"
+                                      : "border-blue-500 text-blue-700 dark:text-blue-400"
+                                }`}
+                              >
+                                {i.priority === "urgent" ? "Urgente" : i.priority === "high" ? "Alta" : "Baixa"}
+                              </Badge>
+                            )}
+                          </div>
+                        </div>
+                        {getStatusBadge(i)}
+                      </div>
+
+                      <div className="ml-6 grid grid-cols-2 gap-2 text-xs">
+                        <div className="col-span-2">
+                          <span className="text-muted-foreground">Cliente:</span>{" "}
+                          <span className="font-medium">{getClientName(i.clientId)}</span>
+                        </div>
+                        {i.taxId && (
+                          <div className="col-span-2">
+                            <span className="text-muted-foreground">Imposto:</span>{" "}
+                            <span className="font-medium">{getTaxName(i.taxId)}</span>
+                          </div>
+                        )}
+                        <div>
+                          <span className="text-muted-foreground">Parcela:</span>{" "}
+                          <span className="font-mono font-medium tabular-nums">
+                            {i.currentInstallment}/{i.installmentCount}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground">Vence:</span>{" "}
+                          <span className="font-mono font-medium">{formatDate(dueDate)}</span>
+                        </div>
+                      </div>
+
+                      <div className="ml-6 flex flex-wrap gap-1.5" onClick={(e) => e.stopPropagation()}>
+                        {status !== "completed" && (
+                          <>
+                            {status === "pending" && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => handleStart(i)}
+                                className="h-7 text-xs gap-1"
+                              >
+                                <PlayCircle className="size-3" /> Iniciar
+                              </Button>
+                            )}
+                            <Button
+                              size="sm"
+                              variant="default"
+                              onClick={() => handleComplete(i)}
+                              className="h-7 text-xs gap-1 bg-green-600 hover:bg-green-700"
+                            >
+                              <CheckCircle2 className="size-3" /> Concluir
+                            </Button>
+                          </>
+                        )}
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => handleEdit(i)}
+                          className="h-7 text-xs gap-1"
+                        >
+                          <Pencil className="size-3" /> Editar
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => handleDelete(i.id)}
+                          className="h-7 text-xs gap-1 text-destructive"
+                        >
+                          <Trash2 className="size-3" />
+                        </Button>
+                      </div>
+                    </div>
+                  )
+                })
+              )}
+            </div>
+
+            {/* Desktop: tabela (md+) */}
+            <div className="border rounded-lg hidden md:block">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -886,7 +1038,7 @@ export default function ParcelamentosPage() {
               await refreshData()
             } catch (e) {
               console.error(e)
-              toast.error("Erro ao marcar como enviada")
+              toast.error(e instanceof Error ? e.message : "Erro ao marcar como enviada")
             }
           }}
           onConfirmPayment={async (i, n) => {
@@ -924,22 +1076,3 @@ export default function ParcelamentosPage() {
   )
 }
 
-function statusLabel(s: string): string {
-  switch (s) {
-    case "pending": return "Pendente"
-    case "in_progress": return "Em andamento"
-    case "completed": return "Concluído"
-    case "overdue": return "Atrasado"
-    default: return s
-  }
-}
-
-function priorityLabel(p: string): string {
-  switch (p) {
-    case "urgent": return "Urgente"
-    case "high": return "Alta"
-    case "medium": return "Média"
-    case "low": return "Baixa"
-    default: return p
-  }
-}

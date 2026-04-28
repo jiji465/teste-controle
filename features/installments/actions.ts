@@ -69,6 +69,19 @@ export function markCurrentInstallmentAsSent(
   sentBy = "Contador",
   now: Date = new Date(),
 ): MarkAsSentResult {
+  // Guard contra registros antigos com currentInstallment fora do intervalo
+  // [1, installmentCount]. Pode acontecer com dados pré-fix de auto-recurrence
+  // ou edição manual no banco. Sem essa guarda, geraríamos uma "parcela 13/12"
+  // fantasma em paidInstallments que nem aparece no cronograma.
+  if (
+    installment.currentInstallment < 1 ||
+    installment.currentInstallment > installment.installmentCount
+  ) {
+    throw new Error(
+      `Parcela atual (${installment.currentInstallment}) está fora do intervalo válido [1, ${installment.installmentCount}] — registro inconsistente, recadastre.`,
+    )
+  }
+
   const sentNumber = installment.currentInstallment
   const ts = nowIso(now)
   const isLastSent = sentNumber >= installment.installmentCount

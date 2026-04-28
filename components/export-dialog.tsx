@@ -18,6 +18,7 @@ import { Download, FileSpreadsheet, FileText, File } from "lucide-react"
 import type { ObligationWithDetails, Client } from "@/lib/types"
 import { TAX_REGIME_LABELS } from "@/lib/types"
 import { exportToXlsx, exportToPdf, exportToCsv, timestampFilename, type ExportColumn } from "@/lib/export-utils"
+import { statusLabel, priorityLabel } from "@/lib/labels"
 import { toast } from "sonner"
 
 type ExportFmt = "xlsx" | "csv" | "pdf"
@@ -189,26 +190,6 @@ export function ExportDialog({ open, onOpenChange, obligations, clients }: Expor
       </DialogContent>
     </Dialog>
   )
-}
-
-function statusLabel(s: string): string {
-  switch (s) {
-    case "pending": return "Pendente"
-    case "in_progress": return "Em andamento"
-    case "completed": return "Concluída"
-    case "overdue": return "Atrasada"
-    default: return s
-  }
-}
-
-function priorityLabel(p: string): string {
-  switch (p) {
-    case "urgent": return "Urgente"
-    case "high": return "Alta"
-    case "medium": return "Média"
-    case "low": return "Baixa"
-    default: return p
-  }
 }
 
 function formatBR(isoDate: string): string {
