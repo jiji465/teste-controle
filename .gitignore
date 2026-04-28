@@ -27,4 +27,6 @@ yarn-error.log*
 next-env.d.ts
 
 # claude code (local worktrees, configs)
-.claude/
+# Mantém .claude/agents/ versionado pra todo mundo do time usar
+.claude/*
+!.claude/agents/
