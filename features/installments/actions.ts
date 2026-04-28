@@ -97,11 +97,15 @@ export function markCurrentInstallmentAsSent(
       currentInstallment: isLastSent
         ? installment.currentInstallment
         : sentNumber + 1,
-      // Status fica "pending" — só vira "completed" quando TODAS pagas.
-      // Se já estava "completed" por engano, força voltar pra pending.
-      status: "pending",
-      completedAt: undefined,
-      completedBy: undefined,
+      // Preserva o status atual ("pending" ou "in_progress"). Só forçamos
+      // pra "pending" quando estava "completed" por engano (estado
+      // inconsistente), porque o parcelamento todo só vira "completed"
+      // quando todas as parcelas têm paidAt.
+      status: installment.status === "completed" ? "pending" : installment.status,
+      completedAt:
+        installment.status === "completed" ? undefined : installment.completedAt,
+      completedBy:
+        installment.status === "completed" ? undefined : installment.completedBy,
       paidInstallments: records,
       history: [...(installment.history ?? []), historyEntry],
     },
