@@ -21,7 +21,7 @@ import {
   EyeOff,
 } from "lucide-react"
 import type { Client, Tax, ObligationWithDetails, InstallmentWithDetails } from "@/lib/types"
-import { buildSafeDate, isHoliday, isWeekend, calculateDueDateFromCompetency, getHolidayName } from "@/lib/date-utils"
+import { adjustForWeekend, buildSafeDate, isHoliday, isWeekend, calculateDueDateFromCompetency, getHolidayName } from "@/lib/date-utils"
 import { useSelectedPeriod } from "@/hooks/use-selected-period"
 
 type CalendarItemKind = "obligation" | "tax" | "installment"
@@ -148,11 +148,16 @@ export function FiscalCalendar({ obligations, taxes = [], installments = [], cli
     for (const i of installments) {
       const firstDue = new Date(i.firstDueDate)
       const monthsToAdd = i.currentInstallment - 1
-      const date = buildSafeDate(
+      const rawDate = buildSafeDate(
         firstDue.getFullYear(),
         firstDue.getMonth() + monthsToAdd,
         i.dueDay,
       )
+      // Aplica regra de fim de semana / feriado (anticipate / postpone /
+      // keep) — alinhado com /parcelamentos, card de detalhes, dashboard
+      // e relatório. Antes essa linha faltava, e o calendário plotava
+      // parcelas no sábado/domingo/feriado mesmo com regra "anticipate".
+      const date = adjustForWeekend(rawDate, i.weekendRule)
       items.push({
         id: i.id,
         kind: "installment",
