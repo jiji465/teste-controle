@@ -64,45 +64,53 @@ export function FilterPill({
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          style={minWidth ? { minWidth } : undefined}
-          className={cn(
-            "group inline-flex items-center gap-2 rounded-full border h-9 px-3 text-sm transition-all",
-            "hover:border-foreground/30",
-            isActive
-              ? "border-primary/50 bg-primary/5 text-primary shadow-sm"
-              : "border-border bg-background text-foreground/90",
-          )}
-        >
-          {icon && <span className={cn("shrink-0", isActive ? "text-primary" : "text-muted-foreground")}>{icon}</span>}
-          <span className={cn("font-medium", isActive ? "text-primary" : "text-muted-foreground")}>
-            {label}
-          </span>
-          {isActive && (
-            <>
-              <span className="text-muted-foreground/50">·</span>
-              <span className="font-semibold truncate max-w-[160px]">{displayValue}</span>
-            </>
-          )}
-          {isActive ? (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation()
-                onChange(defaultValue)
-              }}
-              aria-label={`Remover filtro ${label}`}
-              className="ml-0.5 -mr-1 rounded-full p-0.5 hover:bg-primary/15 transition-colors"
-            >
-              <X className="size-3" />
-            </button>
-          ) : (
-            <ChevronDown className="size-3.5 text-muted-foreground/60 group-hover:text-foreground/60 transition-colors" />
-          )}
-        </button>
-      </PopoverTrigger>
+      <div
+        style={minWidth ? { minWidth } : undefined}
+        className={cn(
+          "group inline-flex items-center rounded-full border h-9 text-sm transition-all overflow-hidden",
+          "hover:border-foreground/30",
+          isActive
+            ? "border-primary/50 bg-primary/5 text-primary shadow-sm"
+            : "border-border bg-background text-foreground/90",
+        )}
+      >
+        <PopoverTrigger asChild>
+          <button
+            type="button"
+            className={cn(
+              "inline-flex items-center gap-2 h-full pl-3 text-sm transition-colors",
+              isActive ? "pr-2" : "pr-3",
+            )}
+          >
+            {icon && <span className={cn("shrink-0", isActive ? "text-primary" : "text-muted-foreground")}>{icon}</span>}
+            <span className={cn("font-medium", isActive ? "text-primary" : "text-muted-foreground")}>
+              {label}
+            </span>
+            {isActive && (
+              <>
+                <span className="text-muted-foreground/50">·</span>
+                <span className="font-semibold truncate max-w-[160px]">{displayValue}</span>
+              </>
+            )}
+            {!isActive && (
+              <ChevronDown className="size-3.5 text-muted-foreground/60 group-hover:text-foreground/60 transition-colors" />
+            )}
+          </button>
+        </PopoverTrigger>
+        {isActive && (
+          // Botão "limpar" como IRMÃO do trigger — antes estava aninhado dentro
+          // do botão da pílula, o que é HTML inválido (button dentro de button)
+          // e fazia o clique abrir o dropdown em vez de limpar o filtro.
+          <button
+            type="button"
+            onClick={() => onChange(defaultValue)}
+            aria-label={`Remover filtro ${label}`}
+            className="h-full px-2 flex items-center hover:bg-primary/15 transition-colors border-l border-primary/20"
+          >
+            <X className="size-3" />
+          </button>
+        )}
+      </div>
       <PopoverContent className="p-0 w-[260px]" align="start">
         {searchable && (
           <div className="p-2 border-b">
@@ -179,44 +187,50 @@ export function FilterPillMonth({ icon, label, value, onChange }: FilterPillMont
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          className={cn(
-            "group inline-flex items-center gap-2 rounded-full border h-9 px-3 text-sm transition-all",
-            "hover:border-foreground/30",
-            isActive
-              ? "border-primary/50 bg-primary/5 text-primary shadow-sm"
-              : "border-border bg-background text-foreground/90",
-          )}
-        >
-          {icon && <span className={cn("shrink-0", isActive ? "text-primary" : "text-muted-foreground")}>{icon}</span>}
-          <span className={cn("font-medium", isActive ? "text-primary" : "text-muted-foreground")}>
-            {label}
-          </span>
-          {isActive && display && (
-            <>
-              <span className="text-muted-foreground/50">·</span>
-              <span className="font-semibold">{display}</span>
-            </>
-          )}
-          {isActive ? (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation()
-                onChange("")
-              }}
-              aria-label={`Remover filtro ${label}`}
-              className="ml-0.5 -mr-1 rounded-full p-0.5 hover:bg-primary/15 transition-colors"
-            >
-              <X className="size-3" />
-            </button>
-          ) : (
-            <ChevronDown className="size-3.5 text-muted-foreground/60 group-hover:text-foreground/60 transition-colors" />
-          )}
-        </button>
-      </PopoverTrigger>
+      <div
+        className={cn(
+          "group inline-flex items-center rounded-full border h-9 text-sm transition-all overflow-hidden",
+          "hover:border-foreground/30",
+          isActive
+            ? "border-primary/50 bg-primary/5 text-primary shadow-sm"
+            : "border-border bg-background text-foreground/90",
+        )}
+      >
+        <PopoverTrigger asChild>
+          <button
+            type="button"
+            className={cn(
+              "inline-flex items-center gap-2 h-full pl-3 text-sm transition-colors",
+              isActive ? "pr-2" : "pr-3",
+            )}
+          >
+            {icon && <span className={cn("shrink-0", isActive ? "text-primary" : "text-muted-foreground")}>{icon}</span>}
+            <span className={cn("font-medium", isActive ? "text-primary" : "text-muted-foreground")}>
+              {label}
+            </span>
+            {isActive && display && (
+              <>
+                <span className="text-muted-foreground/50">·</span>
+                <span className="font-semibold">{display}</span>
+              </>
+            )}
+            {!isActive && (
+              <ChevronDown className="size-3.5 text-muted-foreground/60 group-hover:text-foreground/60 transition-colors" />
+            )}
+          </button>
+        </PopoverTrigger>
+        {isActive && (
+          // Botão limpar como irmão (não pode ser button dentro de button — HTML inválido)
+          <button
+            type="button"
+            onClick={() => onChange("")}
+            aria-label={`Remover filtro ${label}`}
+            className="h-full px-2 flex items-center hover:bg-primary/15 transition-colors border-l border-primary/20"
+          >
+            <X className="size-3" />
+          </button>
+        )}
+      </div>
       <PopoverContent className="p-3 w-[240px]" align="start">
         <label className="text-xs font-medium text-muted-foreground mb-2 block">
           Selecione o mês
