@@ -4,6 +4,7 @@ import { useMemo } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { TrendingUp, CheckCircle2, Clock, AlertCircle } from "lucide-react"
 import type { ObligationWithDetails } from "@/lib/types"
+import { isOverdue } from "@/lib/date-utils"
 
 type ProductivityStatsProps = {
   obligations: ObligationWithDetails[]
@@ -11,10 +12,16 @@ type ProductivityStatsProps = {
   periodLabel?: string | null
 }
 
+/** Normaliza um Date pro início do dia local (00:00). Garante que comparações
+ *  de prazo sejam dia-a-dia, sem efeito de hora/minuto. */
+function startOfDay(date: Date): Date {
+  const d = new Date(date)
+  d.setHours(0, 0, 0, 0)
+  return d
+}
+
 export function ProductivityStats({ obligations, periodLabel }: ProductivityStatsProps) {
   const { completedCount, inProgress, overdue, onTimeRate } = useMemo(() => {
-    const now = new Date()
-
     let completed = 0
     let inProgress = 0
     let overdue = 0
@@ -22,17 +29,24 @@ export function ProductivityStats({ obligations, periodLabel }: ProductivityStat
     let totalEvaluable = 0 // obrigações que já venceram OU foram concluídas no período
 
     for (const obl of obligations) {
-      const due = new Date(obl.calculatedDueDate)
       const completedAt = obl.completedAt ? new Date(obl.completedAt) : null
 
       if (obl.status === "completed") completed++
       if (obl.status === "in_progress") inProgress++
-      if (obl.status !== "completed" && due < now) overdue++
+      // "Atrasada": data já passou (estritamente antes de hoje, dia inteiro)
+      // e ainda não foi concluída. Mesma regra usada em isOverdue/effectiveStatus.
+      if (obl.status !== "completed" && isOverdue(obl.calculatedDueDate)) overdue++
 
-      // Taxa no prazo: concluídas até a data de vencimento, sobre todas avaliáveis
-      if (completedAt || due < now) {
+      // Taxa no prazo: avalia somente obrigações concluídas OU já vencidas.
+      // "No prazo" = concluída no mesmo dia do vencimento ou antes — comparamos
+      // ambos no início do dia pra que concluir no próprio dia conte como prazo.
+      if (completedAt || isOverdue(obl.calculatedDueDate)) {
         totalEvaluable++
-        if (completedAt && completedAt <= due) completedOnTime++
+        if (completedAt) {
+          const dueDay = startOfDay(new Date(obl.calculatedDueDate))
+          const completedDay = startOfDay(completedAt)
+          if (completedDay <= dueDay) completedOnTime++
+        }
       }
     }
 

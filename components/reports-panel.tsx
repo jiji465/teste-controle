@@ -37,7 +37,7 @@ import {
   Legend,
 } from "recharts"
 import type { ObligationWithDetails, Tax, Installment, Client } from "@/lib/types"
-import { formatDate, buildSafeDate, adjustForWeekend } from "@/lib/date-utils"
+import { formatDate, buildSafeDate, adjustForWeekend, calculateDueDateFromCompetency } from "@/lib/date-utils"
 import { effectiveStatus } from "@/lib/obligation-status"
 import { getRecurrenceDescription } from "@/lib/recurrence-utils"
 
@@ -363,10 +363,36 @@ export function ReportsPanel({
     return { paid, overdue, pending, total: installmentsInPeriod.length }
   }, [installmentsInPeriod])
 
-  // Visão geral combinada
-  const taxesCompleted = taxes.filter((t) => t.status === "completed").length
-  const installmentsCompleted = installments.filter((i) => i.status === "completed").length
-  const totalAll = filteredObligations.length + taxes.length + installments.length
+  // Visão geral combinada — aplica os MESMOS filtros (período + cliente) usados
+  // pra obrigações. Antes guias/parcelamentos vinham crus (totais globais),
+  // o que dava cards inconsistentes (ex: filtro "Cliente X + Mar/2026"
+  // mostrava obrigações filtradas e guias do universo todo lado a lado).
+  const filteredTaxes = useMemo(() => {
+    return taxes.filter((t) => {
+      const date = calculateDueDateFromCompetency(t.competencyMonth, t.dueDay, t.weekendRule, t.dueMonth)
+      // Itens sem data calculável passam (não dá pra filtrar por período).
+      if (date && !passesPeriodFilter(date)) return false
+      if (clientFilter !== "all" && t.clientId !== clientFilter) return false
+      return true
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [taxes, periodFilter, clientFilter, globalPeriod, globalIsFiltering])
+
+  const filteredInstallmentsRaw = useMemo(() => {
+    return installments.filter((i) => {
+      if (clientFilter !== "all" && i.clientId !== clientFilter) return false
+      const firstDue = new Date(i.firstDueDate)
+      const monthsToAdd = i.currentInstallment - 1
+      const dueDate = buildSafeDate(firstDue.getFullYear(), firstDue.getMonth() + monthsToAdd, i.dueDay)
+      const adjustedDueDate = adjustForWeekend(dueDate, i.weekendRule)
+      return passesPeriodFilter(adjustedDueDate)
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [installments, periodFilter, clientFilter, globalPeriod, globalIsFiltering])
+
+  const taxesCompleted = filteredTaxes.filter((t) => t.status === "completed").length
+  const installmentsCompleted = filteredInstallmentsRaw.filter((i) => i.status === "completed").length
+  const totalAll = filteredObligations.length + filteredTaxes.length + filteredInstallmentsRaw.length
   const totalCompletedAll = stats.completed.length + taxesCompleted + installmentsCompleted
   const overallRate = totalAll > 0 ? Math.round((totalCompletedAll / totalAll) * 100) : 0
 
@@ -406,9 +432,9 @@ export function ReportsPanel({
       { metrica: "Taxa de conclusão (%)", valor: completionRate },
       { metrica: "Concluídas no prazo", valor: completedOnTime.length },
       { metrica: "Taxa no prazo (%)", valor: onTimeRate },
-      { metrica: "Total de guias de imposto", valor: taxes.length },
+      { metrica: "Total de guias de imposto", valor: filteredTaxes.length },
       { metrica: "Guias concluídas", valor: taxesCompleted },
-      { metrica: "Total de parcelamentos", valor: installments.length },
+      { metrica: "Total de parcelamentos", valor: filteredInstallmentsRaw.length },
       { metrica: "Parcelamentos concluídos", valor: installmentsCompleted },
       { metrica: "Taxa global combinada (%)", valor: overallRate },
     ]
@@ -625,13 +651,13 @@ export function ReportsPanel({
             <div>
               <p className="text-xs text-muted-foreground">Guias de Imposto</p>
               <p className="text-2xl font-bold tabular-nums">
-                {taxesCompleted}/{taxes.length}
+                {taxesCompleted}/{filteredTaxes.length}
               </p>
             </div>
             <div>
               <p className="text-xs text-muted-foreground">Parcelamentos</p>
               <p className="text-2xl font-bold tabular-nums">
-                {installmentsCompleted}/{installments.length}
+                {installmentsCompleted}/{filteredInstallmentsRaw.length}
               </p>
             </div>
           </div>

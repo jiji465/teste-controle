@@ -129,9 +129,12 @@ export default function DashboardPage() {
 
   useEffect(() => {
     if (!isLoading && clients.length > 0) {
-      setStats(calculateDashboardStats(clients, obligations))
+      // Passa todos os tipos pra que o "Resumo Geral" reflita obrigações +
+      // guias + parcelamentos. Antes só obrigações entravam, então marcar
+      // uma guia como concluída não afetava nenhum card do dashboard.
+      setStats(calculateDashboardStats(clients, obligations, filteredTaxes, installments, period))
     }
-  }, [isLoading, clients, obligations])
+  }, [isLoading, clients, obligations, filteredTaxes, installments, period])
 
   const updateData = async () => {
     await refreshData()
@@ -254,9 +257,9 @@ export default function DashboardPage() {
                     <WeatherGreeting accent={meta.accent} />
 
                     {/* Indicador de saúde do mês */}
-                    {stats && stats.totalObligations > 0 && (() => {
+                    {stats && stats.totalItems > 0 && (() => {
                       const healthRate = Math.round(
-                        (stats.completedThisMonth / Math.max(1, stats.totalObligations)) * 100,
+                        (stats.completedInPeriod / Math.max(1, stats.totalItems)) * 100,
                       )
                       const healthColor =
                         healthRate >= 80
@@ -285,7 +288,7 @@ export default function DashboardPage() {
                             />
                           </div>
                           <p className="text-[11px] text-muted-foreground mt-1.5">
-                            {stats.completedThisMonth} de {stats.totalObligations}
+                            {stats.completedInPeriod} de {stats.totalItems}
                           </p>
                         </div>
                       )
@@ -306,7 +309,7 @@ export default function DashboardPage() {
                   <span className="text-sm font-normal text-muted-foreground">· {periodLabel}</span>
                 )}
               </h2>
-              <DashboardStatsCards stats={stats} />
+              <DashboardStatsCards stats={stats} periodLabel={periodLabel} />
             </div>
           )}
 
