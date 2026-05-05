@@ -46,23 +46,29 @@ export function getNextDueDate(
   return next
 }
 
+/** Prefixo determinístico pra IDs de itens gerados pelo motor de recorrência.
+ *  Usar `auto-${originalId}-${period}` faz o save virar idempotente:
+ *  duas execuções concorrentes (multi-tab/multi-aparelho) salvam com o
+ *  MESMO id e o upsert do Supabase deduplica naturalmente, em vez de
+ *  criar dois registros com UUIDs diferentes. */
+function deterministicAutoId(originalId: string, period: string): string {
+  return `auto-${originalId}-${period}`
+}
+
 export function generateObligationForPeriod(
   obligation: Obligation,
   period: string, // formato: "2025-01"
 ): Obligation {
-  const [year, month] = period.split("-").map(Number)
-  const dueDate = buildSafeDate(year, month - 1, obligation.dueDay)
-  const adjustedDueDate = adjustForWeekend(dueDate, obligation.weekendRule)
-
   return {
     ...obligation,
-    id: crypto.randomUUID(),
+    id: deterministicAutoId(obligation.id, period),
     status: "pending",
     completedAt: undefined,
     completedBy: undefined,
     realizationDate: undefined,
     parentObligationId: obligation.id,
     generatedFor: period,
+    competencyMonth: period,
     createdAt: new Date().toISOString(),
     history: [
       {
@@ -80,15 +86,14 @@ export function generateTaxForPeriod(
   tax: Tax,
   period: string, // formato: "2025-01"
 ): Tax {
-  const [year, month] = period.split("-").map(Number)
-
   return {
     ...tax,
-    id: crypto.randomUUID(),
+    id: deterministicAutoId(tax.id, period),
     status: "pending",
     completedAt: undefined,
     completedBy: undefined,
     realizationDate: undefined,
+    competencyMonth: period,
     createdAt: new Date().toISOString(),
     history: [
       {
