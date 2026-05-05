@@ -466,7 +466,20 @@ export default function DashboardPage() {
               <BarChart3 className="size-5" />
               Distribuição
             </h2>
-            <RegimeDistributionChart obligations={obligations} clients={clients} />
+            <RegimeDistributionChart
+              obligations={obligations}
+              clients={clients}
+              taxes={filteredTaxes}
+              installments={installments.filter((i) => {
+                const firstDue = new Date(i.firstDueDate)
+                const monthsToAdd = i.currentInstallment - 1
+                const dueDate = adjustForWeekend(
+                  buildSafeDate(firstDue.getFullYear(), firstDue.getMonth() + monthsToAdd, i.dueDay),
+                  i.weekendRule,
+                )
+                return isInPeriod(dueDate)
+              })}
+            />
           </div>
 
           {/* Próximos Vencimentos: Obrigações + Guias de Imposto */}
