@@ -11,15 +11,20 @@ import {
   PolarAngleAxis,
 } from "recharts"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
-import type { ObligationWithDetails, Client } from "@/lib/types"
+import type { ObligationWithDetails, Client, Tax, Installment } from "@/lib/types"
 import { TAX_REGIME_LABELS } from "@/lib/types"
 import { BUSINESS_ACTIVITY_LABELS, type BusinessActivity } from "@/lib/obligation-templates"
 import { effectiveStatus } from "@/lib/obligation-status"
+import { adjustForWeekend, buildSafeDate, calculateDueDateFromCompetency } from "@/lib/date-utils"
 import { CheckCircle2, Clock, AlertTriangle, Loader2, Building2, MapPin, Briefcase, ShoppingBag, Factory, Layers } from "lucide-react"
 
 type RegimeDistributionChartProps = {
   obligations: ObligationWithDetails[]
   clients: Client[]
+  /** Guias filtradas pelo período. Quando ausentes, o card só conta obrigações. */
+  taxes?: Tax[]
+  /** Parcelamentos filtrados pelo período. Quando ausentes, idem. */
+  installments?: Installment[]
 }
 
 // === Cores base (cada uma vira um gradient via <defs>) ===
@@ -48,35 +53,76 @@ const STATE_COLORS = [
 ]
 
 // ============================================================
-// CARD 1 — Saúde das Obrigações (radial gauge + chips de status)
+// CARD 1 — Saúde das Tarefas (radial gauge + chips de status)
+// Soma obrigações + guias + parcelamentos do período.
 // ============================================================
-function ObligationsHealthCard({ obligations }: { obligations: ObligationWithDetails[] }) {
+function ObligationsHealthCard({
+  obligations,
+  taxes = [],
+  installments = [],
+}: {
+  obligations: ObligationWithDetails[]
+  taxes?: Tax[]
+  installments?: Installment[]
+}) {
   const counts = useMemo(() => {
     const c: Record<string, number> = { pending: 0, in_progress: 0, completed: 0, overdue: 0 }
-    // Usa effectiveStatus pra contar como "overdue" também os pending com data passada
-    // (o status no banco fica como pending, mas pro user é atrasada)
+
+    // Usa effectiveStatus pra contar como "overdue" também os pending/in_progress
+    // com data passada (o status no banco fica como pending, mas pro user é atrasada).
     for (const o of obligations) {
       const s = effectiveStatus(o)
       if (c[s] !== undefined) c[s]++
     }
-    return c
-  }, [obligations])
 
-  const total = obligations.length
+    // Guias: enriquece com calculatedDueDate antes de aplicar effectiveStatus.
+    for (const t of taxes) {
+      const date = calculateDueDateFromCompetency(t.competencyMonth, t.dueDay, t.weekendRule, t.dueMonth)
+      const enriched = { status: t.status, calculatedDueDate: date ?? undefined }
+      const s = effectiveStatus(enriched)
+      if (c[s] !== undefined) c[s]++
+    }
+
+    // Parcelamentos: usa data da parcela atual.
+    for (const i of installments) {
+      const firstDue = new Date(i.firstDueDate)
+      const monthsToAdd = i.currentInstallment - 1
+      const dueDate = adjustForWeekend(
+        buildSafeDate(firstDue.getFullYear(), firstDue.getMonth() + monthsToAdd, i.dueDay),
+        i.weekendRule,
+      )
+      const enriched = { status: i.status, calculatedDueDate: dueDate }
+      const s = effectiveStatus(enriched)
+      if (c[s] !== undefined) c[s]++
+    }
+    return c
+  }, [obligations, taxes, installments])
+
+  const total = obligations.length + taxes.length + installments.length
   const completedPct = total > 0 ? Math.round((counts.completed / total) * 100) : 0
   const gaugeColor =
     completedPct >= 80 ? "#10b981" : completedPct >= 50 ? "#3b82f6" : completedPct >= 30 ? "#f59e0b" : "#ef4444"
 
   const gaugeData = [{ name: "completed", value: completedPct }]
 
+  // Monta uma descrição que mostra o breakdown quando há mais de um tipo.
+  const breakdownParts: string[] = []
+  if (obligations.length) breakdownParts.push(`${obligations.length} obrig.`)
+  if (taxes.length) breakdownParts.push(`${taxes.length} guias`)
+  if (installments.length) breakdownParts.push(`${installments.length} parc.`)
+  const description =
+    breakdownParts.length > 1
+      ? `${total} no total · ${breakdownParts.join(" · ")}`
+      : `${total} ${total === 1 ? "item" : "itens"} no total`
+
   return (
     <Card className="overflow-hidden transition-shadow hover:shadow-lg">
       <CardHeader className="pb-1">
         <CardTitle className="text-base flex items-center justify-between">
-          <span>Saúde das Obrigações</span>
+          <span>Saúde das Tarefas</span>
           <CheckCircle2 className="size-4 text-emerald-600" />
         </CardTitle>
-        <CardDescription>{total} {total === 1 ? "obrigação" : "obrigações"} no total</CardDescription>
+        <CardDescription>{description}</CardDescription>
       </CardHeader>
       <CardContent className="pt-2">
         <div className="relative">
@@ -445,11 +491,24 @@ function StatesCard({ clients }: { clients: Client[] }) {
 // ============================================================
 // Wrapper público — grid adaptativo (preenche o espaço com qualquer #)
 // ============================================================
-export function RegimeDistributionChart({ obligations, clients }: RegimeDistributionChartProps) {
-  if (obligations.length === 0 && clients.length === 0) return null
+export function RegimeDistributionChart({
+  obligations,
+  clients,
+  taxes = [],
+  installments = [],
+}: RegimeDistributionChartProps) {
+  const totalTasks = obligations.length + taxes.length + installments.length
+  if (totalTasks === 0 && clients.length === 0) return null
 
   const cards = [
-    obligations.length > 0 && <ObligationsHealthCard key="health" obligations={obligations} />,
+    totalTasks > 0 && (
+      <ObligationsHealthCard
+        key="health"
+        obligations={obligations}
+        taxes={taxes}
+        installments={installments}
+      />
+    ),
     clients.length > 0 && <RegimeCard key="regime" clients={clients} />,
     clients.length > 0 && <ActivityCard key="activity" clients={clients} />,
     clients.length > 0 && <StatesCard key="states" clients={clients} />,
