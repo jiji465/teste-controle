@@ -25,8 +25,11 @@ function formatCompetency(competency?: string): string | null {
 }
 
 export function UpcomingObligations({ obligations, periodLabel, outsidePeriodCount = 0 }: UpcomingObligationsProps) {
+  // Mostra tudo que ainda não foi concluído — inclui pending, in_progress e
+  // overdue (literal). A flag visual de "Atrasada" é calculada por isOverdue
+  // a partir da data, então não filtramos por status === "pending" só.
   const sortedObligations = [...obligations]
-    .filter((o) => o.status === "pending")
+    .filter((o) => o.status !== "completed")
     .sort((a, b) => new Date(a.calculatedDueDate).getTime() - new Date(b.calculatedDueDate).getTime())
     .slice(0, 8)
 

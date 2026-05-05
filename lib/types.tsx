@@ -243,11 +243,23 @@ export type InstallmentWithDetails = Installment & {
 export type DashboardStats = {
   totalClients: number
   activeClients: number
-  totalObligations: number
-  pendingObligations: number
-  completedThisMonth: number
-  overdueObligations: number
+  /** Total de itens (obrigações + guias + parcelamentos) no período selecionado. */
+  totalItems: number
+  /** Itens pendentes ou em andamento no período (não concluídos e não atrasados). */
+  pendingItems: number
+  /** Itens concluídos no período (status=completed cuja data calculada cai no período). */
+  completedInPeriod: number
+  /** Itens atrasados no período — usa effectiveStatus pra capturar
+   *  pending/in_progress com data já vencida. */
+  overdueItems: number
+  /** Itens vencendo nos próximos 7 dias (a partir de hoje), dentro do período. */
   upcomingThisWeek: number
+  /** Quebra por tipo, pra exibir contadores menores nos cards. */
+  byType: {
+    obligations: { total: number; completed: number; overdue: number; pending: number }
+    taxes: { total: number; completed: number; overdue: number; pending: number }
+    installments: { total: number; completed: number; overdue: number; pending: number }
+  }
 }
 
 export type SavedFilter = {

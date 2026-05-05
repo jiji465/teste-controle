@@ -1,16 +1,28 @@
 "use client"
 
-import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react"
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react"
 
 const MONTH_NAMES = [
   "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
   "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro",
 ]
 
+const STORAGE_KEY = "ctrl-fiscal:selected-period"
+
 /** Retorna o mês corrente como "YYYY-MM" (ex: "2026-04"). */
 function currentMonthPeriod(): string {
   const d = new Date()
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`
+}
+
+function readStoredPeriod(): string {
+  if (typeof window === "undefined") return currentMonthPeriod()
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY)
+    if (!raw) return currentMonthPeriod()
+    if (raw === "all" || /^\d{4}-\d{2}$/.test(raw)) return raw
+  } catch {}
+  return currentMonthPeriod()
 }
 
 type PeriodContextValue = {
@@ -37,9 +49,23 @@ type PeriodContextValue = {
 const PeriodContext = createContext<PeriodContextValue | null>(null)
 
 export function PeriodProvider({ children }: { children: ReactNode }) {
-  // Estado React puro: sempre começa no mês atual quando o app carrega.
-  // Sem URL, sem localStorage — reseta a cada (re)load.
+  // Inicia com o mês atual no servidor (evita mismatch de hidratação) e
+  // sincroniza com o valor persistido no localStorage logo após montar.
+  // Persistir é importante: itens concluídos numa competência diferente
+  // do mês corrente sumiam ao recarregar a página antes (ex: marquei
+  // guia de Jan/2026 e ela "desaparecia" no reload pq voltava pra Maio).
   const [period, setPeriodState] = useState<string>(currentMonthPeriod())
+
+  useEffect(() => {
+    const stored = readStoredPeriod()
+    if (stored !== period) setPeriodState(stored)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  useEffect(() => {
+    if (typeof window === "undefined") return
+    try { window.localStorage.setItem(STORAGE_KEY, period) } catch {}
+  }, [period])
 
   const setPeriod = useCallback((p: string) => {
     setPeriodState(p)
