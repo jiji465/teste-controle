@@ -16,7 +16,22 @@ import {
 } from "./recurrence-engine"
 import { buildSafeDate, toLocalDateString } from "./date-utils"
 
+// Lock in-memory: evita que duas chamadas do mesmo browser (ex: duas abas
+// abertas, ou múltiplos useEffect disparando) entrem na seção crítica ao
+// mesmo tempo. Não cobre múltiplos aparelhos — pra esse caso, os ids
+// determinísticos em generateObligationForPeriod/generateTaxForPeriod
+// garantem idempotência via upsert do Supabase.
+let runningPromise: Promise<void> | null = null
+
 export async function checkAndGenerateRecurrences(): Promise<void> {
+  if (runningPromise) return runningPromise
+  runningPromise = checkAndGenerateRecurrencesInner().finally(() => {
+    runningPromise = null
+  })
+  return runningPromise
+}
+
+async function checkAndGenerateRecurrencesInner(): Promise<void> {
   const now = new Date()
   const currentPeriod = getCurrentPeriod()
   const lastCheck = getLastRecurrenceCheck()
@@ -26,6 +41,11 @@ export async function checkAndGenerateRecurrences(): Promise<void> {
   if (lastCheck === today) {
     return
   }
+
+  // Marca AGORA, antes do trabalho pesado, pra que abas que abram durante a
+  // execução não disparem outro run em paralelo. Se algo falhar lá embaixo,
+  // o catch deixa rodar de novo (vide bloco abaixo).
+  setLastRecurrenceCheck(today)
 
   // Verifica se é o primeiro dia do mês
   if (!shouldGenerateRecurrence(now)) {
@@ -38,7 +58,10 @@ export async function checkAndGenerateRecurrences(): Promise<void> {
     // Gerar obrigações recorrentes
     const obligations = await getObligations()
     const obligationsToGenerate = obligations.filter(
-      (o) => o.autoGenerate && !o.parentObligationId, // Apenas obrigações originais
+      (o) =>
+        o.autoGenerate &&
+        !o.parentObligationId && // Apenas obrigações originais (não clones)
+        !o.id.startsWith("auto-"), // Backstop: id determinístico marca clones
     )
 
     // Cap de segurança: nunca gera mais que 12 meses adiante do mês atual,
@@ -91,18 +114,36 @@ export async function checkAndGenerateRecurrences(): Promise<void> {
       }
     }
 
-    // Gerar impostos recorrentes (com cap por recurrenceEndDate)
+    // Gerar impostos recorrentes — só clona guias explicitamente marcadas
+    // com autoGenerate=true. Guias criadas via template já vêm com todas as
+    // competências do range pré-geradas (autoGenerate=false), então não
+    // precisam passar por aqui. Sem esse filtro, o motor clonava TODA guia
+    // todo mês, gerando duplicatas em massa.
     const taxes = await getTaxes()
     const [curYear, curMonth] = currentPeriod.split("-").map(Number)
     const currentPeriodStart = buildSafeDate(curYear, curMonth - 1, 1)
     const taxesToGenerate = taxes.filter((t) => {
+      if (!t.autoGenerate) return false
       if (t.dueDay === undefined) return false
+      // Guias anuais têm regra própria (dueMonth fixo) — geração mensal não se aplica.
+      if (!t.recurrence || t.recurrence === "annual") return false
       if (t.recurrenceEndDate && new Date(t.recurrenceEndDate) < currentPeriodStart) return false
+      // Cópias já geradas pelo motor têm prefixo "auto-" no id; nunca devem
+      // virar candidatas (senão geram clones em cascata).
+      if (t.id.startsWith("auto-")) return false
       return true
     })
 
     for (const tax of taxesToGenerate) {
-      const alreadyGenerated = taxes.some((t) => t.name === tax.name && t.createdAt.startsWith(currentPeriod))
+      // Dedup duplo: por (clientId + name + competencyMonth=período) ou
+      // pelo id determinístico que generateTaxForPeriod usa. Qualquer um
+      // que case → já existe.
+      const expectedId = `auto-${tax.id}-${currentPeriod}`
+      const alreadyGenerated = taxes.some(
+        (t) =>
+          t.id === expectedId ||
+          (t.clientId === tax.clientId && t.name === tax.name && t.competencyMonth === currentPeriod),
+      )
       if (!alreadyGenerated) {
         const newTax = generateTaxForPeriod(tax, currentPeriod)
         await saveTax(newTax)
@@ -121,9 +162,10 @@ export async function checkAndGenerateRecurrences(): Promise<void> {
     // O código antigo aqui clonava o registro com currentInstallment+1 todo dia 1
     // do mês, gerando duplicatas infinitas. Bug corrigido.
 
-    setLastRecurrenceCheck(today)
   } catch (error) {
     console.error("Erro ao gerar recorrências:", error)
+    // Se algo deu errado, libera pra tentar novamente no próximo carregamento.
+    setLastRecurrenceCheck("")
   }
 }
 
