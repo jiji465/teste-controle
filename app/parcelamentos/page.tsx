@@ -138,6 +138,29 @@ export default function ParcelamentosPage() {
     return adjustForWeekend(date, i.weekendRule)
   }
 
+  /** Vencimento de UMA parcela específica (1..installmentCount). */
+  const calculateParcelaDueDate = (i: Installment, parcelNumber: number): Date => {
+    const firstDue = new Date(i.firstDueDate)
+    const date = buildSafeDate(
+      firstDue.getFullYear(),
+      firstDue.getMonth() + (parcelNumber - 1),
+      i.dueDay,
+    )
+    return adjustForWeekend(date, i.weekendRule)
+  }
+
+  /** O parcelamento "encosta" no período se QUALQUER parcela dele cair nele.
+   *  Antes o filtro usava só a parcela atual — pagar a parcela 5 em Março
+   *  fazia o parcelamento sumir do filtro de Março (currentInstallment já
+   *  era 6/Abril). Agora ele continua aparecendo enquanto qualquer parcela
+   *  do período estiver registrada (paga ou não). */
+  const installmentTouchesPeriod = (i: Installment): boolean => {
+    for (let n = 1; n <= i.installmentCount; n++) {
+      if (isInPeriod(calculateParcelaDueDate(i, n))) return true
+    }
+    return false
+  }
+
   /** Status efetivo do parcelamento:
    *   - completed: status no banco === completed
    *   - overdue: data atual da parcela passou e não está concluído
@@ -180,8 +203,11 @@ export default function ParcelamentosPage() {
       }
       if (clientFilter !== "all" && i.clientId !== clientFilter) return false
       if (priorityFilter !== "all" && i.priority !== priorityFilter) return false
-      // Filtro global por período (PeriodSwitcher do topo)
-      if (!isInPeriod(calculateDueDate(i))) return false
+      // Filtro global por período: qualquer parcela do parcelamento que caia
+      // no período faz o registro inteiro aparecer. Antes só a parcela atual
+      // contava — pagar parcela 5 em Março escondia o registro do filtro de
+      // Março porque a "atual" virava 6/Abril.
+      if (!installmentTouchesPeriod(i)) return false
       return true
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -206,9 +232,9 @@ export default function ParcelamentosPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filteredInstallments, sortBy, sortOrder, clients, taxes])
 
-  // Stats por status — respeita PeriodSwitcher (igual aos outros)
+  // Stats por status — respeita PeriodSwitcher (qualquer parcela no período)
   const statusCounts = useMemo(() => {
-    const inPeriod = installments.filter((i) => isInPeriod(calculateDueDate(i)))
+    const inPeriod = installments.filter((i) => installmentTouchesPeriod(i))
     const counts = { all: inPeriod.length, pending: 0, in_progress: 0, completed: 0, overdue: 0 }
     inPeriod.forEach((i) => {
       counts[getStatus(i)]++

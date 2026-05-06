@@ -10,6 +10,7 @@ import { UpcomingObligations } from "@/components/upcoming-obligations"
 import { ClientOverview } from "@/components/client-overview"
 import { RecentActivity } from "@/components/recent-activity"
 import { UpcomingTaxes } from "@/components/upcoming-taxes"
+import { UpcomingInstallments } from "@/components/upcoming-installments"
 
 const RegimeDistributionChart = dynamic(
   () => import("@/components/regime-distribution-chart").then((m) => m.RegimeDistributionChart),
@@ -118,23 +119,41 @@ export default function DashboardPage() {
     })
   }, [taxes, isLoading, isInPeriod])
 
-  // Contagem total de taxes/obligations fora do filtro pra mostrar contexto quando vazio
+  // Parcelamentos cuja parcela atual cai no período selecionado.
+  // Usa a parcela atual (não todas) — se já avançou, mostra a próxima a pagar.
+  const filteredInstallments = useMemo(() => {
+    if (isLoading) return []
+    return installments.filter((i) => {
+      const firstDue = new Date(i.firstDueDate)
+      const monthsToAdd = i.currentInstallment - 1
+      const dueDate = adjustForWeekend(
+        buildSafeDate(firstDue.getFullYear(), firstDue.getMonth() + monthsToAdd, i.dueDay),
+        i.weekendRule,
+      )
+      return isInPeriod(dueDate)
+    })
+  }, [installments, isLoading, isInPeriod])
+
+  // Contagem total de taxes/obligations/installments fora do filtro pra mostrar contexto quando vazio
   const totalsOutsidePeriod = useMemo(() => {
-    if (!isFiltering) return { taxes: 0, obligations: 0 }
+    if (!isFiltering) return { taxes: 0, obligations: 0, installments: 0 }
     return {
       taxes: taxes.filter((t) => t.status !== "completed").length - filteredTaxes.filter((t) => t.status !== "completed").length,
       obligations: rawObligations.filter((o) => o.status !== "completed").length - obligations.filter((o) => o.status !== "completed").length,
+      installments:
+        installments.filter((i) => i.status !== "completed").length -
+        filteredInstallments.filter((i) => i.status !== "completed").length,
     }
-  }, [isFiltering, taxes, filteredTaxes, rawObligations, obligations])
+  }, [isFiltering, taxes, filteredTaxes, rawObligations, obligations, installments, filteredInstallments])
 
   useEffect(() => {
     if (!isLoading && clients.length > 0) {
       // Passa todos os tipos pra que o "Resumo Geral" reflita obrigações +
       // guias + parcelamentos. Antes só obrigações entravam, então marcar
       // uma guia como concluída não afetava nenhum card do dashboard.
-      setStats(calculateDashboardStats(clients, obligations, filteredTaxes, installments, period))
+      setStats(calculateDashboardStats(clients, obligations, filteredTaxes, filteredInstallments, period))
     }
-  }, [isLoading, clients, obligations, filteredTaxes, installments, period])
+  }, [isLoading, clients, obligations, filteredTaxes, filteredInstallments, period])
 
   const updateData = async () => {
     await refreshData()
@@ -159,7 +178,13 @@ export default function DashboardPage() {
         const dueDate = buildSafeDate(firstDue.getFullYear(), firstDue.getMonth() + monthsToAdd, inst.dueDay)
         const adjustedDueDate = adjustForWeekend(dueDate, inst.weekendRule)
         if (!isInPeriod(adjustedDueDate)) return false
-        return adjustedDueDate <= new Date()
+        // Normaliza hora pra 00:00 dos dois lados — sem isso, "vence hoje"
+        // virava crítico só a partir das 00:00:01 (desalinhado com isOverdue).
+        const dueDay = new Date(adjustedDueDate)
+        dueDay.setHours(0, 0, 0, 0)
+        const today = new Date()
+        today.setHours(0, 0, 0, 0)
+        return dueDay <= today
       }),
     [installments, isInPeriod],
   )
@@ -470,15 +495,7 @@ export default function DashboardPage() {
               obligations={obligations}
               clients={clients}
               taxes={filteredTaxes}
-              installments={installments.filter((i) => {
-                const firstDue = new Date(i.firstDueDate)
-                const monthsToAdd = i.currentInstallment - 1
-                const dueDate = adjustForWeekend(
-                  buildSafeDate(firstDue.getFullYear(), firstDue.getMonth() + monthsToAdd, i.dueDay),
-                  i.weekendRule,
-                )
-                return isInPeriod(dueDate)
-              })}
+              installments={filteredInstallments}
             />
           </div>
 
@@ -491,7 +508,7 @@ export default function DashboardPage() {
                 <span className="text-sm font-normal text-muted-foreground">· {periodLabel}</span>
               )}
             </h2>
-            <div className="grid gap-4 lg:grid-cols-2">
+            <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
               <UpcomingObligations
                 obligations={obligations}
                 periodLabel={periodLabel}
@@ -502,6 +519,12 @@ export default function DashboardPage() {
                 clients={clients}
                 periodLabel={periodLabel}
                 outsidePeriodCount={totalsOutsidePeriod.taxes}
+              />
+              <UpcomingInstallments
+                installments={filteredInstallments}
+                clients={clients}
+                periodLabel={periodLabel}
+                outsidePeriodCount={totalsOutsidePeriod.installments}
               />
             </div>
           </div>

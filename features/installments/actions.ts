@@ -102,6 +102,18 @@ export function markCurrentInstallmentAsSent(
     user: sentBy,
   }
 
+  // Sincroniza o status do parcelamento com o estado real:
+  // - se ainda não estava "in_progress" e tem qualquer parcela enviada/paga,
+  //   vira "in_progress" agora. Antes, isso só era detectado em runtime na
+  //   página /parcelamentos via paidInstallments — outras telas (dashboard,
+  //   relatórios, calendário fiscal) viam o status "pending" no banco e
+  //   mostravam "Pendente" mesmo com parcelas em andamento. Agora persiste.
+  // - "completed" só quando totalmente pago (continua a regra antiga).
+  const newStatus =
+    installment.status === "completed"
+      ? "pending" // estado inconsistente antigo: completed mas com parcela a enviar
+      : "in_progress"
+
   return {
     updated: {
       ...installment,
@@ -110,11 +122,7 @@ export function markCurrentInstallmentAsSent(
       currentInstallment: isLastSent
         ? installment.currentInstallment
         : sentNumber + 1,
-      // Preserva o status atual ("pending" ou "in_progress"). Só forçamos
-      // pra "pending" quando estava "completed" por engano (estado
-      // inconsistente), porque o parcelamento todo só vira "completed"
-      // quando todas as parcelas têm paidAt.
-      status: installment.status === "completed" ? "pending" : installment.status,
+      status: newStatus,
       completedAt:
         installment.status === "completed" ? undefined : installment.completedAt,
       completedBy:
@@ -168,13 +176,17 @@ export function confirmInstallmentPayment(
   }
 
   // currentInstallment fica como está (envio é independente de pagamento).
-  // Só ajustamos status do parcelamento todo quando totalmente pago.
+  // Status:
+  //   - fully paid → "completed"
+  //   - parcial → "in_progress" (persiste no banco pra outras telas verem)
+  // Antes, status ficava "pending" mesmo com parcelas pagas, e só a página
+  // /parcelamentos detectava in_progress derivando do paidInstallments.
   return {
     updated: {
       ...installment,
       ...(fullyPaid
         ? { status: "completed", completedAt: ts, completedBy: paidBy }
-        : {}),
+        : { status: "in_progress" }),
       paidInstallments: records,
       history: [...(installment.history ?? []), historyEntry],
     },
