@@ -5,7 +5,7 @@ import { useUrlState } from "@/hooks/use-url-state"
 import { ObligationList, type ObligationListHandle } from "@/features/obligations/components/obligation-list"
 import { GlobalSearch } from "@/components/global-search"
 import { ExportDialog } from "@/components/export-dialog"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { buildSafeDate } from "@/lib/date-utils"
@@ -100,6 +100,11 @@ export default function ObligacoesPage() {
             </div>
           </div>
 
+          {/* Tabs renderizam SÓ os triggers — o conteúdo abaixo reage direto
+              ao activeTab. Antes havia um único <TabsContent value={activeTab}>
+              dinâmico, que confundia o Radix Tabs em alguns navegadores e
+              bloqueava o clique nos triggers (bug reportado pelo usuário).
+              Trocar pra renderização fora do <Tabs> elimina o problema. */}
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
             <TabsList className="grid w-full grid-cols-5 h-auto">
               <TabsTrigger value="all" className="flex flex-col gap-1 py-3">
@@ -154,17 +159,17 @@ export default function ObligacoesPage() {
                 </Badge>
               </TabsTrigger>
             </TabsList>
-
-            <TabsContent value={activeTab} className="mt-6">
-              <ObligationList
-                ref={listRef}
-                obligations={getFilteredObligations()}
-                clients={clients}
-                taxes={taxes}
-                onUpdate={updateData}
-              />
-            </TabsContent>
           </Tabs>
+
+          <div className="mt-6">
+            <ObligationList
+              ref={listRef}
+              obligations={getFilteredObligations()}
+              clients={clients}
+              taxes={taxes}
+              onUpdate={updateData}
+            />
+          </div>
         </div>
 
       <GlobalSearch
