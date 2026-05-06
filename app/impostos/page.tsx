@@ -6,7 +6,7 @@ import { useUrlState } from "@/hooks/use-url-state"
 import { TaxForm } from "@/features/taxes/components/tax-form"
 import { TaxDetails } from "@/features/taxes/components/tax-details"
 import { GlobalSearch } from "@/components/global-search"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -591,8 +591,11 @@ export default function ImpostosPage() {
                 </Badge>
               </TabsTrigger>
             </TabsList>
+          </Tabs>
 
-            <TabsContent value={activeTab} className="mt-6 space-y-4">
+          {/* Conteúdo fora de <TabsContent value={dinâmico}> — esse padrão
+              travava o clique dos triggers em alguns navegadores. */}
+          <div className="mt-6 space-y-4">
               <div className="flex items-center justify-between gap-4 flex-wrap">
                 <div className="relative flex-1 min-w-[280px]">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
@@ -1028,8 +1031,7 @@ export default function ImpostosPage() {
                   </Table>
                 </div>
               </div>
-            </TabsContent>
-          </Tabs>
+          </div>
         </div>
 
       <TaxForm tax={editingTax} clients={clients} open={isFormOpen} onOpenChange={setIsFormOpen} onSave={handleSave} />
