@@ -28,7 +28,7 @@ import {
 } from "@/components/ui/table"
 import { ResizableTableHead } from "@/components/ui/resizable-table-head"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -637,8 +637,12 @@ export default function ParcelamentosPage() {
               </Badge>
             </TabsTrigger>
           </TabsList>
+        </Tabs>
 
-          <TabsContent value={statusFilter} className="mt-6 space-y-4">
+        {/* Conteúdo fora de <TabsContent value={dinâmico}> — esse padrão
+            travava o clique dos triggers em alguns navegadores (Edge no caso
+            de parcelamentos, Chrome no caso de obrigações). */}
+        <div className="mt-6 space-y-4">
             {/* Busca */}
             <div className="flex items-center justify-between gap-4 flex-wrap">
               <div className="relative flex-1 min-w-[280px]">
@@ -1044,8 +1048,7 @@ export default function ParcelamentosPage() {
                 </TableBody>
               </Table>
             </div>
-          </TabsContent>
-        </Tabs>
+        </div>
       </div>
 
       <InstallmentForm
