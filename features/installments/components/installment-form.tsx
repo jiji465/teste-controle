@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { Button } from "@/components/ui/button"
@@ -19,8 +19,9 @@ import {
 } from "@/components/ui/form"
 import { getClients, getTaxes, saveInstallment } from "@/lib/supabase/database"
 import type { Installment, Client, Tax, WeekendRule, Priority, RecurrenceType } from "@/lib/types"
-import { AlertCircle, Flame, TrendingUp, Zap } from "lucide-react"
+import { AlertCircle, Flame, TrendingUp, Zap, CalendarDays } from "lucide-react"
 import { installmentSchema, type InstallmentFormData } from "@/features/installments/schemas"
+import { adjustForWeekend, buildSafeDate, formatDate, toLocalDateString } from "@/lib/date-utils"
 
 interface InstallmentFormProps {
   installment?: Installment
@@ -151,6 +152,57 @@ export function InstallmentForm({ installment, open, onOpenChange, onSave }: Ins
   }
 
   const isCustomRecurrence = form.watch("recurrence") === "custom"
+
+  // ─── Cálculo da prévia "vencimento da parcela atual" ───────────────────
+  // Mostra em tempo real onde a parcela atual vai cair, baseado nos campos
+  // que o usuário acabou de digitar. Resolve um bug de cadastro frequente:
+  // o usuário botava a data de "hoje" como Primeiro vencimento e dizia que
+  // estava na parcela 6 — resultado: parcela 6 caía 5 meses no futuro.
+  // Agora ele vê "Parcela 6/24 vai vencer em DD/MM/YYYY" e pega o erro
+  // antes de salvar.
+  const watchFirstDueDate = form.watch("firstDueDate")
+  const watchCurrentInstallment = form.watch("currentInstallment")
+  const watchInstallmentCount = form.watch("installmentCount")
+  const watchWeekendRule = form.watch("weekendRule")
+
+  const currentDuePreview = useMemo(() => {
+    if (!watchFirstDueDate) return null
+    const m = watchFirstDueDate.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+    if (!m) return null
+    const year = Number(m[1])
+    const monthIdx = Number(m[2]) - 1
+    const day = Number(m[3])
+    const current = Number(watchCurrentInstallment) || 1
+    const total = Number(watchInstallmentCount) || 1
+    if (current < 1 || current > total) return null
+    const monthsToAdd = current - 1
+    const raw = buildSafeDate(year, monthIdx + monthsToAdd, day)
+    const adjusted = adjustForWeekend(raw, (watchWeekendRule as WeekendRule) || "postpone")
+    return {
+      current,
+      total,
+      date: adjusted,
+      isFirst: current === 1,
+    }
+  }, [watchFirstDueDate, watchCurrentInstallment, watchInstallmentCount, watchWeekendRule])
+
+  // Atalho: preencher o "Primeiro vencimento" a partir da data da parcela atual.
+  // Se o usuário sabe quando a parcela 6 vence, mas não lembra quando foi a 1,
+  // ele clica nesse botão e a gente calcula firstDueDate = nextDue - (current-1) meses.
+  const fillFirstDueFromCurrent = (currentDueIso: string) => {
+    const m = currentDueIso.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+    if (!m) return
+    const year = Number(m[1])
+    const monthIdx = Number(m[2]) - 1
+    const day = Number(m[3])
+    const current = Number(form.getValues("currentInstallment")) || 1
+    if (current < 1) return
+    const firstDate = buildSafeDate(year, monthIdx - (current - 1), day)
+    const iso = toLocalDateString(firstDate)
+    form.setValue("firstDueDate", iso, { shouldDirty: true, shouldValidate: true })
+  }
+
+  const [quickCurrentDate, setQuickCurrentDate] = useState("")
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -298,7 +350,7 @@ export function InstallmentForm({ installment, open, onOpenChange, onSave }: Ins
                   name="firstDueDate"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Primeiro vencimento *</FormLabel>
+                      <FormLabel>Vencimento da parcela 1 *</FormLabel>
                       <FormControl>
                         <Input
                           type="date"
@@ -322,6 +374,10 @@ export function InstallmentForm({ installment, open, onOpenChange, onSave }: Ins
                           }}
                         />
                       </FormControl>
+                      <p className="text-[11px] text-muted-foreground">
+                        Data da PARCELA 1, mesmo se você já está pagando a parcela 6 ou outra.
+                        Use o atalho abaixo se não souber a data da 1.
+                      </p>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -345,6 +401,68 @@ export function InstallmentForm({ installment, open, onOpenChange, onSave }: Ins
                   )}
                 />
               </div>
+
+              {/* Atalho + prévia: caça-erro do cadastro de parcelamento já em
+                  andamento. Usuário típico não lembra quando foi a parcela 1 —
+                  mas sabe quando vence a próxima. Aqui ele bota a data da
+                  parcela atual e o sistema preenche o "Vencimento da parcela 1"
+                  retroagindo (current - 1) meses. */}
+              {(Number(watchCurrentInstallment) || 1) > 1 && (
+                <div className="rounded-lg border border-blue-500/30 bg-blue-500/5 p-3 space-y-2">
+                  <p className="text-xs font-semibold text-blue-700 dark:text-blue-400 flex items-center gap-1.5">
+                    <CalendarDays className="size-3.5" />
+                    Atalho: já está na parcela {watchCurrentInstallment} e não sabe a data da 1?
+                  </p>
+                  <div className="flex flex-wrap items-end gap-2">
+                    <div className="flex-1 min-w-[180px]">
+                      <label className="text-[11px] text-muted-foreground block mb-1">
+                        Vencimento da parcela {watchCurrentInstallment}
+                      </label>
+                      <Input
+                        type="date"
+                        value={quickCurrentDate}
+                        onChange={(e) => setQuickCurrentDate(e.target.value)}
+                        className="h-9"
+                      />
+                    </div>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      disabled={!quickCurrentDate}
+                      onClick={() => {
+                        if (quickCurrentDate) fillFirstDueFromCurrent(quickCurrentDate)
+                      }}
+                    >
+                      Calcular parcela 1
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {/* Prévia: confirma onde a parcela atual cai, do jeito que está
+                  configurado agora. Se o usuário digitou errado, ele vê na hora. */}
+              {currentDuePreview && (
+                <div
+                  className={`rounded-lg border p-3 text-sm ${
+                    currentDuePreview.isFirst
+                      ? "border-emerald-500/30 bg-emerald-500/5 text-emerald-800 dark:text-emerald-300"
+                      : "border-amber-500/30 bg-amber-500/5 text-amber-800 dark:text-amber-300"
+                  }`}
+                >
+                  <p className="font-medium flex items-center gap-1.5">
+                    <CalendarDays className="size-4" />
+                    Parcela {currentDuePreview.current}/{currentDuePreview.total} vai vencer em{" "}
+                    <span className="tabular-nums">{formatDate(currentDuePreview.date)}</span>
+                  </p>
+                  {!currentDuePreview.isFirst && (
+                    <p className="text-[11px] mt-1 opacity-90">
+                      Se a data acima não bate com a realidade, ajuste a data da parcela 1
+                      ou use o atalho azul para calcular automaticamente.
+                    </p>
+                  )}
+                </div>
+              )}
 
               <div className="grid gap-4 sm:grid-cols-2">
                 <FormField
