@@ -22,6 +22,7 @@ import type { Installment, Client, Tax, WeekendRule, Priority, RecurrenceType } 
 import { AlertCircle, Flame, TrendingUp, Zap, CalendarDays } from "lucide-react"
 import { installmentSchema, type InstallmentFormData } from "@/features/installments/schemas"
 import { adjustForWeekend, buildSafeDate, formatDate, toLocalDateString } from "@/lib/date-utils"
+import { toast } from "sonner"
 
 interface InstallmentFormProps {
   installment?: Installment
@@ -217,7 +218,20 @@ export function InstallmentForm({ installment, open, onOpenChange, onSave }: Ins
         <Form {...form}>
           <form
             id="installment-form"
-            onSubmit={form.handleSubmit(onSubmit)}
+            onSubmit={form.handleSubmit(onSubmit, (errors) => {
+              // Toast com lista de campos inválidos. Antes o botão Salvar
+              // parecia não responder porque o react-hook-form bloqueava em
+              // silêncio quando algum campo (às vezes oculto) falhava na
+              // validação do zod.
+              const fields = Object.keys(errors)
+              const firstMsg = (Object.values(errors)[0] as any)?.message
+              toast.error(
+                `Não foi possível salvar — verifique: ${fields.join(", ")}` +
+                  (firstMsg ? ` (${firstMsg})` : ""),
+              )
+              // eslint-disable-next-line no-console
+              console.warn("[installment-form] validation errors:", errors)
+            })}
             className="flex-1 min-h-0 overflow-y-auto px-6 py-5 space-y-8"
           >
             {/* 1. Dados básicos */}

@@ -32,6 +32,7 @@ import {
 import type { Tax, TaxRegime, Client } from "@/lib/types"
 import { TAX_REGIME_LABELS, TAX_REGIME_COLORS } from "@/lib/types"
 import { taxSchema, type TaxFormData } from "@/features/taxes/schemas"
+import { toast } from "sonner"
 
 type TaxFormProps = {
   tax?: Tax
@@ -208,7 +209,19 @@ export function TaxForm({ tax, clients, open, onOpenChange, onSave }: TaxFormPro
         </DialogHeader>
 
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="grid gap-6 py-4">
+          <form
+            onSubmit={form.handleSubmit(onSubmit, (errors) => {
+              const fields = Object.keys(errors)
+              const firstMsg = (Object.values(errors)[0] as any)?.message
+              toast.error(
+                `Não foi possível salvar — verifique: ${fields.join(", ")}` +
+                  (firstMsg ? ` (${firstMsg})` : ""),
+              )
+              // eslint-disable-next-line no-console
+              console.warn("[tax-form] validation errors:", errors)
+            })}
+            className="grid gap-6 py-4"
+          >
             {/* 1. Informações Básicas */}
             <div className="space-y-4">
               <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
