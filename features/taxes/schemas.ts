@@ -36,9 +36,13 @@ export const taxSchema = z.object({
   notes: z.string().optional().or(z.literal("")),
   tags: z.array(z.string()).default([]),
   applicableRegimes: z.array(taxRegimeSchema).default([]),
-  completedAt: z.string().optional(),
-  completedBy: z.string().optional(),
-  createdAt: z.string().optional(),
+  // .nullish() aceita string | null | undefined. Antes era só .optional()
+  // (string | undefined), então quando o Supabase retornava null pra esses
+  // campos (item nunca foi concluído), a validação falhava ao editar e o
+  // botão Salvar não funcionava.
+  completedAt: z.string().nullish(),
+  completedBy: z.string().nullish(),
+  createdAt: z.string().nullish(),
 })
 
 export type TaxFormData = z.infer<typeof taxSchema>

@@ -96,7 +96,10 @@ export function InstallmentForm({ installment, open, onOpenChange, onSave }: Ins
         autoGenerate: installment.autoGenerate,
         recurrence: installment.recurrence || "monthly",
         recurrenceInterval: installment.recurrenceInterval || 1,
-        createdAt: installment.createdAt,
+        // null → undefined: Supabase devolve null pra campos vazios e o
+        // schema zod só aceita string|undefined; sem isso o Salvar não
+        // respondia em parcelamentos vindos do banco.
+        createdAt: installment.createdAt ?? undefined,
       })
     } else {
       form.reset({

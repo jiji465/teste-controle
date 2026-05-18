@@ -33,7 +33,8 @@ export const obligationSchema = z.object({
   protocol: z.string().optional().or(z.literal("")),
   notes: z.string().optional().or(z.literal("")),
   tags: z.array(z.string()).default([]),
-  createdAt: z.string().optional(),
+  // .nullish() aceita null vindo do Supabase sem quebrar validação.
+  createdAt: z.string().nullish(),
 })
 
 export type ObligationFormData = z.infer<typeof obligationSchema>

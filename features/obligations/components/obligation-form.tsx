@@ -95,7 +95,10 @@ export function ObligationForm({ obligation, clients, open, onOpenChange, onSave
           protocol: obligation.protocol || "",
           notes: obligation.notes || "",
           tags: obligation.tags || [],
-          createdAt: obligation.createdAt,
+          // null → undefined: Supabase devolve null pra campos vazios e o
+          // schema zod só aceita string|undefined; sem isso o Salvar não
+          // respondia em itens vindos do banco.
+          createdAt: obligation.createdAt ?? undefined,
         })
       } else {
         form.reset({

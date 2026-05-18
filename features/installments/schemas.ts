@@ -19,7 +19,8 @@ export const installmentSchema = z.object({
   recurrence: z.enum(["monthly", "bimonthly", "quarterly", "semiannual", "annual", "custom"]).default("monthly"),
   recurrenceInterval: z.coerce.number().min(1).optional(),
   tags: z.array(z.string()).default([]),
-  createdAt: z.string().optional(),
+  // .nullish() aceita null vindo do Supabase sem quebrar validação.
+  createdAt: z.string().nullish(),
 }).superRefine((data, ctx) => {
   if (data.currentInstallment > data.installmentCount) {
     ctx.addIssue({

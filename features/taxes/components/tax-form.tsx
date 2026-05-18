@@ -93,9 +93,12 @@ export function TaxForm({ tax, clients, open, onOpenChange, onSave }: TaxFormPro
           notes: tax.notes || "",
           tags: tax.tags || [],
           applicableRegimes: tax.applicableRegimes || [],
-          completedAt: tax.completedAt,
-          completedBy: tax.completedBy,
-          createdAt: tax.createdAt,
+          // null → undefined: Supabase devolve null pra campos vazios, mas
+          // o schema zod só aceita string|undefined. Sem isso o botão Salvar
+          // não respondia quando o item nunca tinha sido concluído.
+          completedAt: tax.completedAt ?? undefined,
+          completedBy: tax.completedBy ?? undefined,
+          createdAt: tax.createdAt ?? undefined,
         })
       } else {
         form.reset({
@@ -143,8 +146,8 @@ export function TaxForm({ tax, clients, open, onOpenChange, onSave }: TaxFormPro
       notes: data.notes || undefined,
       tags: data.tags,
       applicableRegimes: data.applicableRegimes as TaxRegime[],
-      completedAt: data.completedAt,
-      completedBy: data.completedBy,
+      completedAt: data.completedAt ?? undefined,
+      completedBy: data.completedBy ?? undefined,
       createdAt: data.createdAt || new Date().toISOString(),
     }
     setIsSaving(true)
