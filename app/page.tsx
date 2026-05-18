@@ -34,6 +34,7 @@ import { Button } from "@/components/ui/button"
 import { ConfirmDialog, type ConfirmState } from "@/components/ui/confirm-dialog"
 import { adjustForWeekend, buildSafeDate } from "@/lib/date-utils"
 import { saveObligation } from "@/features/obligations/services"
+import { checkAndGenerateRecurrences } from "@/lib/auto-recurrence"
 import type { DashboardStats, ObligationWithDetails } from "@/lib/types"
 import { useData } from "@/contexts/data-context"
 import { useSelectedPeriod } from "@/hooks/use-selected-period"
@@ -64,6 +65,10 @@ export default function DashboardPage() {
         { id: crypto.randomUUID(), action: "completed", description: "Concluída pelo Dashboard", timestamp: now },
       ],
     })
+    // Gera próxima instância imediatamente em vez de esperar 24h
+    checkAndGenerateRecurrences(true).catch((e) =>
+      console.warn("[dashboard] auto-regen pós-conclusão falhou:", e),
+    )
     toast.success(`${obl.name} concluída`)
     await refreshData()
   }
@@ -89,6 +94,9 @@ export default function DashboardPage() {
               ],
             }),
           ),
+        )
+        checkAndGenerateRecurrences(true).catch((e) =>
+          console.warn("[dashboard] auto-regen pós-bulk falhou:", e),
         )
         toast.success(`${overdueList.length} obrigações concluídas`)
         await refreshData()

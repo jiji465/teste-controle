@@ -1,44 +1,54 @@
 import type { Obligation, RecurrenceType } from "./types"
-import { adjustForWeekend } from "./date-utils"
+import { adjustForWeekend, buildSafeDate } from "./date-utils"
 
 /**
- * Calcula a próxima data de vencimento baseada na recorrência
+ * Calcula a próxima data de vencimento baseada na recorrência.
+ *
+ * - Mensal/bimestral/.../anual: avança o mês/ano com base em fromDate
+ * - "custom": usa recurrenceInterval (em meses)
+ * - Anual com dueMonth (DEFIS=3, DASN-SIMEI=5): sobrescreve o mês final
+ * - Usa buildSafeDate pra clampar dueDay ao último dia do mês quando o mês
+ *   não tem aquele dia (ex: dia 31 em fev vira 28/29, não estoura pra março)
  */
 export function calculateNextDueDate(obligation: Obligation, fromDate: Date = new Date()): Date {
-  const nextDate = new Date(fromDate)
+  // Calcula o (ano, mês) destino sem mexer no dia ainda — vamos clampar
+  // no final via buildSafeDate.
+  let year = fromDate.getFullYear()
+  let monthIdx = fromDate.getMonth() // 0-based
 
   switch (obligation.recurrence) {
     case "monthly":
-      nextDate.setMonth(nextDate.getMonth() + (obligation.recurrenceInterval || 1))
+      monthIdx += obligation.recurrenceInterval || 1
       break
     case "bimonthly":
-      nextDate.setMonth(nextDate.getMonth() + 2)
+      monthIdx += 2
       break
     case "quarterly":
-      nextDate.setMonth(nextDate.getMonth() + 3)
+      monthIdx += 3
       break
     case "semiannual":
-      nextDate.setMonth(nextDate.getMonth() + 6)
+      monthIdx += 6
       break
     case "annual":
-      nextDate.setFullYear(nextDate.getFullYear() + 1)
+      year += 1
       break
     case "custom":
       if (obligation.recurrenceInterval) {
-        nextDate.setMonth(nextDate.getMonth() + obligation.recurrenceInterval)
+        monthIdx += obligation.recurrenceInterval
       }
       break
   }
 
-  // Ajusta para o dia correto do mês
-  nextDate.setDate(obligation.dueDay)
-
-  // Se tem mês específico, ajusta
-  if (obligation.dueMonth) {
-    nextDate.setMonth(obligation.dueMonth - 1)
+  // Anual com mês fixo (ex: DEFIS = março, DASN-SIMEI = maio). Só faz
+  // sentido pra recorrência ANUAL — pra outras, ignora pra não travar
+  // todo mês na mesma data.
+  if (obligation.recurrence === "annual" && obligation.dueMonth) {
+    monthIdx = obligation.dueMonth - 1 // dueMonth é 1-based, monthIdx 0-based
   }
 
-  return nextDate
+  // buildSafeDate normaliza overflow: setDate(31) em fev iria pra 3/mar;
+  // buildSafeDate clampa pra 28/29.
+  return buildSafeDate(year, monthIdx, obligation.dueDay)
 }
 
 /**
