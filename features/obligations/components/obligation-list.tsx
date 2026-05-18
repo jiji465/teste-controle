@@ -39,6 +39,7 @@ import { saveObligation, deleteObligation } from "@/features/obligations/service
 import { formatDate, isOverdue } from "@/lib/date-utils"
 import { effectiveStatus } from "@/lib/obligation-status"
 import { getRecurrenceDescription } from "@/lib/recurrence-utils"
+import { checkAndGenerateRecurrences } from "@/lib/auto-recurrence"
 import { matchesText } from "@/lib/utils"
 import { toast } from "sonner"
 
@@ -222,6 +223,9 @@ export const ObligationList = forwardRef<ObligationListHandle, ObligationListPro
               ),
           )
           toast.success(`${selectedIds.size} obrigações concluídas`)
+          checkAndGenerateRecurrences(true).catch((e) =>
+            console.warn("[obligations] auto-regen pós-bulk falhou:", e),
+          )
           clearSelection()
           onUpdate()
         } finally {
@@ -406,6 +410,12 @@ export const ObligationList = forwardRef<ObligationListHandle, ObligationListPro
     }
     try {
       await saveObligation(updated)
+      // Tenta gerar a próxima instância imediatamente (em vez de esperar
+      // o motor diário). Erro aqui é silencioso: a obrigação já foi concluída,
+      // a recorrência rola amanhã se hoje falhar.
+      checkAndGenerateRecurrences(true).catch((e) =>
+        console.warn("[obligations] auto-regen pós-conclusão falhou:", e),
+      )
       onUpdate()
     } catch (error) {
       console.error("[obligations] complete error:", error)

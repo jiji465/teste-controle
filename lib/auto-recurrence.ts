@@ -9,7 +9,6 @@ import {
   saveTax,
 } from "./supabase/database"
 import {
-  shouldGenerateRecurrence,
   getCurrentPeriod,
   generateObligationForPeriod,
   generateTaxForPeriod,
@@ -23,22 +22,29 @@ import { buildSafeDate, toLocalDateString } from "./date-utils"
 // garantem idempotência via upsert do Supabase.
 let runningPromise: Promise<void> | null = null
 
-export async function checkAndGenerateRecurrences(): Promise<void> {
+/**
+ * @param force pula a checagem "já rodou hoje". Use depois de marcar uma
+ *   obrigação/guia como concluída, pra que a próxima instância apareça
+ *   imediatamente em vez de esperar até amanhã.
+ */
+export async function checkAndGenerateRecurrences(force = false): Promise<void> {
   if (runningPromise) return runningPromise
-  runningPromise = checkAndGenerateRecurrencesInner().finally(() => {
+  runningPromise = checkAndGenerateRecurrencesInner(force).finally(() => {
     runningPromise = null
   })
   return runningPromise
 }
 
-async function checkAndGenerateRecurrencesInner(): Promise<void> {
+async function checkAndGenerateRecurrencesInner(force: boolean): Promise<void> {
   const now = new Date()
   const currentPeriod = getCurrentPeriod()
   const lastCheck = getLastRecurrenceCheck()
 
-  // Verifica se já rodou hoje (usa data LOCAL pra não shiftar à noite UTC-3)
+  // Verifica se já rodou hoje (usa data LOCAL pra não shiftar à noite UTC-3).
+  // O parâmetro `force` ignora esse cache — usado após marcar item como
+  // concluído pra gerar o próximo na hora.
   const today = toLocalDateString(now)
-  if (lastCheck === today) {
+  if (!force && lastCheck === today) {
     return
   }
 
@@ -46,11 +52,6 @@ async function checkAndGenerateRecurrencesInner(): Promise<void> {
   // execução não disparem outro run em paralelo. Se algo falhar lá embaixo,
   // o catch deixa rodar de novo (vide bloco abaixo).
   setLastRecurrenceCheck(today)
-
-  // Verifica se é o primeiro dia do mês
-  if (!shouldGenerateRecurrence(now)) {
-    return
-  }
 
   try {
     const { calculateNextDueDate } = await import("./recurrence-utils")
@@ -77,40 +78,52 @@ async function checkAndGenerateRecurrencesInner(): Promise<void> {
         : null
 
       // Find all generated instances for this obligation
-      const instances = obligations.filter((o) => o.parentObligationId === obligation.id || o.id === obligation.id)
+      const instances = obligations.filter(
+        (o) => o.parentObligationId === obligation.id || o.id === obligation.id,
+      )
 
       // Find the latest due date among all instances
-      let latestInstance = instances[0]
       let latestDueDate = new Date(0)
-
       for (const inst of instances) {
-        const period = inst.generatedFor || `${new Date(inst.createdAt).getFullYear()}-${String(new Date(inst.createdAt).getMonth() + 1).padStart(2, "0")}`
+        const period =
+          inst.generatedFor ||
+          `${new Date(inst.createdAt).getFullYear()}-${String(
+            new Date(inst.createdAt).getMonth() + 1,
+          ).padStart(2, "0")}`
         const [year, month] = period.split("-").map(Number)
         const dueDate = buildSafeDate(year, month - 1, inst.dueDay || 1)
         if (dueDate > latestDueDate) {
           latestDueDate = dueDate
-          latestInstance = inst
         }
       }
 
-      const nextDate = calculateNextDueDate(obligation, latestDueDate)
+      // Gap-fill: gera TODAS as instâncias faltantes entre a última existente
+      // e o mês atual em um único run. Antes era um if simples, então um app
+      // sem uso por N meses só recuperava 1 mês por execução diária — levava
+      // dias pra ficar em dia.
+      // Cap de segurança: máx. 24 iterações pra evitar loop infinito se o
+      // calculateNextDueDate retornar a mesma data por bug.
+      let cursor = latestDueDate
+      let guard = 0
+      while (guard++ < 24) {
+        const nextDate = calculateNextDueDate(obligation, cursor)
+        if (nextDate <= cursor) break // sanity: nunca avançou, sai
+        if (userEndDate && nextDate > userEndDate) break
+        if (nextDate > horizon) break
 
-      // Para de gerar se passou do cap do usuário ou do cap de segurança
-      if (userEndDate && nextDate > userEndDate) continue
-      if (nextDate > horizon) continue
+        const nextPeriod = `${nextDate.getFullYear()}-${String(
+          nextDate.getMonth() + 1,
+        ).padStart(2, "0")}`
+        if (nextPeriod > currentPeriod) break // só gera até o mês atual
 
-      const nextPeriod = `${nextDate.getFullYear()}-${String(nextDate.getMonth() + 1).padStart(2, "0")}`
-
-      if (nextPeriod <= currentPeriod) {
-        // Verify it doesn't already exist
         const alreadyGenerated = obligations.some(
           (o) => o.parentObligationId === obligation.id && o.generatedFor === nextPeriod,
         )
-
         if (!alreadyGenerated) {
           const newObligation = generateObligationForPeriod(obligation, nextPeriod)
           await saveObligation(newObligation)
         }
+        cursor = nextDate
       }
     }
 

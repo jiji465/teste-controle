@@ -23,6 +23,7 @@ import { ExportButton } from "@/components/export-button"
 import type { ExportColumn } from "@/lib/export-utils"
 import { saveTax, deleteTax } from "@/lib/supabase/database"
 import { calculateDueDateFromCompetency, formatDate, isOverdue } from "@/lib/date-utils"
+import { checkAndGenerateRecurrences } from "@/lib/auto-recurrence"
 import { matchesText } from "@/lib/utils"
 import { toast } from "sonner"
 import {
@@ -195,6 +196,11 @@ export default function ImpostosPage() {
         completedAt: new Date().toISOString(),
       }
       await saveTax(updatedTax)
+      // Gera próxima instância da recorrência imediatamente (em vez de
+      // esperar 24h). Falha silenciosa: tax já está salva.
+      checkAndGenerateRecurrences(true).catch((e) =>
+        console.warn("[impostos] auto-regen pós-conclusão falhou:", e),
+      )
       await updateData()
     } catch (error) {
       console.error("[v0] Error completing tax:", error)
@@ -227,6 +233,9 @@ export default function ImpostosPage() {
               .map((t) => saveTax({ ...t, status: "completed", completedAt: now })),
           )
           toast.success(`${selectedIds.size} impostos concluídos`)
+          checkAndGenerateRecurrences(true).catch((e) =>
+            console.warn("[impostos] auto-regen pós-bulk falhou:", e),
+          )
           clearSelection()
           await updateData()
         } finally {

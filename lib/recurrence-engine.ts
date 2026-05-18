@@ -1,12 +1,12 @@
 import type { Obligation, Tax, RecurrenceType } from "./types"
 import { adjustForWeekend, buildSafeDate } from "./date-utils"
 
-export function shouldGenerateRecurrence(date: Date): boolean {
-  // Always check for missing recurrences when the engine runs.
-  // The system checks if it was already generated in the current period anyway.
-  return true
-}
-
+/**
+ * @deprecated Função substituída por `calculateNextDueDate` em
+ * `recurrence-utils.ts`, que usa buildSafeDate (não estoura no dia 31 em
+ * fevereiro) e respeita `dueMonth` para anuais. Mantida só pra não quebrar
+ * imports externos. Não usar em código novo.
+ */
 export function getNextDueDate(
   currentDate: Date,
   dueDay: number,
@@ -14,36 +14,32 @@ export function getNextDueDate(
   recurrenceInterval?: number,
   weekendRule?: "postpone" | "anticipate" | "keep",
 ): Date {
-  const next = new Date(currentDate)
+  let year = currentDate.getFullYear()
+  let monthIdx = currentDate.getMonth()
 
   switch (recurrence) {
     case "monthly":
-      next.setMonth(next.getMonth() + 1)
+      monthIdx += 1
       break
     case "bimonthly":
-      next.setMonth(next.getMonth() + 2)
+      monthIdx += 2
       break
     case "quarterly":
-      next.setMonth(next.getMonth() + 3)
+      monthIdx += 3
       break
     case "semiannual":
-      next.setMonth(next.getMonth() + 6)
+      monthIdx += 6
       break
     case "annual":
-      next.setFullYear(next.getFullYear() + 1)
+      year += 1
       break
     case "custom":
-      next.setMonth(next.getMonth() + (recurrenceInterval || 1))
+      monthIdx += recurrenceInterval || 1
       break
   }
 
-  next.setDate(dueDay)
-
-  if (weekendRule) {
-    return adjustForWeekend(next, weekendRule)
-  }
-
-  return next
+  const next = buildSafeDate(year, monthIdx, dueDay)
+  return weekendRule ? adjustForWeekend(next, weekendRule) : next
 }
 
 /** Prefixo determinístico pra IDs de itens gerados pelo motor de recorrência.
