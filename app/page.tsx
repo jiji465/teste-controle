@@ -2,15 +2,12 @@
 
 import { useEffect, useState, useMemo } from "react"
 import dynamic from "next/dynamic"
-import Link from "next/link"
-import { useSearchParams } from "next/navigation"
 import { DashboardStatsCards } from "@/components/dashboard-stats"
 import { ProductivityStats } from "@/components/productivity-stats"
-import { UpcomingObligations } from "@/components/upcoming-obligations"
-import { ClientOverview } from "@/components/client-overview"
 import { RecentActivity } from "@/components/recent-activity"
-import { UpcomingTaxes } from "@/components/upcoming-taxes"
-import { UpcomingInstallments } from "@/components/upcoming-installments"
+import { UrgencyTrail } from "@/components/urgency-trail"
+import { UpcomingForecast } from "@/components/upcoming-forecast"
+import { DualClientRanking } from "@/components/dual-client-ranking"
 
 const RegimeDistributionChart = dynamic(
   () => import("@/components/regime-distribution-chart").then((m) => m.RegimeDistributionChart),
@@ -23,22 +20,17 @@ const RegimeDistributionChart = dynamic(
 )
 import { calculateDashboardStats } from "@/lib/dashboard-utils"
 import { calculateDueDateFromCompetency } from "@/lib/date-utils"
-import { isCriticalNow } from "@/lib/obligation-status"
 import { getCurrentPeriod } from "@/lib/recurrence-engine"
 import { getGreetingMeta } from "@/lib/weather"
 import { WeatherGreeting } from "@/components/weather-greeting"
-import { TrendingUp, CalendarIcon, AlertCircle, CreditCard, BarChart3, ListChecks, Activity } from "lucide-react"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { TrendingUp, CalendarIcon, BarChart3, ListChecks, Activity } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
-import { ConfirmDialog, type ConfirmState } from "@/components/ui/confirm-dialog"
 import { adjustForWeekend, buildSafeDate } from "@/lib/date-utils"
 import { saveObligation } from "@/features/obligations/services"
 import { checkAndGenerateRecurrences } from "@/lib/auto-recurrence"
 import type { DashboardStats, ObligationWithDetails } from "@/lib/types"
 import { useData } from "@/contexts/data-context"
 import { useSelectedPeriod } from "@/hooks/use-selected-period"
-import { CheckCircle2 } from "lucide-react"
 import { toast } from "sonner"
 
 // getGreeting() foi movido pra lib/weather.ts (getGreetingMeta) — agora retorna
@@ -48,9 +40,6 @@ export default function DashboardPage() {
   const { clients, taxes, obligations: rawObligations, obligationsWithDetails, installments, lockedPeriods, isLoading, refreshData, togglePeriodLock } = useData()
   const [stats, setStats] = useState<DashboardStats | null>(null)
   const [isMounted, setIsMounted] = useState(false)
-  const [confirmState, setConfirmState] = useState<ConfirmState>(null)
-  const searchParams = useSearchParams()
-
   const completeObligation = async (obl: ObligationWithDetails, e?: React.MouseEvent) => {
     e?.preventDefault()
     e?.stopPropagation()
@@ -71,37 +60,6 @@ export default function DashboardPage() {
     )
     toast.success(`${obl.name} concluída`)
     await refreshData()
-  }
-
-  const completeAllOverdue = (overdueList: ObligationWithDetails[]) => {
-    if (overdueList.length === 0) return
-    setConfirmState({
-      title: `Concluir ${overdueList.length} obrigações atrasadas`,
-      description: "Marca todas como concluídas hoje. Útil para fechar pendências em lote no fim do dia.",
-      confirmLabel: "Concluir todas",
-      onConfirm: async () => {
-        const now = new Date().toISOString()
-        await Promise.all(
-          overdueList.map((obl) =>
-            saveObligation({
-              ...obl,
-              status: "completed",
-              completedAt: now,
-              completedBy: "Contador",
-              history: [
-                ...(obl.history || []),
-                { id: crypto.randomUUID(), action: "completed", description: "Conclusão em lote pelo Dashboard", timestamp: now },
-              ],
-            }),
-          ),
-        )
-        checkAndGenerateRecurrences(true).catch((e) =>
-          console.warn("[dashboard] auto-regen pós-bulk falhou:", e),
-        )
-        toast.success(`${overdueList.length} obrigações concluídas`)
-        await refreshData()
-      },
-    })
   }
 
   // Período corrente do contexto, com fallback para o mês atual real
@@ -167,62 +125,31 @@ export default function DashboardPage() {
     await refreshData()
   }
 
-  // Memoizadas pra evitar refiltragem a cada render (perf).
-  // IMPORTANTE: TODAS antes de qualquer early return — Rules of Hooks.
-  const criticalAlerts = useMemo(
-    // "Crítico" = vence hoje OU passou da data (e não está concluída).
-    // Usa isCriticalNow pra normalizar dia local — evita bug de timezone
-    // que faria itens vencendo amanhã virarem crítico ao final do dia.
-    () => obligations.filter((o) => isCriticalNow(o)),
-    [obligations],
-  )
-
-  const criticalInstallments = useMemo(
-    () =>
-      installments.filter((inst) => {
-        if (inst.status === "completed") return false
-        const firstDue = new Date(inst.firstDueDate)
-        const monthsToAdd = inst.currentInstallment - 1
-        const dueDate = buildSafeDate(firstDue.getFullYear(), firstDue.getMonth() + monthsToAdd, inst.dueDay)
-        const adjustedDueDate = adjustForWeekend(dueDate, inst.weekendRule)
-        if (!isInPeriod(adjustedDueDate)) return false
-        // Normaliza hora pra 00:00 dos dois lados — sem isso, "vence hoje"
-        // virava crítico só a partir das 00:00:01 (desalinhado com isOverdue).
-        const dueDay = new Date(adjustedDueDate)
-        dueDay.setHours(0, 0, 0, 0)
-        const today = new Date()
-        today.setHours(0, 0, 0, 0)
-        return dueDay <= today
-      }),
-    [installments, isInPeriod],
-  )
-
-  const thisWeekObligations = useMemo(
-    () =>
-      obligations.filter((o) => {
-        const dueDate = new Date(o.calculatedDueDate)
-        const today = new Date()
-        const nextWeek = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000)
-        return dueDate >= today && dueDate <= nextWeek && o.status !== "completed"
-      }),
-    [obligations],
-  )
-
-  const thisWeekInstallments = useMemo(
-    () =>
-      installments.filter((inst) => {
-        if (inst.status === "completed") return false
-        const firstDue = new Date(inst.firstDueDate)
-        const monthsToAdd = inst.currentInstallment - 1
-        const dueDate = buildSafeDate(firstDue.getFullYear(), firstDue.getMonth() + monthsToAdd, inst.dueDay)
-        const adjustedDueDate = adjustForWeekend(dueDate, inst.weekendRule)
-        if (!isInPeriod(adjustedDueDate)) return false
-        const today = new Date()
-        const nextWeek = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000)
-        return adjustedDueDate >= today && adjustedDueDate <= nextWeek
-      }),
-    [installments, isInPeriod],
-  )
+  // Contagem usada só no hero (mensagem "X itens críticos pra resolver hoje").
+  // UrgencyTrail abaixo cuida do detalhamento.
+  const urgentCount = useMemo(() => {
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    let n = 0
+    for (const o of obligations) {
+      if (o.status === "completed") continue
+      const due = new Date(o.calculatedDueDate)
+      due.setHours(0, 0, 0, 0)
+      if (due <= today) n++
+    }
+    for (const i of filteredInstallments) {
+      if (i.status === "completed") continue
+      const firstDue = new Date(i.firstDueDate)
+      const monthsToAdd = i.currentInstallment - 1
+      const due = adjustForWeekend(
+        buildSafeDate(firstDue.getFullYear(), firstDue.getMonth() + monthsToAdd, i.dueDay),
+        i.weekendRule,
+      )
+      due.setHours(0, 0, 0, 0)
+      if (due <= today) n++
+    }
+    return n
+  }, [obligations, filteredInstallments])
 
   if (!isMounted || isLoading) {
     return (
@@ -232,15 +159,8 @@ export default function DashboardPage() {
     )
   }
 
-  const totalCriticalCount = criticalAlerts.length + criticalInstallments.length
-  const totalThisWeekCount = thisWeekObligations.length + thisWeekInstallments.length
-  const hasCritical = totalCriticalCount > 0
-  const hasThisWeek = totalThisWeekCount > 0
-
   return (
-    <>
-      <ConfirmDialog state={confirmState} onClose={() => setConfirmState(null)} />
-      <div className="mx-auto max-w-screen-2xl px-4 lg:px-6 py-5">
+    <div className="mx-auto max-w-screen-2xl px-4 lg:px-6 py-5">
         <div className="space-y-5">
           {/* Hero rico — saudação dinâmica por horário + tempo + saúde do mês */}
           {(() => {
@@ -277,11 +197,9 @@ export default function DashboardPage() {
                     <p className="text-sm text-muted-foreground max-w-xl">
                       {isFiltering
                         ? `Mostrando dados de ${periodLabel}.`
-                        : hasCritical
-                          ? `Você tem ${totalCriticalCount} ${totalCriticalCount === 1 ? "item crítico" : "itens críticos"} pra resolver hoje.`
-                          : hasThisWeek
-                            ? `Tudo em dia. ${totalThisWeekCount} ${totalThisWeekCount === 1 ? "item vence" : "itens vencem"} nos próximos 7 dias.`
-                            : "Nenhuma pendência crítica. Bom trabalho! 🎉"}
+                        : urgentCount > 0
+                          ? `Você tem ${urgentCount} ${urgentCount === 1 ? "item crítico" : "itens críticos"} pra resolver hoje.`
+                          : "Nenhuma pendência crítica. Bom trabalho! 🎉"}
                     </p>
                   </div>
 
@@ -346,154 +264,7 @@ export default function DashboardPage() {
             </div>
           )}
 
-          {/* Linha 1: Alertas Críticos + Vencendo 7 dias (lado a lado quando ambos existem) */}
-          {(hasCritical || hasThisWeek) && (
-            <div className={`grid gap-4 ${hasCritical && hasThisWeek ? "lg:grid-cols-2" : "grid-cols-1"}`}>
-              {hasCritical && (
-                <Card className="border-red-500/50 bg-red-50 dark:bg-red-950/20">
-                  <CardHeader>
-                    <div className="flex items-start justify-between gap-3 flex-wrap">
-                      <div>
-                        <CardTitle className="flex items-center gap-2 text-red-700 dark:text-red-400">
-                          <AlertCircle className="size-5" />
-                          Alertas Críticos
-                        </CardTitle>
-                        <CardDescription>Clique no ✓ para concluir, ou no item para abrir</CardDescription>
-                      </div>
-                      {criticalAlerts.length > 1 && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="bg-background"
-                          onClick={() => completeAllOverdue(criticalAlerts)}
-                        >
-                          <CheckCircle2 className="size-4 mr-2" />
-                          Concluir todas ({criticalAlerts.length})
-                        </Button>
-                      )}
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-2">
-                      {criticalAlerts.slice(0, 3).map((obl) => (
-                        <div
-                          key={obl.id}
-                          className="flex items-center justify-between p-2 bg-background rounded-lg hover:bg-muted/60 transition-colors group"
-                        >
-                          <Link
-                            href={`/obrigacoes?clientId=${obl.clientId}&obligationId=${obl.id}&tab=overdue`}
-                            className="flex-1 min-w-0"
-                          >
-                            <p className="font-medium truncate">{obl.name}</p>
-                            <p className="text-sm text-muted-foreground truncate">{obl.client.name}</p>
-                          </Link>
-                          <div className="flex items-center gap-2 ml-2 shrink-0">
-                            <Badge className="bg-red-600">{obl.status === "overdue" ? "Atrasada" : "Vence hoje"}</Badge>
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              className="size-8 text-green-600 hover:text-green-700 hover:bg-green-100 dark:hover:bg-green-950/40 opacity-60 group-hover:opacity-100 transition-opacity"
-                              onClick={(e) => completeObligation(obl, e)}
-                              title="Marcar como concluída"
-                            >
-                              <CheckCircle2 className="size-4" />
-                            </Button>
-                          </div>
-                        </div>
-                      ))}
-                      {criticalInstallments.slice(0, 5).map((inst) => {
-                        const client = clients.find((c) => c.id === inst.clientId)
-                        return (
-                          <Link
-                            key={inst.id}
-                            href={`/parcelamentos?clientId=${inst.clientId}`}
-                            className="flex items-center justify-between p-2 bg-background rounded-lg hover:bg-muted/60 transition-colors cursor-pointer"
-                          >
-                            <div className="flex items-center gap-2">
-                              <CreditCard className="size-4 text-muted-foreground" />
-                              <div>
-                                <p className="font-medium">{inst.name}</p>
-                                <p className="text-sm text-muted-foreground">
-                                  {client?.name} - Parcela {inst.currentInstallment}/{inst.installmentCount}
-                                </p>
-                              </div>
-                            </div>
-                            <Badge className="bg-red-600">Vencida</Badge>
-                          </Link>
-                        )
-                      })}
-                      {(criticalAlerts.length > 3 || criticalInstallments.length > 5) && (
-                        <Link
-                          href="/obrigacoes?tab=overdue"
-                          className="block text-sm text-muted-foreground text-center pt-2 hover:text-foreground transition-colors"
-                        >
-                          Ver todos os {totalCriticalCount} alertas →
-                        </Link>
-                      )}
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
-
-              {hasThisWeek && (
-                <Card className="border-blue-500/50 bg-blue-50 dark:bg-blue-950/20">
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2 text-blue-700 dark:text-blue-400">
-                      <CalendarIcon className="size-5" />
-                      Vencendo nos Próximos 7 Dias
-                    </CardTitle>
-                    <CardDescription>
-                      {totalThisWeekCount} {totalThisWeekCount === 1 ? "item requer" : "itens requerem"} atenção
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="grid gap-2 sm:grid-cols-2">
-                      {thisWeekObligations.slice(0, 4).map((obl) => (
-                        <div key={obl.id} className="p-3 bg-background rounded-lg border">
-                          <p className="font-medium text-sm">{obl.name}</p>
-                          <p className="text-xs text-muted-foreground">{obl.client.name}</p>
-                          <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
-                            Vence: {new Date(obl.calculatedDueDate).toLocaleDateString("pt-BR")}
-                          </p>
-                        </div>
-                      ))}
-                      {thisWeekInstallments.slice(0, 6).map((inst) => {
-                        const client = clients.find((c) => c.id === inst.clientId)
-                        const firstDue = new Date(inst.firstDueDate)
-                        const monthsToAdd = inst.currentInstallment - 1
-                        const dueDate = buildSafeDate(firstDue.getFullYear(), firstDue.getMonth() + monthsToAdd, inst.dueDay)
-                        const adjustedDueDate = adjustForWeekend(dueDate, inst.weekendRule)
-                        return (
-                          <div key={inst.id} className="p-3 bg-background rounded-lg border">
-                            <div className="flex items-center gap-1">
-                              <CreditCard className="size-3" />
-                              <p className="font-medium text-sm">{inst.name}</p>
-                            </div>
-                            <p className="text-xs text-muted-foreground">
-                              {client?.name} - Parcela {inst.currentInstallment}/{inst.installmentCount}
-                            </p>
-                            <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
-                              Vence: {adjustedDueDate.toLocaleDateString("pt-BR")}
-                            </p>
-                          </div>
-                        )
-                      })}
-                      {(thisWeekObligations.length > 4 || thisWeekInstallments.length > 6) && (
-                        <Link
-                          href="/relatorios"
-                          className="sm:col-span-2 block text-xs text-center text-muted-foreground hover:text-foreground transition-colors pt-1"
-                        >
-                          Ver todos os {totalThisWeekCount} itens dos próximos 7 dias →
-                        </Link>
-                      )}
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
-            </div>
-          )}
-
-          {/* Distribuição (3 gráficos) — logo após Resumo Geral */}
+          {/* Distribuição (4 gráficos) — logo após Resumo Geral */}
           <div>
             <h2 className="text-xl font-semibold mb-3 flex items-center gap-2">
               <BarChart3 className="size-5" />
@@ -507,37 +278,33 @@ export default function DashboardPage() {
             />
           </div>
 
-          {/* Próximos Vencimentos: Obrigações + Guias de Imposto */}
+          {/* Trilha de Urgência + Forecast Próximo Mês (lado a lado) */}
           <div>
             <h2 className="text-xl font-semibold mb-3 flex items-center gap-2">
               <ListChecks className="size-5" />
-              Próximos Vencimentos
+              Pendências
               {isFiltering && periodLabel && (
                 <span className="text-sm font-normal text-muted-foreground">· {periodLabel}</span>
               )}
             </h2>
-            <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
-              <UpcomingObligations
+            <div className="grid gap-4 lg:grid-cols-[1fr_280px]">
+              <UrgencyTrail
                 obligations={obligations}
-                periodLabel={periodLabel}
-                outsidePeriodCount={totalsOutsidePeriod.obligations}
-              />
-              <UpcomingTaxes
                 taxes={filteredTaxes}
-                clients={clients}
-                periodLabel={periodLabel}
-                outsidePeriodCount={totalsOutsidePeriod.taxes}
-              />
-              <UpcomingInstallments
                 installments={filteredInstallments}
                 clients={clients}
-                periodLabel={periodLabel}
-                outsidePeriodCount={totalsOutsidePeriod.installments}
+                onCompleteObligation={completeObligation}
+              />
+              <UpcomingForecast
+                obligations={obligationsWithDetails}
+                taxes={taxes}
+                installments={installments}
+                currentMonth={period}
               />
             </div>
           </div>
 
-          {/* Indicadores de Produtividade */}
+          {/* Indicadores de Produtividade — com comparativo vs mês anterior */}
           <div>
             <h2 className="text-xl font-semibold mb-3 flex items-center gap-2">
               <TrendingUp className="size-5" />
@@ -546,22 +313,42 @@ export default function DashboardPage() {
                 <span className="text-sm font-normal text-muted-foreground">· {periodLabel}</span>
               )}
             </h2>
-            <ProductivityStats obligations={obligations} periodLabel={periodLabel} />
+            <ProductivityStats
+              obligations={obligations}
+              taxes={filteredTaxes}
+              installments={filteredInstallments}
+              periodLabel={periodLabel}
+            />
           </div>
 
-          {/* Clientes & Atividade */}
+          {/* Ranking de Clientes — duo: bons vs problemáticos */}
           <div>
             <h2 className="text-xl font-semibold mb-3 flex items-center gap-2">
               <Activity className="size-5" />
-              Clientes & Atividade
+              Clientes
             </h2>
-            <div className="grid gap-4 lg:grid-cols-2">
-              <ClientOverview clients={clients} obligations={obligations} />
-              <RecentActivity obligations={obligations} />
-            </div>
+            <DualClientRanking
+              clients={clients}
+              obligations={obligationsWithDetails}
+              taxes={taxes}
+              installments={installments}
+            />
           </div>
-        </div>
+
+          {/* Atividade Recente — timeline com obrigações + guias + parcelas */}
+          <div>
+            <h2 className="text-xl font-semibold mb-3 flex items-center gap-2">
+              <Activity className="size-5" />
+              Atividade Recente
+            </h2>
+            <RecentActivity
+              obligations={obligationsWithDetails}
+              taxes={taxes}
+              installments={installments}
+              clients={clients}
+            />
+          </div>
       </div>
-    </>
+    </div>
   )
 }

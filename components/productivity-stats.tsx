@@ -1,111 +1,227 @@
 "use client"
 
+/**
+ * ProductivityStats — 4 cards de saúde operacional, considerando os 3 tipos
+ * de tarefa (obrigação + guia + parcela) e mostrando comparativo vs período
+ * anterior (delta %).
+ */
+
 import { useMemo } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { TrendingUp, CheckCircle2, Clock, AlertCircle } from "lucide-react"
-import type { ObligationWithDetails } from "@/lib/types"
-import { isOverdue } from "@/lib/date-utils"
+import { Badge } from "@/components/ui/badge"
+import {
+  TrendingUp,
+  TrendingDown,
+  CheckCircle2,
+  Clock,
+  AlertCircle,
+} from "lucide-react"
+import type { ObligationWithDetails, Tax, Installment } from "@/lib/types"
+import { effectiveStatus } from "@/lib/obligation-status"
+import {
+  adjustForWeekend,
+  buildSafeDate,
+  calculateDueDateFromCompetency,
+  isOverdue,
+} from "@/lib/date-utils"
 
-type ProductivityStatsProps = {
+type Props = {
   obligations: ObligationWithDetails[]
-  /** Rótulo do período filtrado (ex: "Março/2026"). null/undefined => sem filtro */
+  taxes: Tax[]
+  installments: Installment[]
+  /** Itens do período ANTERIOR (mesmo formato) pra calcular delta. */
+  previousObligations?: ObligationWithDetails[]
+  previousTaxes?: Tax[]
+  previousInstallments?: Installment[]
+  /** Rótulo do período filtrado (ex: "Março/2026"). null/undefined = sem filtro */
   periodLabel?: string | null
 }
 
-/** Normaliza um Date pro início do dia local (00:00). Garante que comparações
- *  de prazo sejam dia-a-dia, sem efeito de hora/minuto. */
-function startOfDay(date: Date): Date {
-  const d = new Date(date)
-  d.setHours(0, 0, 0, 0)
-  return d
+function startOfDay(d: Date): Date {
+  const r = new Date(d)
+  r.setHours(0, 0, 0, 0)
+  return r
 }
 
-export function ProductivityStats({ obligations, periodLabel }: ProductivityStatsProps) {
-  const { completedCount, inProgress, overdue, onTimeRate } = useMemo(() => {
-    let completed = 0
-    let inProgress = 0
-    let overdue = 0
-    let completedOnTime = 0
-    let totalEvaluable = 0 // obrigações que já venceram OU foram concluídas no período
+type Stats = {
+  completed: number
+  inProgress: number
+  overdue: number
+  onTimeRate: number
+}
 
-    for (const obl of obligations) {
-      const completedAt = obl.completedAt ? new Date(obl.completedAt) : null
+function computeStats(
+  obligations: ObligationWithDetails[],
+  taxes: Tax[],
+  installments: Installment[],
+): Stats {
+  let completed = 0
+  let inProgress = 0
+  let overdue = 0
+  let completedOnTime = 0
+  let evaluable = 0
 
-      if (obl.status === "completed") completed++
-      if (obl.status === "in_progress") inProgress++
-      // "Atrasada": data já passou (estritamente antes de hoje, dia inteiro)
-      // e ainda não foi concluída. Mesma regra usada em isOverdue/effectiveStatus.
-      if (obl.status !== "completed" && isOverdue(obl.calculatedDueDate)) overdue++
-
-      // Taxa no prazo: avalia somente obrigações concluídas OU já vencidas.
-      // "No prazo" = concluída no mesmo dia do vencimento ou antes — comparamos
-      // ambos no início do dia pra que concluir no próprio dia conte como prazo.
-      if (completedAt || isOverdue(obl.calculatedDueDate)) {
-        totalEvaluable++
-        if (completedAt) {
-          const dueDay = startOfDay(new Date(obl.calculatedDueDate))
-          const completedDay = startOfDay(completedAt)
-          if (completedDay <= dueDay) completedOnTime++
-        }
+  const tally = (status: string, completedAt: string | undefined, dueDate: Date) => {
+    if (status === "completed") completed++
+    if (status === "in_progress") inProgress++
+    if (status !== "completed" && isOverdue(dueDate)) overdue++
+    if (completedAt || isOverdue(dueDate)) {
+      evaluable++
+      if (completedAt) {
+        const cd = startOfDay(new Date(completedAt))
+        const dd = startOfDay(dueDate)
+        if (cd <= dd) completedOnTime++
       }
     }
+  }
 
-    const rate = totalEvaluable > 0 ? Math.round((completedOnTime / totalEvaluable) * 100) : 0
-    return { completedCount: completed, inProgress, overdue, onTimeRate: rate }
-  }, [obligations])
+  for (const o of obligations) {
+    tally(o.status, o.completedAt, new Date(o.calculatedDueDate))
+  }
+  for (const t of taxes) {
+    const d = calculateDueDateFromCompetency(t.competencyMonth, t.dueDay, t.weekendRule, t.dueMonth)
+    if (!d) continue
+    tally(t.status, t.completedAt, d)
+  }
+  for (const i of installments) {
+    const firstDue = new Date(i.firstDueDate)
+    const monthsToAdd = i.currentInstallment - 1
+    const d = adjustForWeekend(
+      buildSafeDate(firstDue.getFullYear(), firstDue.getMonth() + monthsToAdd, i.dueDay),
+      i.weekendRule,
+    )
+    tally(i.status, i.completedAt, d)
+  }
 
-  const completedLabel = periodLabel ? `Concluídas em ${periodLabel}` : "Concluídas"
-  const rateLabel = periodLabel ? "No período" : "Geral"
+  return {
+    completed,
+    inProgress,
+    overdue,
+    onTimeRate: evaluable > 0 ? Math.round((completedOnTime / evaluable) * 100) : 0,
+  }
+}
+
+function deltaPct(current: number, previous: number): number | null {
+  if (previous === 0 && current === 0) return null
+  if (previous === 0) return null // "novo" — sem base de comparação
+  return Math.round(((current - previous) / previous) * 100)
+}
+
+function DeltaBadge({
+  delta,
+  inverted = false,
+}: {
+  delta: number | null
+  /** Se true, redução é boa (ex: atrasadas caindo). */
+  inverted?: boolean
+}) {
+  if (delta === null || delta === 0) return null
+  const isUp = delta > 0
+  const isGood = inverted ? !isUp : isUp
+  return (
+    <Badge
+      variant="outline"
+      className={`text-[10px] gap-0.5 px-1.5 py-0 h-4 ${
+        isGood
+          ? "border-emerald-500/40 text-emerald-700 dark:text-emerald-300"
+          : "border-red-500/40 text-red-700 dark:text-red-300"
+      }`}
+    >
+      {isUp ? <TrendingUp className="size-2.5" /> : <TrendingDown className="size-2.5" />}
+      {Math.abs(delta)}%
+    </Badge>
+  )
+}
+
+export function ProductivityStats({
+  obligations,
+  taxes,
+  installments,
+  previousObligations,
+  previousTaxes,
+  previousInstallments,
+  periodLabel,
+}: Props) {
+  const current = useMemo(
+    () => computeStats(obligations, taxes, installments),
+    [obligations, taxes, installments],
+  )
+  const previous = useMemo(() => {
+    if (!previousObligations && !previousTaxes && !previousInstallments) return null
+    return computeStats(
+      previousObligations ?? [],
+      previousTaxes ?? [],
+      previousInstallments ?? [],
+    )
+  }, [previousObligations, previousTaxes, previousInstallments])
+
+  const cards = [
+    {
+      title: periodLabel ? `Concluídas em ${periodLabel}` : "Concluídas",
+      value: current.completed,
+      delta: previous ? deltaPct(current.completed, previous.completed) : null,
+      inverted: false,
+      icon: CheckCircle2,
+      color: "text-emerald-600",
+      ring: "ring-emerald-500/10",
+      sub: "Obrigações + guias + parcelas",
+    },
+    {
+      title: "Em andamento",
+      value: current.inProgress,
+      delta: previous ? deltaPct(current.inProgress, previous.inProgress) : null,
+      inverted: false,
+      icon: Clock,
+      color: "text-blue-600",
+      ring: "ring-blue-500/10",
+      sub: "Sendo processadas",
+    },
+    {
+      title: "Atrasadas",
+      value: current.overdue,
+      delta: previous ? deltaPct(current.overdue, previous.overdue) : null,
+      inverted: true,
+      icon: AlertCircle,
+      color: "text-red-600",
+      ring: current.overdue > 0 ? "ring-red-500/30" : "ring-red-500/10",
+      sub: current.overdue > 0 ? "Requerem atenção" : "Tudo em dia",
+    },
+    {
+      title: "Taxa no Prazo",
+      value: current.onTimeRate,
+      suffix: "%",
+      delta: previous ? deltaPct(current.onTimeRate, previous.onTimeRate) : null,
+      inverted: false,
+      icon: TrendingUp,
+      color: "text-primary",
+      ring: "ring-primary/10",
+      sub: previous ? "vs período anterior" : "Geral",
+    },
+  ]
 
   return (
-    <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
-      <Card className="ring-1 ring-emerald-500/10 hover:shadow-md transition-shadow">
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-          <CardTitle className="text-sm font-medium">{completedLabel}</CardTitle>
-          <CheckCircle2 className="size-4 text-emerald-600" />
-        </CardHeader>
-        <CardContent>
-          <div className="text-2xl font-bold tabular-nums">{completedCount}</div>
-          <p className="text-xs text-muted-foreground">Obrigações finalizadas</p>
-        </CardContent>
-      </Card>
-
-      <Card className="ring-1 ring-blue-500/10 hover:shadow-md transition-shadow">
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-          <CardTitle className="text-sm font-medium">Em Andamento</CardTitle>
-          <Clock className="size-4 text-blue-600" />
-        </CardHeader>
-        <CardContent>
-          <div className="text-2xl font-bold tabular-nums">{inProgress}</div>
-          <p className="text-xs text-muted-foreground">Sendo processadas</p>
-        </CardContent>
-      </Card>
-
-      <Card
-        className={`ring-1 ${overdue > 0 ? "ring-red-500/30 bg-red-50/40 dark:bg-red-950/10" : "ring-red-500/10"} hover:shadow-md transition-shadow`}
-      >
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-          <CardTitle className="text-sm font-medium">Atrasadas</CardTitle>
-          <AlertCircle className="size-4 text-red-600" />
-        </CardHeader>
-        <CardContent>
-          <div className="text-2xl font-bold tabular-nums">{overdue}</div>
-          <p className="text-xs text-muted-foreground">
-            {overdue > 0 ? "Requerem atenção" : "Tudo em dia"}
-          </p>
-        </CardContent>
-      </Card>
-
-      <Card className="ring-1 ring-primary/10 hover:shadow-md transition-shadow">
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-          <CardTitle className="text-sm font-medium">Taxa no Prazo</CardTitle>
-          <TrendingUp className="size-4 text-primary" />
-        </CardHeader>
-        <CardContent>
-          <div className="text-2xl font-bold tabular-nums">{onTimeRate}%</div>
-          <p className="text-xs text-muted-foreground">{rateLabel}</p>
-        </CardContent>
-      </Card>
+    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      {cards.map((c, idx) => {
+        const Icon = c.icon
+        return (
+          <Card key={idx} className={`ring-1 ${c.ring} hover:shadow-md transition-shadow`}>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">{c.title}</CardTitle>
+              <Icon className={`size-4 ${c.color}`} />
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-baseline gap-2">
+                <div className="text-2xl font-bold tabular-nums">
+                  {c.value}
+                  {c.suffix ?? ""}
+                </div>
+                <DeltaBadge delta={c.delta ?? null} inverted={c.inverted} />
+              </div>
+              <p className="text-xs text-muted-foreground mt-0.5">{c.sub}</p>
+            </CardContent>
+          </Card>
+        )
+      })}
     </div>
   )
 }
