@@ -84,6 +84,12 @@ export function ReportsPanel({
   // Inicializa do localStorage (resolve preset → range)
   const [filters, setFilters] = useState<RelatoriosFilterState>(() => loadStoredFilters())
 
+  // Estado de "ver todos" pra listas longas — colapsa por padrão pra reduzir
+  // o tamanho vertical da página (sem isso a página fica enorme).
+  const [showAllByClient, setShowAllByClient] = useState(false)
+  const [showAllByTax, setShowAllByTax] = useState(false)
+  const [showAllCompleted, setShowAllCompleted] = useState(false)
+
   // ─── Aplica filtros ─────────────────────────────────────────────────────
   const filteredObligations = useMemo(() => {
     let result = obligationsInRange(obligations, filters.range)
@@ -670,7 +676,7 @@ export function ReportsPanel({
                 Nenhuma parcela no período/filtro.
               </p>
             ) : (
-              <div className="overflow-x-auto rounded-lg border">
+              <div className="overflow-auto rounded-lg border max-h-[360px]">
                 <table className="w-full text-sm">
                   <thead className="bg-muted/50">
                     <tr className="text-left">
@@ -738,8 +744,8 @@ export function ReportsPanel({
             <CardDescription className="text-xs">Clique pra ver as obrigações do cliente</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="space-y-3">
-              {byClient.map((entry) => (
+            <div className={`space-y-3 ${showAllByClient ? "max-h-[460px] overflow-y-auto pr-1" : ""}`}>
+              {(showAllByClient ? byClient : byClient.slice(0, 5)).map((entry) => (
                 <Link
                   key={entry.clientId}
                   href={`/obrigacoes?clientId=${entry.clientId}`}
@@ -764,6 +770,16 @@ export function ReportsPanel({
                 </p>
               )}
             </div>
+            {byClient.length > 5 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowAllByClient(!showAllByClient)}
+                className="w-full mt-3 text-xs"
+              >
+                {showAllByClient ? "Mostrar menos" : `Ver todos os ${byClient.length} clientes`}
+              </Button>
+            )}
           </CardContent>
         </Card>
       </section>
@@ -775,29 +791,45 @@ export function ReportsPanel({
             <CardTitle className="text-base">Obrigações por Tipo de Imposto</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="space-y-4">
-              {Object.entries(byTax)
-                .sort(([, a], [, b]) => b.total - a.total)
-                .map(([tax, t]) => (
-                  <div key={tax} className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="font-medium">{tax}</span>
-                      <span className="text-sm text-muted-foreground tabular-nums">{t.total} obrigações</span>
-                    </div>
-                    <div className="flex gap-2 flex-wrap">
-                      <Badge className="bg-emerald-600 hover:bg-emerald-700">{t.completed} concluídas</Badge>
-                      {t.overdue > 0 && <Badge variant="destructive">{t.overdue} atrasadas</Badge>}
-                      <Badge variant="secondary">{t.total - t.completed - t.overdue} em aberto</Badge>
-                    </div>
-                    <Progress value={(t.completed / t.total) * 100} className="h-2" />
+            {(() => {
+              const sortedTaxEntries = Object.entries(byTax).sort(([, a], [, b]) => b.total - a.total)
+              const visibleTaxes = showAllByTax ? sortedTaxEntries : sortedTaxEntries.slice(0, 5)
+              return (
+                <>
+                  <div className={`space-y-4 ${showAllByTax ? "max-h-[460px] overflow-y-auto pr-1" : ""}`}>
+                    {visibleTaxes.map(([tax, t]) => (
+                      <div key={tax} className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="font-medium">{tax}</span>
+                          <span className="text-sm text-muted-foreground tabular-nums">{t.total} obrigações</span>
+                        </div>
+                        <div className="flex gap-2 flex-wrap">
+                          <Badge className="bg-emerald-600 hover:bg-emerald-700">{t.completed} concluídas</Badge>
+                          {t.overdue > 0 && <Badge variant="destructive">{t.overdue} atrasadas</Badge>}
+                          <Badge variant="secondary">{t.total - t.completed - t.overdue} em aberto</Badge>
+                        </div>
+                        <Progress value={(t.completed / t.total) * 100} className="h-2" />
+                      </div>
+                    ))}
+                    {sortedTaxEntries.length === 0 && (
+                      <p className="text-sm text-muted-foreground text-center py-4">
+                        Nenhuma obrigação no filtro atual.
+                      </p>
+                    )}
                   </div>
-                ))}
-              {Object.keys(byTax).length === 0 && (
-                <p className="text-sm text-muted-foreground text-center py-4">
-                  Nenhuma obrigação no filtro atual.
-                </p>
-              )}
-            </div>
+                  {sortedTaxEntries.length > 5 && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setShowAllByTax(!showAllByTax)}
+                      className="w-full mt-3 text-xs"
+                    >
+                      {showAllByTax ? "Mostrar menos" : `Ver todos os ${sortedTaxEntries.length} impostos`}
+                    </Button>
+                  )}
+                </>
+              )
+            })()}
           </CardContent>
         </Card>
 
@@ -829,48 +861,66 @@ export function ReportsPanel({
               <Activity className="size-4 text-emerald-600" /> Obrigações Finalizadas
             </CardTitle>
             <CardDescription className="text-xs">
-              {stats.completed.length > 50
-                ? `50 mais recentes de ${stats.completed.length}`
-                : `${stats.completed.length} no filtro`}
+              {showAllCompleted
+                ? stats.completed.length > 50
+                  ? `50 mais recentes de ${stats.completed.length}`
+                  : `${stats.completed.length} no filtro`
+                : `${Math.min(5, stats.completed.length)} mais recentes${
+                    stats.completed.length > 5 ? ` de ${stats.completed.length}` : ""
+                  }`}
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="space-y-2">
-              {stats.completed.length === 0 ? (
-                <p className="text-center text-muted-foreground py-6 text-sm">
-                  Nenhuma obrigação concluída ainda.
-                </p>
-              ) : (
-                stats.completed
-                  .slice()
-                  .sort((a, b) => {
-                    const da = a.completedAt ? new Date(a.completedAt).getTime() : 0
-                    const db = b.completedAt ? new Date(b.completedAt).getTime() : 0
-                    return db - da
-                  })
-                  .slice(0, 50)
-                  .map((obl) => (
-                    <Link
-                      key={obl.id}
-                      href={`/obrigacoes?clientId=${obl.clientId}&obligationId=${obl.id}`}
-                      className="flex items-start justify-between p-3 border rounded-lg hover:border-primary/40 hover:bg-muted/50 transition-colors"
-                    >
-                      <div className="space-y-0.5 min-w-0">
-                        <div className="font-medium truncate">{obl.name}</div>
-                        <div className="text-sm text-muted-foreground truncate">{obl.client.name}</div>
-                        {obl.completedAt && (
-                          <div className="text-xs text-muted-foreground">
-                            Concluída em: {formatDate(obl.completedAt)}
-                          </div>
-                        )}
-                      </div>
-                      <Badge className="bg-emerald-600 mt-1 shrink-0">
-                        <CheckCircle2 className="size-3 mr-1" /> Concluída
-                      </Badge>
-                    </Link>
-                  ))
-              )}
-            </div>
+            {stats.completed.length === 0 ? (
+              <p className="text-center text-muted-foreground py-6 text-sm">
+                Nenhuma obrigação concluída ainda.
+              </p>
+            ) : (
+              <>
+                <div className={`space-y-2 ${showAllCompleted ? "max-h-[460px] overflow-y-auto pr-1" : ""}`}>
+                  {stats.completed
+                    .slice()
+                    .sort((a, b) => {
+                      const da = a.completedAt ? new Date(a.completedAt).getTime() : 0
+                      const db = b.completedAt ? new Date(b.completedAt).getTime() : 0
+                      return db - da
+                    })
+                    .slice(0, showAllCompleted ? 50 : 5)
+                    .map((obl) => (
+                      <Link
+                        key={obl.id}
+                        href={`/obrigacoes?clientId=${obl.clientId}&obligationId=${obl.id}`}
+                        className="flex items-start justify-between p-3 border rounded-lg hover:border-primary/40 hover:bg-muted/50 transition-colors"
+                      >
+                        <div className="space-y-0.5 min-w-0">
+                          <div className="font-medium truncate">{obl.name}</div>
+                          <div className="text-sm text-muted-foreground truncate">{obl.client.name}</div>
+                          {obl.completedAt && (
+                            <div className="text-xs text-muted-foreground">
+                              Concluída em: {formatDate(obl.completedAt)}
+                            </div>
+                          )}
+                        </div>
+                        <Badge className="bg-emerald-600 mt-1 shrink-0">
+                          <CheckCircle2 className="size-3 mr-1" /> Concluída
+                        </Badge>
+                      </Link>
+                    ))}
+                </div>
+                {stats.completed.length > 5 && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setShowAllCompleted(!showAllCompleted)}
+                    className="w-full mt-3 text-xs"
+                  >
+                    {showAllCompleted
+                      ? "Mostrar menos"
+                      : `Ver últimas ${Math.min(50, stats.completed.length)}`}
+                  </Button>
+                )}
+              </>
+            )}
           </CardContent>
         </Card>
       </section>
