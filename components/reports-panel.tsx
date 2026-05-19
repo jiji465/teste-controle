@@ -833,22 +833,33 @@ export function ReportsPanel({
           </CardContent>
         </Card>
 
-        {/* Recorrência */}
+        {/* Recorrência — compacto, em chips ao invés de cards grandes */}
         <Card className="mt-3">
-          <CardHeader>
+          <CardHeader className="pb-3">
             <CardTitle className="text-base">Distribuição por Recorrência</CardTitle>
+            <CardDescription className="text-xs">Frequências usadas pelas obrigações no filtro</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="grid gap-2 sm:grid-cols-2">
-              {Object.entries(byRecurrence)
-                .sort(([, a], [, b]) => b - a)
-                .map(([recurrence, count]) => (
-                  <div key={recurrence} className="flex items-center justify-between p-3 border rounded-lg">
-                    <span className="font-medium">{recurrence}</span>
-                    <Badge variant="outline">{count}</Badge>
-                  </div>
-                ))}
-            </div>
+            {Object.keys(byRecurrence).length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-3">
+                Sem dados no filtro atual.
+              </p>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {Object.entries(byRecurrence)
+                  .sort(([, a], [, b]) => b - a)
+                  .map(([recurrence, count]) => (
+                    <Badge
+                      key={recurrence}
+                      variant="outline"
+                      className="text-xs gap-1.5 py-1 px-2.5"
+                    >
+                      {recurrence}
+                      <span className="font-bold tabular-nums">{count}</span>
+                    </Badge>
+                  ))}
+              </div>
+            )}
           </CardContent>
         </Card>
       </section>

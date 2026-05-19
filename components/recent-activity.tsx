@@ -1,15 +1,18 @@
 "use client"
 
 /**
- * RecentActivity — timeline vertical com 10 itens mais recentes, mostrando
- * ação, autor (`completedBy`) e tempo relativo. Considera também guias e
- * parcelas, não só obrigações.
+ * RecentActivity — timeline vertical mostrando ação, autor (`completedBy`)
+ * e tempo relativo. Considera obrigações + guias + parcelas.
+ *
+ * Por padrão mostra só 5 itens; usuário expande pra ver até `limit` (default 10).
+ * Sem isso, a seção empurrava o resto do dashboard pra muito longe.
  */
 
-import { useMemo } from "react"
+import { useMemo, useState } from "react"
 import Link from "next/link"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import {
   CheckCircle2,
   AlertTriangle,
@@ -109,6 +112,7 @@ export function RecentActivity({
   clients,
   limit = 10,
 }: Props) {
+  const [showAll, setShowAll] = useState(false)
   const clientName = (id: string) => clients.find((c) => c.id === id)?.name ?? "—"
 
   const activities = useMemo<ActivityItem[]>(() => {
@@ -223,6 +227,8 @@ export function RecentActivity({
     )
   }
 
+  const visible = showAll ? activities : activities.slice(0, 5)
+
   return (
     <Card>
       <CardHeader className="pb-3">
@@ -231,17 +237,19 @@ export function RecentActivity({
           Atividade Recente
         </CardTitle>
         <CardDescription className="text-xs">
-          Últimas {activities.length} ações no sistema
+          {showAll
+            ? `Últimas ${activities.length} ações no sistema`
+            : `Últimas ${Math.min(5, activities.length)} ações${activities.length > 5 ? ` de ${activities.length}` : ""}`}
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <ol className="relative space-y-3">
+        <ol className={`relative space-y-3 ${showAll ? "max-h-[420px] overflow-y-auto pr-1" : ""}`}>
           {/* Linha vertical da timeline */}
           <div
             className="absolute left-[15px] top-2 bottom-2 w-px bg-border/60"
             aria-hidden
           />
-          {activities.map((item) => {
+          {visible.map((item) => {
             const meta = ACTION_META[item.action]
             const ActionIcon = meta.icon
             const TypeIcon = TYPE_ICON[item.type]
@@ -298,6 +306,16 @@ export function RecentActivity({
             )
           })}
         </ol>
+        {activities.length > 5 && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setShowAll(!showAll)}
+            className="w-full mt-3 text-xs"
+          >
+            {showAll ? "Mostrar menos" : `Ver últimas ${activities.length}`}
+          </Button>
+        )}
       </CardContent>
     </Card>
   )
