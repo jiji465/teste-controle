@@ -551,7 +551,10 @@ export default function ImpostosPage() {
               <TabsTrigger value="all" className="flex flex-col gap-1 py-3">
                 <span className="text-sm font-medium">Todos</span>
                 <Badge variant="secondary" className="text-xs">
-                  {taxes.length}
+                  {/* sortedTaxes já está filtrado pelo período + filtros — antes
+                      usava taxes.length (total global), mostrando 446 mesmo
+                      em "Maio/2026". */}
+                  {sortedTaxes.length}
                 </Badge>
               </TabsTrigger>
               <TabsTrigger value="pending" className="flex flex-col gap-1 py-3">
