@@ -1,24 +1,23 @@
 /**
  * Lógica central de manipulação de parcelas.
  *
- * Modelo de duas etapas (separa "minha parte" de "pagamento do cliente"):
+ * Modelo SIMPLIFICADO (uma etapa só):
  *
- *   Pendente → [Marcar enviada] → Enviada → [Confirmar pagamento] → Paga
- *                                       ↑
- *                                  Pode virar Atrasada se passar do
- *                                  vencimento e ainda não tiver paidAt.
+ *   Pendente → [Concluir parcela] → Concluída → próxima vira atual
  *
- *   currentInstallment = "próxima parcela a ENVIAR"
+ *   currentInstallment = "próxima parcela a concluir"
  *
- * Quando o usuário "Marca enviada" a parcela atual:
- *   - Adiciona/atualiza record com sentAt = agora
- *   - currentInstallment avança +1 (próxima a enviar)
- *   - Status do parcelamento permanece como "pending" até todas pagas
+ * Quando o usuário "Conclui parcela atual":
+ *   - Adiciona record com sentAt = agora E paidAt = agora (mesma timestamp)
+ *   - currentInstallment avança +1
+ *   - Se era a última: status do parcelamento todo vira "completed"
  *
- * Quando o usuário "Confirma pagamento" da parcela X:
- *   - Atualiza record com paidAt = agora
- *   - currentInstallment NÃO MUDA (envio é independente do pagamento)
- *   - Se ALL parcelas têm paidAt → marca parcelamento todo como completed
+ * Histórico do modelo anterior: existia uma etapa intermediária "Enviada"
+ * separada de "Paga". Removida pelo usuário: na prática, contador conclui
+ * uma parcela quando o cliente paga — não rastreia o "enviei pro cliente"
+ * separadamente. Funções `confirmInstallmentPayment`, `payCurrentInstallment`
+ * e `undoInstallmentPayment` mantidas só por compatibilidade com chamadas
+ * antigas (caem todas em `markCurrentInstallmentAsSent` agora).
  *
  * Por que separar daqui em vez de inline na página:
  * - O fluxo é chamado de muitos lugares (lista desktop/mobile, card de
@@ -88,45 +87,38 @@ export function markCurrentInstallmentAsSent(
 
   const existing = installment.paidInstallments ?? []
   const { records, index } = findOrCreateRecord(existing, sentNumber)
+  // Modelo simplificado: enviar = pagar. Setamos os dois timestamps na
+  // mesma chamada (compatibilidade com leituras antigas que olham paidAt).
   records[index] = {
     ...records[index],
     sentAt: records[index].sentAt ?? ts,
     sentBy: records[index].sentBy ?? sentBy,
+    paidAt: records[index].paidAt ?? ts,
+    paidBy: records[index].paidBy ?? sentBy,
   }
 
   const historyEntry = {
     id: crypto.randomUUID(),
-    action: "status_changed" as const,
-    description: `Parcela ${sentNumber}/${installment.installmentCount} marcada como enviada`,
+    action: isLastSent ? ("completed" as const) : ("status_changed" as const),
+    description: isLastSent
+      ? `Parcela ${sentNumber}/${installment.installmentCount} concluída — parcelamento finalizado`
+      : `Parcela ${sentNumber}/${installment.installmentCount} concluída`,
     timestamp: ts,
     user: sentBy,
   }
 
-  // Sincroniza o status do parcelamento com o estado real:
-  // - se ainda não estava "in_progress" e tem qualquer parcela enviada/paga,
-  //   vira "in_progress" agora. Antes, isso só era detectado em runtime na
-  //   página /parcelamentos via paidInstallments — outras telas (dashboard,
-  //   relatórios, calendário fiscal) viam o status "pending" no banco e
-  //   mostravam "Pendente" mesmo com parcelas em andamento. Agora persiste.
-  // - "completed" só quando totalmente pago (continua a regra antiga).
-  const newStatus =
-    installment.status === "completed"
-      ? "pending" // estado inconsistente antigo: completed mas com parcela a enviar
-      : "in_progress"
-
   return {
     updated: {
       ...installment,
-      // currentInstallment vira a próxima a ENVIAR. Se já era a última,
-      // permanece nela (não há "próxima" pra enviar).
+      // currentInstallment vira a próxima a concluir. Se era a última,
+      // permanece nela (não há "próxima").
       currentInstallment: isLastSent
         ? installment.currentInstallment
         : sentNumber + 1,
-      status: newStatus,
-      completedAt:
-        installment.status === "completed" ? undefined : installment.completedAt,
-      completedBy:
-        installment.status === "completed" ? undefined : installment.completedBy,
+      // Última parcela → parcelamento todo concluído. Senão, in_progress.
+      status: isLastSent ? "completed" : "in_progress",
+      completedAt: isLastSent ? ts : undefined,
+      completedBy: isLastSent ? sentBy : undefined,
       paidInstallments: records,
       history: [...(installment.history ?? []), historyEntry],
     },
@@ -144,54 +136,29 @@ export type ConfirmPaymentResult = {
   isFullyPaid: boolean
 }
 
+/**
+ * @deprecated Modelo de duas etapas removido. Compatível: agora apenas
+ * delega a `markCurrentInstallmentAsSent` quando o parcelNumber bate com
+ * o currentInstallment. Se for diferente, lança erro (uso antigo).
+ */
 export function confirmInstallmentPayment(
   installment: Installment,
   parcelNumber: number,
   paidBy = "Contador",
   now: Date = new Date(),
 ): ConfirmPaymentResult {
-  const ts = nowIso(now)
-  const existing = installment.paidInstallments ?? []
-  const { records, index } = findOrCreateRecord(existing, parcelNumber)
-  records[index] = {
-    ...records[index],
-    // Se ainda não tinha sido marcada como enviada, marca agora também
-    // (paga implicitamente significa que foi enviada).
-    sentAt: records[index].sentAt ?? ts,
-    sentBy: records[index].sentBy ?? paidBy,
-    paidAt: ts,
-    paidBy,
+  if (parcelNumber !== installment.currentInstallment) {
+    // No modelo simplificado só dá pra concluir a parcela atual em ordem.
+    // Se quiser desfazer alguma anterior, use undoLastSent/undoInstallmentPayment.
+    throw new Error(
+      `Modelo simplificado: só dá pra concluir a parcela atual (${installment.currentInstallment}). Pediu ${parcelNumber}.`,
+    )
   }
-
-  const fullyPaid = allParcelasPaid(installment, records)
-
-  const historyEntry = {
-    id: crypto.randomUUID(),
-    action: "completed" as const,
-    description: fullyPaid
-      ? `Parcela ${parcelNumber}/${installment.installmentCount} paga — parcelamento concluído`
-      : `Parcela ${parcelNumber}/${installment.installmentCount} paga`,
-    timestamp: ts,
-    user: paidBy,
-  }
-
-  // currentInstallment fica como está (envio é independente de pagamento).
-  // Status:
-  //   - fully paid → "completed"
-  //   - parcial → "in_progress" (persiste no banco pra outras telas verem)
-  // Antes, status ficava "pending" mesmo com parcelas pagas, e só a página
-  // /parcelamentos detectava in_progress derivando do paidInstallments.
+  const sent = markCurrentInstallmentAsSent(installment, paidBy, now)
   return {
-    updated: {
-      ...installment,
-      ...(fullyPaid
-        ? { status: "completed", completedAt: ts, completedBy: paidBy }
-        : { status: "in_progress" }),
-      paidInstallments: records,
-      history: [...(installment.history ?? []), historyEntry],
-    },
-    paidNumber: parcelNumber,
-    isFullyPaid: fullyPaid,
+    updated: sent.updated,
+    paidNumber: sent.sentNumber,
+    isFullyPaid: sent.isLastSent,
   }
 }
 
@@ -204,30 +171,19 @@ export type PayInstallmentResult = {
 }
 
 /**
- * Marca a parcela atual como ENVIADA E PAGA num único clique.
- * Útil quando o usuário sabe que o cliente já pagou e não quer fazer dois
- * passos (Marcar enviada → Confirmar pagamento).
- *
- * Mantida por compatibilidade com chamadas antigas e como atalho de UX.
+ * Conclui a parcela atual (envia + paga + avança em um único passo).
+ * Modelo simplificado: é o mesmo que `markCurrentInstallmentAsSent`.
  */
 export function payCurrentInstallment(
   installment: Installment,
   paidBy = "Contador",
   now: Date = new Date(),
 ): PayInstallmentResult {
-  // Encadeia: marca como enviada (avança currentInstallment) e depois
-  // confirma o pagamento da que acabou de ser enviada.
   const sent = markCurrentInstallmentAsSent(installment, paidBy, now)
-  const confirmed = confirmInstallmentPayment(
-    sent.updated,
-    sent.sentNumber,
-    paidBy,
-    now,
-  )
   return {
-    updated: confirmed.updated,
-    isFinalPayment: confirmed.isFullyPaid,
-    paidNumber: confirmed.paidNumber,
+    updated: sent.updated,
+    isFinalPayment: sent.isLastSent,
+    paidNumber: sent.sentNumber,
   }
 }
 
@@ -308,17 +264,20 @@ export const undoLastPayment = undoLastSent
 
 // ─── Helpers de status visual ────────────────────────────────────────────
 
+/**
+ * Status visual de uma parcela individual no cronograma.
+ *
+ * No modelo simplificado:
+ *   - `paid`: parcela já concluída (tem paidAt OU sentAt — tratamos como o mesmo)
+ *   - `overdue`: ainda não concluída e vencimento já passou
+ *   - `pending`: é a parcela atual (próxima a concluir)
+ *   - `future`: ainda não chegou a vez
+ *
+ * O valor `"sent"` continua no type por compatibilidade mas não é mais
+ * retornado por esta função (qualquer record com sentAt agora vira "paid").
+ */
 export type ParcelaStatus = "future" | "pending" | "sent" | "paid" | "overdue"
 
-/**
- * Retorna o status efetivo de uma parcela específica.
- *
- * - `paid`: tem paidAt
- * - `overdue`: tem sentAt, sem paidAt, vencimento já passou
- * - `sent`: tem sentAt, sem paidAt, vencimento ainda não passou
- * - `pending`: é a parcela atual (próxima a enviar)
- * - `future`: ainda não chegou a vez dela
- */
 export function parcelaStatus(
   installment: Installment,
   parcelNumber: number,
@@ -327,16 +286,18 @@ export function parcelaStatus(
 ): ParcelaStatus {
   const records = installment.paidInstallments ?? []
   const record = records.find((r) => r.number === parcelNumber)
-  if (record?.paidAt) return "paid"
-  if (record?.sentAt) {
-    const todayStart = new Date(today)
-    todayStart.setHours(0, 0, 0, 0)
-    return dueDate < todayStart ? "overdue" : "sent"
-  }
+  // Modelo simplificado: tanto sentAt quanto paidAt indicam parcela concluída.
+  if (record?.paidAt || record?.sentAt) return "paid"
+
+  const todayStart = new Date(today)
+  todayStart.setHours(0, 0, 0, 0)
+
   if (parcelNumber < installment.currentInstallment) {
-    // Caso raro: avançou sem registrar — trata como pendente
-    return "pending"
+    // Avançou sem registrar (dados antigos): trata como pendente/atrasada
+    return dueDate < todayStart ? "overdue" : "pending"
   }
-  if (parcelNumber === installment.currentInstallment) return "pending"
+  if (parcelNumber === installment.currentInstallment) {
+    return dueDate < todayStart ? "overdue" : "pending"
+  }
   return "future"
 }
