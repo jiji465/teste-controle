@@ -202,35 +202,89 @@ export function ReportsPanel({
     return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`
   }, [filters.range.to])
 
-  // ─── Por Cliente / Por Imposto / Por Recorrência (mantidos) ─────────────
+  // ─── Por Cliente — agora soma obrigações + guias + parcelamentos ────────
+  // Antes só contava obrigações; um cliente que só tinha guias aparecia com
+  // total 0 (sumia da lista). Agora cada cliente mostra total geral com
+  // breakdown por tipo (obr/guia/parc) pra ficar claro de onde vem.
   const byClient = useMemo(() => {
-    const map = new Map<
-      string,
-      { clientId: string; clientName: string; total: number; completed: number; pending: number; inProgress: number; overdue: number }
-    >()
-    for (const o of filteredObligations) {
-      const id = o.clientId
-      if (!map.has(id)) {
-        map.set(id, {
+    type Entry = {
+      clientId: string
+      clientName: string
+      total: number
+      completed: number
+      pending: number
+      inProgress: number
+      overdue: number
+      // Breakdown por tipo (só nos contadores que importam pra UI)
+      obrigCount: number
+      guiaCount: number
+      parcCount: number
+    }
+    const map = new Map<string, Entry>()
+    const getOrCreate = (id: string, name: string): Entry => {
+      let e = map.get(id)
+      if (!e) {
+        e = {
           clientId: id,
-          clientName: o.client.name,
+          clientName: name,
           total: 0,
           completed: 0,
           pending: 0,
           inProgress: 0,
           overdue: 0,
-        })
+          obrigCount: 0,
+          guiaCount: 0,
+          parcCount: 0,
+        }
+        map.set(id, e)
       }
-      const entry = map.get(id)!
-      entry.total++
+      return e
+    }
+    // Obrigações
+    for (const o of filteredObligations) {
+      const e = getOrCreate(o.clientId, o.client.name)
+      e.total++
+      e.obrigCount++
       const eff = effectiveStatus(o)
-      if (eff === "completed") entry.completed++
-      else if (eff === "in_progress") entry.inProgress++
-      else if (eff === "overdue") entry.overdue++
-      else entry.pending++
+      if (eff === "completed") e.completed++
+      else if (eff === "in_progress") e.inProgress++
+      else if (eff === "overdue") e.overdue++
+      else e.pending++
+    }
+    // Guias
+    for (const t of filteredTaxes) {
+      if (!t.clientId) continue
+      const name = clients.find((c) => c.id === t.clientId)?.name || "Cliente"
+      const e = getOrCreate(t.clientId, name)
+      e.total++
+      e.guiaCount++
+      const due = calculateDueDateFromCompetency(t.competencyMonth, t.dueDay, t.weekendRule, t.dueMonth)
+      const eff = effectiveStatus({ status: t.status, calculatedDueDate: due ?? undefined })
+      if (eff === "completed") e.completed++
+      else if (eff === "in_progress") e.inProgress++
+      else if (eff === "overdue") e.overdue++
+      else e.pending++
+    }
+    // Parcelamentos (calcula data da parcela atual)
+    for (const i of filteredInstallments) {
+      const name = clients.find((c) => c.id === i.clientId)?.name || "Cliente"
+      const e = getOrCreate(i.clientId, name)
+      e.total++
+      e.parcCount++
+      const firstDue = new Date(i.firstDueDate)
+      const monthsToAdd = i.currentInstallment - 1
+      const dueDate = adjustForWeekend(
+        buildSafeDate(firstDue.getFullYear(), firstDue.getMonth() + monthsToAdd, i.dueDay),
+        i.weekendRule,
+      )
+      const eff = effectiveStatus({ status: i.status, calculatedDueDate: dueDate })
+      if (eff === "completed") e.completed++
+      else if (eff === "in_progress") e.inProgress++
+      else if (eff === "overdue") e.overdue++
+      else e.pending++
     }
     return [...map.values()].sort((a, b) => b.total - a.total)
-  }, [filteredObligations])
+  }, [filteredObligations, filteredTaxes, filteredInstallments, clients])
 
   const byRecurrence = useMemo(() => {
     const map: Record<string, number> = {}
@@ -253,6 +307,64 @@ export function ReportsPanel({
     }
     return map
   }, [filteredObligations])
+
+  // Lista unificada de itens CONCLUÍDOS (obrigações + guias + parcelamentos),
+  // pra alimentar a aba "Finalizadas". Antes mostrava só obrigações; agora
+  // o contador vê tudo que finalizou no período.
+  type CompletedItem = {
+    id: string
+    name: string
+    clientName: string
+    completedAt: string | undefined
+    href: string
+    typeLabel: "Obrigação" | "Guia" | "Parcela"
+  }
+  const unifiedCompleted = useMemo<CompletedItem[]>(() => {
+    const out: CompletedItem[] = []
+    for (const o of filteredObligations) {
+      if (effectiveStatus(o) === "completed") {
+        out.push({
+          id: o.id,
+          name: o.name,
+          clientName: o.client.name,
+          completedAt: o.completedAt,
+          href: `/obrigacoes?clientId=${o.clientId}&obligationId=${o.id}`,
+          typeLabel: "Obrigação",
+        })
+      }
+    }
+    for (const t of filteredTaxes) {
+      if (t.status === "completed") {
+        const clientName = clients.find((c) => c.id === t.clientId)?.name ?? "—"
+        out.push({
+          id: t.id,
+          name: t.name,
+          clientName,
+          completedAt: t.completedAt,
+          href: `/impostos?clientId=${t.clientId}`,
+          typeLabel: "Guia",
+        })
+      }
+    }
+    for (const i of filteredInstallments) {
+      if (i.status === "completed") {
+        const clientName = clients.find((c) => c.id === i.clientId)?.name ?? "—"
+        out.push({
+          id: i.id,
+          name: i.name,
+          clientName,
+          completedAt: i.completedAt,
+          href: `/parcelamentos?clientId=${i.clientId}`,
+          typeLabel: "Parcela",
+        })
+      }
+    }
+    return out.sort((a, b) => {
+      const da = a.completedAt ? new Date(a.completedAt).getTime() : 0
+      const db = b.completedAt ? new Date(b.completedAt).getTime() : 0
+      return db - da
+    })
+  }, [filteredObligations, filteredTaxes, filteredInstallments, clients])
 
   // Parcelamentos do período
   const installmentsInPeriod = useMemo(() => {
@@ -740,33 +852,49 @@ export function ReportsPanel({
       <section id="cliente" className="scroll-mt-20">
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Obrigações por Cliente</CardTitle>
-            <CardDescription className="text-xs">Clique pra ver as obrigações do cliente</CardDescription>
+            <CardTitle className="text-base">Itens por Cliente</CardTitle>
+            <CardDescription className="text-xs">
+              Obrigações + guias + parcelamentos. Clique pra ver os itens do cliente.
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <div className={`space-y-3 ${showAllByClient ? "max-h-[460px] overflow-y-auto pr-1" : ""}`}>
-              {(showAllByClient ? byClient : byClient.slice(0, 5)).map((entry) => (
-                <Link
-                  key={entry.clientId}
-                  href={`/obrigacoes?clientId=${entry.clientId}`}
-                  className="block space-y-2 p-3 rounded-lg border hover:border-primary/40 hover:bg-muted/50 transition-colors"
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="font-medium">{entry.clientName}</span>
-                    <span className="text-sm text-muted-foreground tabular-nums">{entry.total} obrigações</span>
-                  </div>
-                  <div className="flex gap-2 flex-wrap">
-                    <Badge className="bg-emerald-600 hover:bg-emerald-700">{entry.completed} concluídas</Badge>
-                    <Badge className="bg-blue-600 hover:bg-blue-700">{entry.inProgress} em andamento</Badge>
-                    <Badge variant="secondary">{entry.pending} pendentes</Badge>
-                    {entry.overdue > 0 && <Badge variant="destructive">{entry.overdue} atrasadas</Badge>}
-                  </div>
-                  <Progress value={(entry.completed / entry.total) * 100} className="h-2" />
-                </Link>
-              ))}
+              {(showAllByClient ? byClient : byClient.slice(0, 5)).map((entry) => {
+                // Breakdown por tipo, mostrando só os que têm > 0
+                const typeParts: string[] = []
+                if (entry.obrigCount) typeParts.push(`${entry.obrigCount} obrig.`)
+                if (entry.guiaCount) typeParts.push(`${entry.guiaCount} guias`)
+                if (entry.parcCount) typeParts.push(`${entry.parcCount} parc.`)
+                return (
+                  <Link
+                    key={entry.clientId}
+                    href={`/obrigacoes?clientId=${entry.clientId}`}
+                    className="block space-y-2 p-3 rounded-lg border hover:border-primary/40 hover:bg-muted/50 transition-colors"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-medium">{entry.clientName}</span>
+                      <span className="text-sm text-muted-foreground tabular-nums">
+                        {entry.total} {entry.total === 1 ? "item" : "itens"}
+                      </span>
+                    </div>
+                    {typeParts.length > 0 && (
+                      <p className="text-[11px] text-muted-foreground">
+                        {typeParts.join(" · ")}
+                      </p>
+                    )}
+                    <div className="flex gap-2 flex-wrap">
+                      <Badge className="bg-emerald-600 hover:bg-emerald-700">{entry.completed} concluídos</Badge>
+                      <Badge className="bg-blue-600 hover:bg-blue-700">{entry.inProgress} em andamento</Badge>
+                      <Badge variant="secondary">{entry.pending} pendentes</Badge>
+                      {entry.overdue > 0 && <Badge variant="destructive">{entry.overdue} atrasados</Badge>}
+                    </div>
+                    <Progress value={(entry.completed / entry.total) * 100} className="h-2" />
+                  </Link>
+                )
+              })}
               {byClient.length === 0 && (
                 <p className="text-sm text-muted-foreground text-center py-4">
-                  Nenhuma obrigação no filtro atual.
+                  Nenhum item no filtro atual.
                 </p>
               )}
             </div>
@@ -869,56 +997,56 @@ export function ReportsPanel({
         <Card>
           <CardHeader>
             <CardTitle className="text-base flex items-center gap-2">
-              <Activity className="size-4 text-emerald-600" /> Obrigações Finalizadas
+              <Activity className="size-4 text-emerald-600" /> Itens Finalizados
             </CardTitle>
             <CardDescription className="text-xs">
+              Obrigações + guias + parcelamentos concluídos no filtro · {" "}
               {showAllCompleted
-                ? stats.completed.length > 50
-                  ? `50 mais recentes de ${stats.completed.length}`
-                  : `${stats.completed.length} no filtro`
-                : `${Math.min(5, stats.completed.length)} mais recentes${
-                    stats.completed.length > 5 ? ` de ${stats.completed.length}` : ""
+                ? unifiedCompleted.length > 50
+                  ? `50 mais recentes de ${unifiedCompleted.length}`
+                  : `${unifiedCompleted.length} no filtro`
+                : `${Math.min(5, unifiedCompleted.length)} mais recentes${
+                    unifiedCompleted.length > 5 ? ` de ${unifiedCompleted.length}` : ""
                   }`}
             </CardDescription>
           </CardHeader>
           <CardContent>
-            {stats.completed.length === 0 ? (
+            {unifiedCompleted.length === 0 ? (
               <p className="text-center text-muted-foreground py-6 text-sm">
-                Nenhuma obrigação concluída ainda.
+                Nenhum item concluído no filtro atual.
               </p>
             ) : (
               <>
                 <div className={`space-y-2 ${showAllCompleted ? "max-h-[460px] overflow-y-auto pr-1" : ""}`}>
-                  {stats.completed
-                    .slice()
-                    .sort((a, b) => {
-                      const da = a.completedAt ? new Date(a.completedAt).getTime() : 0
-                      const db = b.completedAt ? new Date(b.completedAt).getTime() : 0
-                      return db - da
-                    })
+                  {unifiedCompleted
                     .slice(0, showAllCompleted ? 50 : 5)
-                    .map((obl) => (
+                    .map((item) => (
                       <Link
-                        key={obl.id}
-                        href={`/obrigacoes?clientId=${obl.clientId}&obligationId=${obl.id}`}
-                        className="flex items-start justify-between p-3 border rounded-lg hover:border-primary/40 hover:bg-muted/50 transition-colors"
+                        key={`${item.typeLabel}-${item.id}`}
+                        href={item.href}
+                        className="flex items-start justify-between gap-3 p-3 border rounded-lg hover:border-primary/40 hover:bg-muted/50 transition-colors"
                       >
                         <div className="space-y-0.5 min-w-0">
-                          <div className="font-medium truncate">{obl.name}</div>
-                          <div className="text-sm text-muted-foreground truncate">{obl.client.name}</div>
-                          {obl.completedAt && (
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <Badge variant="outline" className="text-[10px] py-0 px-1.5 shrink-0">
+                              {item.typeLabel}
+                            </Badge>
+                            <span className="font-medium truncate">{item.name}</span>
+                          </div>
+                          <div className="text-sm text-muted-foreground truncate">{item.clientName}</div>
+                          {item.completedAt && (
                             <div className="text-xs text-muted-foreground">
-                              Concluída em: {formatDate(obl.completedAt)}
+                              Concluído em: {formatDate(item.completedAt)}
                             </div>
                           )}
                         </div>
                         <Badge className="bg-emerald-600 mt-1 shrink-0">
-                          <CheckCircle2 className="size-3 mr-1" /> Concluída
+                          <CheckCircle2 className="size-3 mr-1" /> Concluído
                         </Badge>
                       </Link>
                     ))}
                 </div>
-                {stats.completed.length > 5 && (
+                {unifiedCompleted.length > 5 && (
                   <Button
                     variant="ghost"
                     size="sm"
@@ -927,7 +1055,7 @@ export function ReportsPanel({
                   >
                     {showAllCompleted
                       ? "Mostrar menos"
-                      : `Ver últimas ${Math.min(50, stats.completed.length)}`}
+                      : `Ver últimos ${Math.min(50, unifiedCompleted.length)}`}
                   </Button>
                 )}
               </>
