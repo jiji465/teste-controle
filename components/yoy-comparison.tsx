@@ -54,27 +54,31 @@ function countCompletedInRange(
 }
 
 export function YoYComparison({ obligations, taxes, installments, range }: Props) {
+  // Se range é nulo (ex: filtro "Todos os períodos"), assume ano atual
+  // completo vs ano anterior completo. Antes mostrava card vazio — métrica
+  // inútil exatamente quando o usuário quer ver o panorama anual.
+  const effectiveRange = useMemo<DateRange>(() => {
+    if (range.from && range.to) return range
+    const today = new Date()
+    const year = today.getFullYear()
+    return {
+      from: new Date(year, 0, 1).toISOString().slice(0, 10),
+      to: new Date(year, 11, 31).toISOString().slice(0, 10),
+    }
+  }, [range])
+
+  const isFullYearMode = !range.from || !range.to
+
   const { current, previous, delta, deltaPct } = useMemo(() => {
-    const current = countCompletedInRange(obligations, taxes, installments, range)
-    const prevRange = yoyRange(range)
-    const previous = prevRange ? countCompletedInRange(obligations, taxes, installments, prevRange) : 0
+    const current = countCompletedInRange(obligations, taxes, installments, effectiveRange)
+    const prevRange = yoyRange(effectiveRange)
+    const previous = prevRange
+      ? countCompletedInRange(obligations, taxes, installments, prevRange)
+      : 0
     const delta = current - previous
     const deltaPct = previous === 0 ? null : Math.round((delta / previous) * 100)
     return { current, previous, delta, deltaPct }
-  }, [obligations, taxes, installments, range])
-
-  if (!range.from || !range.to) {
-    return (
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-medium">Comparativo Anual</CardTitle>
-          <CardDescription className="text-xs">
-            Selecione um período definido pra comparar
-          </CardDescription>
-        </CardHeader>
-      </Card>
-    )
-  }
+  }, [obligations, taxes, installments, effectiveRange])
 
   const isUp = delta > 0
   const isDown = delta < 0
@@ -89,7 +93,9 @@ export function YoYComparison({ obligations, taxes, installments, range }: Props
       <CardHeader className="pb-2">
         <CardTitle className="text-sm font-medium">Comparativo Anual</CardTitle>
         <CardDescription className="text-xs">
-          Mesmo período no ano anterior
+          {isFullYearMode
+            ? `${new Date().getFullYear()} inteiro vs ${new Date().getFullYear() - 1}`
+            : "Mesmo período no ano anterior"}
         </CardDescription>
       </CardHeader>
       <CardContent>

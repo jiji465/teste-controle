@@ -747,12 +747,15 @@ export function ReportsPanel({
       </section>
 
       {/* ─── COMPLIANCE SCORE ─── */}
+      {/* Passa dados já filtrados pelo date range — antes o score ignorava
+          o filtro e mostrava nota global, confundindo "Janeiro/2026" com
+          o histórico inteiro do cliente. */}
       <section id="compliance" className="scroll-mt-20">
         <ComplianceScoreList
           clients={clients}
-          obligations={obligations}
-          taxes={taxes}
-          installments={installments}
+          obligations={filteredObligations}
+          taxes={filteredTaxes}
+          installments={filteredInstallments}
         />
       </section>
 
