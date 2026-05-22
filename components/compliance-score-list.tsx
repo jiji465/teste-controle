@@ -66,7 +66,7 @@ export function ComplianceScoreList({ clients, obligations, taxes, installments 
     return { sorted, stats }
   }, [clients, obligations, taxes, installments, sortMode])
 
-  const visible = showAll ? sorted : sorted.slice(0, 10)
+  const visible = showAll ? sorted : sorted.slice(0, 5)
 
   if (stats.total === 0) {
     return (
@@ -131,7 +131,9 @@ export function ComplianceScoreList({ clients, obligations, taxes, installments 
         </div>
       </CardHeader>
       <CardContent>
-        <ul className="space-y-2">
+        <ul
+          className={`space-y-2 ${showAll ? "max-h-[420px] overflow-y-auto pr-1" : ""}`}
+        >
           {visible.map((entry) => {
             const style = GRADE_STYLE[entry.grade]
             return (
@@ -178,7 +180,7 @@ export function ComplianceScoreList({ clients, obligations, taxes, installments 
           })}
         </ul>
 
-        {sorted.length > 10 && (
+        {sorted.length > 5 && (
           <Button
             variant="ghost"
             size="sm"
