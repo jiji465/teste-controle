@@ -351,7 +351,7 @@ export default function DashboardPage() {
               obligations={obligations}
               clients={clients}
               taxes={filteredTaxes}
-              installments={filteredInstallments}
+              installments={installmentsForStats}
             />
           </div>
 
