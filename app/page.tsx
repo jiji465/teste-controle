@@ -104,6 +104,57 @@ export default function DashboardPage() {
     })
   }, [installments, isLoading, isInPeriod])
 
+  // ─── Período ANTERIOR (mês imediatamente antes do filtrado) ─────────────
+  // Alimenta o delta "vs mês anterior" do ProductivityStats. Quando o
+  // PeriodSwitcher está em "all" (sem filtro), não há "anterior" — passamos
+  // undefined e o componente esconde o delta.
+  const previousPeriodKey = useMemo<string | null>(() => {
+    if (period === "all" || !/^\d{4}-\d{2}$/.test(period)) return null
+    const [y, m] = period.split("-").map(Number)
+    // Date(y, m-2, 1) = mês anterior (m é 1-based; setMonth é 0-based, então -2)
+    const prev = new Date(y, m - 2, 1)
+    return `${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(2, "0")}`
+  }, [period])
+
+  const inPreviousPeriod = (d: string | Date | null | undefined): boolean => {
+    if (!previousPeriodKey || !d) return false
+    const date = typeof d === "string" ? new Date(d) : d
+    if (Number.isNaN(date.getTime())) return false
+    const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`
+    return key === previousPeriodKey
+  }
+
+  const previousObligations = useMemo(() => {
+    if (!previousPeriodKey) return undefined
+    return obligationsWithDetails.filter((o) => inPreviousPeriod(o.calculatedDueDate))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [obligationsWithDetails, previousPeriodKey])
+
+  const previousTaxes = useMemo(() => {
+    if (!previousPeriodKey) return undefined
+    return taxes.filter((t) => {
+      const date = calculateDueDateFromCompetency(t.competencyMonth, t.dueDay, t.weekendRule, t.dueMonth)
+      return date ? inPreviousPeriod(date) : false
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [taxes, previousPeriodKey])
+
+  const previousInstallments = useMemo(() => {
+    if (!previousPeriodKey) return undefined
+    return installments.filter((i) => {
+      const firstDue = new Date(i.firstDueDate)
+      for (let n = 1; n <= i.installmentCount; n++) {
+        const dueDate = adjustForWeekend(
+          buildSafeDate(firstDue.getFullYear(), firstDue.getMonth() + (n - 1), i.dueDay),
+          i.weekendRule,
+        )
+        if (inPreviousPeriod(dueDate)) return true
+      }
+      return false
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [installments, previousPeriodKey])
+
   // Contagem total de taxes/obligations/installments fora do filtro pra mostrar contexto quando vazio
   const totalsOutsidePeriod = useMemo(() => {
     if (!isFiltering) return { taxes: 0, obligations: 0, installments: 0 }
@@ -321,6 +372,9 @@ export default function DashboardPage() {
               obligations={obligations}
               taxes={filteredTaxes}
               installments={filteredInstallments}
+              previousObligations={previousObligations}
+              previousTaxes={previousTaxes}
+              previousInstallments={previousInstallments}
               periodLabel={periodLabel}
             />
           </div>
