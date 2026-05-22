@@ -97,7 +97,7 @@ export function DashboardStatsCards({ stats, periodLabel }: DashboardStatsProps)
         return (
           <Card
             key={index}
-            className={`relative overflow-hidden p-4 ring-1 ${stat.ringColor} hover:shadow-md transition-shadow ${
+            className={`relative overflow-hidden p-4 ring-1 ${stat.ringColor} hover:shadow-md transition-shadow h-full ${
               stat.highlight ? "ring-2 ring-red-500/30" : ""
             }`}
           >

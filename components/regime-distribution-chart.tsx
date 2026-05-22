@@ -116,7 +116,7 @@ function ObligationsHealthCard({
       : `${total} ${total === 1 ? "item" : "itens"} no total`
 
   return (
-    <Card className="overflow-hidden transition-shadow hover:shadow-lg">
+    <Card className="overflow-hidden transition-shadow hover:shadow-lg h-full flex flex-col">
       <CardHeader className="pb-1">
         <CardTitle className="text-base flex items-center justify-between">
           <span>Saúde das Tarefas</span>
@@ -124,7 +124,7 @@ function ObligationsHealthCard({
         </CardTitle>
         <CardDescription>{description}</CardDescription>
       </CardHeader>
-      <CardContent className="pt-2">
+      <CardContent className="pt-2 flex-1">
         <div className="relative">
           <ResponsiveContainer width="100%" height={180}>
             <RadialBarChart
@@ -222,7 +222,7 @@ function RegimeCard({ clients }: { clients: Client[] }) {
   if (data.length === 0) return null
 
   return (
-    <Card className="overflow-hidden transition-shadow hover:shadow-lg">
+    <Card className="overflow-hidden transition-shadow hover:shadow-lg h-full flex flex-col">
       <CardHeader className="pb-1">
         <CardTitle className="text-base flex items-center justify-between">
           <span>Regime Tributário</span>
@@ -230,7 +230,7 @@ function RegimeCard({ clients }: { clients: Client[] }) {
         </CardTitle>
         <CardDescription>{clients.length} cliente{clients.length !== 1 ? "s" : ""}</CardDescription>
       </CardHeader>
-      <CardContent className="pt-2">
+      <CardContent className="pt-2 flex-1">
         <div className="relative">
           <ResponsiveContainer width="100%" height={180}>
             <PieChart>
@@ -349,7 +349,7 @@ function ActivityCard({ clients }: { clients: Client[] }) {
   const max = Math.max(...data.map((d) => d.value), 1)
 
   return (
-    <Card className="overflow-hidden transition-shadow hover:shadow-lg">
+    <Card className="overflow-hidden transition-shadow hover:shadow-lg h-full flex flex-col">
       <CardHeader className="pb-1">
         <CardTitle className="text-base flex items-center justify-between">
           <span>Atividade Empresarial</span>
@@ -359,7 +359,7 @@ function ActivityCard({ clients }: { clients: Client[] }) {
           {total} cliente{total !== 1 ? "s" : ""} classificado{total !== 1 ? "s" : ""}
         </CardDescription>
       </CardHeader>
-      <CardContent className="pt-2">
+      <CardContent className="pt-2 flex-1">
         {/* Barras verticais lado a lado */}
         <div className="flex items-end justify-around gap-2 h-[140px] pb-2">
           {data.map((d) => {
@@ -436,7 +436,7 @@ function StatesCard({ clients }: { clients: Client[] }) {
   if (data.length === 0) return null
 
   return (
-    <Card className="overflow-hidden transition-shadow hover:shadow-lg">
+    <Card className="overflow-hidden transition-shadow hover:shadow-lg h-full flex flex-col">
       <CardHeader className="pb-1">
         <CardTitle className="text-base flex items-center justify-between">
           <span>Empresas por Estado</span>
@@ -446,7 +446,7 @@ function StatesCard({ clients }: { clients: Client[] }) {
           {data.length} UF{data.length !== 1 ? "s" : ""} · {total} empresa{total !== 1 ? "s" : ""}
         </CardDescription>
       </CardHeader>
-      <CardContent className="pt-2">
+      <CardContent className="pt-2 flex-1">
         <ul className="space-y-2.5">
           {data.slice(0, 8).map((d, idx) => {
             const pct = total > 0 ? Math.round((d.value / total) * 100) : 0
