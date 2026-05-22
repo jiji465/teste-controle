@@ -199,10 +199,23 @@ export function taxesInRange(taxes: Tax[], range: DateRange): Tax[] {
   })
 }
 
-/** Aplica filtro de date range em parcelamentos (usa parcela atual). */
+/** Aplica filtro de date range em parcelamentos: inclui se QUALQUER parcela
+ *  cair no período (não só a atual). Antes só olhava a parcela atual —
+ *  resultava em "Parcelamentos: 0/0" quando o filtro era um mês futuro mas
+ *  o parcelamento já estava na parcela 5 (passada). */
 export function installmentsInRange(installments: Installment[], range: DateRange): Installment[] {
   if (!range.from && !range.to) return installments
-  return installments.filter((i) => dateInRange(installmentDueDate(i), range))
+  return installments.filter((i) => {
+    const firstDue = new Date(i.firstDueDate)
+    for (let n = 1; n <= i.installmentCount; n++) {
+      const date = adjustForWeekend(
+        buildSafeDate(firstDue.getFullYear(), firstDue.getMonth() + (n - 1), i.dueDay),
+        i.weekendRule,
+      )
+      if (dateInRange(date, range)) return true
+    }
+    return false
+  })
 }
 
 // ─── Contagem mensal pra gráfico de evolução (12 meses) ─────────────────

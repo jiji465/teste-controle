@@ -115,12 +115,11 @@ export function InstallmentDetails({
         ? "in_progress"
         : installment.status
 
-  // Progresso baseado em parcelas EFETIVAMENTE pagas (com paidAt).
-  // O array paidInstallments agora pode conter parcelas só enviadas
-  // (sentAt) sem pagamento — essas NÃO contam pra "pagas".
+  // Modelo simplificado: "enviou = concluiu". Parcela conta como concluída
+  // quando tem sentAt OU paidAt (geralmente os dois — markCurrentInstallmentAsSent
+  // seta os 2 timestamps). Aceita dados antigos que tinham só sentAt.
   const paidList = installment.paidInstallments ?? []
-  const paidCount = paidList.filter((p) => !!p.paidAt).length
-  const sentNotPaidCount = paidList.filter((p) => !!p.sentAt && !p.paidAt).length
+  const paidCount = paidList.filter((p) => !!p.paidAt || !!p.sentAt).length
   const progress = Math.min(
     100,
     Math.round((paidCount / Math.max(1, installment.installmentCount)) * 100),
@@ -130,9 +129,8 @@ export function InstallmentDetails({
 
   // Detecta estado inconsistente: parcelamento marcado como concluído
   // (status=completed ou completedAt) MAS nenhuma parcela foi efetivamente
-  // paga. Acontece com registros antigos, antes do fix de auto-avanço,
-  // quando "Concluir" fechava o plano todo na 1ª parcela. O usuário precisa
-  // recadastrar pra normalizar.
+  // concluída. Acontece com registros antigos antes do fix de auto-avanço.
+  // Usuário precisa recadastrar pra normalizar.
   const isInconsistentState =
     (installment.status === "completed" || !!installment.completedAt) &&
     paidCount === 0
@@ -201,34 +199,22 @@ export function InstallmentDetails({
               </p>
             </div>
 
-            {/* Ações rápidas no header — fluxo de 2 etapas:
-                1. "Marcar enviada" da parcela atual (azul, tipo "minha parte está feita")
-                2. "Atalho: enviada + paga" pra quem sabe que cliente pagou na hora
-                Os botões contextuais da linha do cronograma cobrem o resto. */}
+            {/* Ação rápida — modelo simplificado: um clique conclui a parcela atual.
+                Avança currentInstallment e marca o parcelamento todo como concluído
+                quando a última parcela é finalizada. */}
             {!allPaid && (
               <div className="flex items-center gap-2 flex-wrap">
-                {onMarkAsSent &&
-                  installment.currentInstallment <= installment.installmentCount &&
-                  !paidByNumber.get(installment.currentInstallment)?.sentAt && (
-                    <Button
-                      onClick={() => onMarkAsSent(installment)}
-                      variant="outline"
-                      className="flex-1 gap-2 border-blue-500/50 text-blue-700 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-950/30"
-                    >
-                      <Send className="size-4" />
-                      Marcar {installment.currentInstallment}/{installment.installmentCount} enviada
-                    </Button>
-                  )}
                 {onPay &&
                   installment.currentInstallment <= installment.installmentCount &&
-                  !paidByNumber.get(installment.currentInstallment)?.sentAt && (
+                  !paidByNumber.get(installment.currentInstallment)?.sentAt &&
+                  !paidByNumber.get(installment.currentInstallment)?.paidAt && (
                     <Button
                       onClick={() => onPay(installment)}
                       className="flex-1 gap-2 bg-green-600 hover:bg-green-700 text-white"
-                      title="Atalho: marca como enviada e paga em um clique"
+                      title="Marca a parcela atual como concluída e avança para a próxima"
                     >
                       <CheckCircle2 className="size-4" />
-                      Atalho: enviada + paga
+                      Concluir parcela {installment.currentInstallment}/{installment.installmentCount}
                     </Button>
                   )}
                 {paidCount > 0 && onUndoLastPayment && (
@@ -236,7 +222,7 @@ export function InstallmentDetails({
                     variant="outline"
                     onClick={() => onUndoLastPayment(installment)}
                     className="gap-2"
-                    title="Desfazer último envio"
+                    title="Desfazer última conclusão"
                   >
                     <RotateCcw className="size-4" />
                   </Button>
@@ -301,31 +287,27 @@ export function InstallmentDetails({
                 (n) => {
                   const due = dueDateFor(n)
                   const record = paidByNumber.get(n)
-                  // 4 estados visuais:
-                  //  - PAID: tem paidAt → ✅ verde
-                  //  - SENT_OVERDUE: enviada, sem pagamento, vencida → ⚠️ vermelho
-                  //  - SENT: enviada, sem pagamento, no prazo → 📧 azul
-                  //  - PENDING: parcela atual, ainda não enviada → ⏳ âmbar
+                  // 3 estados visuais (modelo simplificado):
+                  //  - DONE: parcela concluída (tem paidAt OU sentAt) → ✅ verde
+                  //  - CURRENT_OVERDUE: é a parcela atual e venceu → ⚠️ vermelho
+                  //  - CURRENT: é a parcela atual ainda no prazo → ⏳ âmbar
                   //  - FUTURE: ainda não chegou a vez → ⚪ cinza
-                  const isPaid = !!record?.paidAt
-                  const isSent = !!record?.sentAt && !record.paidAt
-                  const isOverdueSent = isSent && isOverdue(due)
-                  const isCurrentToSend =
-                    !record &&
-                    n === installment.currentInstallment &&
-                    !allPaid
-                  const isFuture =
-                    !record && n !== installment.currentInstallment
+                  const isDone = !!(record?.paidAt || record?.sentAt)
+                  const isCurrent = !isDone && n === installment.currentInstallment && !allPaid
+                  const isCurrentOverdue = isCurrent && isOverdue(due)
 
-                  const rowBg = isPaid
+                  const rowBg = isDone
                     ? "bg-green-50/50 dark:bg-green-950/10"
-                    : isOverdueSent
+                    : isCurrentOverdue
                       ? "bg-red-50/60 dark:bg-red-950/20"
-                      : isSent
-                        ? "bg-blue-50/50 dark:bg-blue-950/10"
-                        : isCurrentToSend
-                          ? "bg-amber-50/50 dark:bg-amber-950/10"
-                          : ""
+                      : isCurrent
+                        ? "bg-amber-50/50 dark:bg-amber-950/10"
+                        : ""
+
+                  // Data que mostramos como "concluída em": prefere paidAt
+                  // (modelo novo seta os dois), cai pra sentAt em dados antigos.
+                  const doneAt = record?.paidAt ?? record?.sentAt
+                  const doneBy = record?.paidBy ?? record?.sentBy
 
                   return (
                     <li
@@ -333,13 +315,11 @@ export function InstallmentDetails({
                       className={`flex items-center gap-3 px-3 py-2 text-sm flex-wrap ${rowBg}`}
                     >
                       <span className="shrink-0">
-                        {isPaid ? (
+                        {isDone ? (
                           <CheckCircle2 className="size-4 text-green-600" />
-                        ) : isOverdueSent ? (
+                        ) : isCurrentOverdue ? (
                           <AlertTriangle className="size-4 text-red-600" />
-                        ) : isSent ? (
-                          <Send className="size-4 text-blue-600" />
-                        ) : isCurrentToSend ? (
+                        ) : isCurrent ? (
                           <Clock className="size-4 text-amber-600" />
                         ) : (
                           <Circle className="size-4 text-muted-foreground/40" />
@@ -352,50 +332,36 @@ export function InstallmentDetails({
                         {formatDate(due)}
                       </span>
                       <span className="flex-1 min-w-0 text-xs">
-                        {isPaid && record?.paidAt ? (
+                        {isDone && doneAt ? (
                           <span className="text-green-700 dark:text-green-400 truncate block">
-                            Paga em {formatDate(record.paidAt)}
-                            {record.paidBy && ` por ${record.paidBy}`}
+                            Concluída em {formatDate(doneAt)}
+                            {doneBy && ` por ${doneBy}`}
                           </span>
-                        ) : isOverdueSent ? (
+                        ) : isCurrentOverdue ? (
                           <span className="text-red-700 dark:text-red-400 font-medium">
-                            Atrasada — enviada em {formatDate(record!.sentAt!)} sem pagamento
+                            Atrasada — venceu em {formatDate(due)}
                           </span>
-                        ) : isSent ? (
-                          <span className="text-blue-700 dark:text-blue-400">
-                            Enviada em {formatDate(record!.sentAt!)} — aguardando pagamento
-                          </span>
-                        ) : isCurrentToSend ? (
+                        ) : isCurrent ? (
                           <span className="text-amber-700 dark:text-amber-400 font-medium">
-                            Próxima a enviar
+                            Próxima a concluir
                           </span>
                         ) : (
                           <span className="text-muted-foreground/60">A vencer</span>
                         )}
                       </span>
-                      {/* Botões contextuais por linha */}
-                      <div className="flex gap-1 shrink-0">
-                        {isCurrentToSend && onMarkAsSent && (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => onMarkAsSent(installment)}
-                            className="h-7 text-[11px] gap-1 border-blue-500/50 text-blue-700 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-950/30"
-                          >
-                            <Send className="size-3" /> Enviada
-                          </Button>
-                        )}
-                        {(isSent || isOverdueSent) && onConfirmPayment && (
+                      {/* Botão de conclusão só na linha da parcela atual */}
+                      {(isCurrent || isCurrentOverdue) && onPay && (
+                        <div className="flex gap-1 shrink-0">
                           <Button
                             size="sm"
                             variant="default"
-                            onClick={() => onConfirmPayment(installment, n)}
+                            onClick={() => onPay(installment)}
                             className="h-7 text-[11px] gap-1 bg-green-600 hover:bg-green-700"
                           >
-                            <CheckCircle2 className="size-3" /> Confirmar pgto
+                            <CheckCircle2 className="size-3" /> Concluir
                           </Button>
-                        )}
-                      </div>
+                        </div>
+                      )}
                     </li>
                   )
                 },
