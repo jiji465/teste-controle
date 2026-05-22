@@ -18,7 +18,7 @@ const RegimeDistributionChart = dynamic(
     ),
   },
 )
-import { calculateDashboardStats } from "@/lib/dashboard-utils"
+import { calculateDashboardStats, installmentInPeriod } from "@/lib/dashboard-utils"
 import { calculateDueDateFromCompetency } from "@/lib/date-utils"
 import { getCurrentPeriod } from "@/lib/recurrence-engine"
 import { getGreetingMeta } from "@/lib/weather"
@@ -104,6 +104,19 @@ export default function DashboardPage() {
     })
   }, [installments, isLoading, isInPeriod])
 
+  // Versão "sintética" dos parcelamentos com status DA PARCELA do período
+  // (não do parcelamento todo). Usada nos contadores que precisam dizer
+  // "X parcelas concluídas em Maio" em vez de "X parcelamentos inteiros
+  // concluídos". O parcelamento como um todo só vira completed quando
+  // todas as parcelas terminam — mas pra fins de "controle do que entreguei
+  // no mês", cada parcela conta separadamente.
+  const installmentsForStats = useMemo(() => {
+    if (isLoading) return []
+    return filteredInstallments
+      .map((i) => installmentInPeriod(i, period))
+      .filter((x): x is NonNullable<typeof x> => x !== null)
+  }, [filteredInstallments, period, isLoading])
+
   // ─── Período ANTERIOR (mês imediatamente antes do filtrado) ─────────────
   // Alimenta o delta "vs mês anterior" do ProductivityStats. Quando o
   // PeriodSwitcher está em "all" (sem filtro), não há "anterior" — passamos
@@ -154,6 +167,15 @@ export default function DashboardPage() {
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [installments, previousPeriodKey])
+
+  // Versão sintética dos parcelamentos do mês anterior (mesma lógica que
+  // installmentsForStats, mas pro período anterior).
+  const previousInstallmentsForStats = useMemo(() => {
+    if (!previousPeriodKey || !previousInstallments) return undefined
+    return previousInstallments
+      .map((i) => installmentInPeriod(i, previousPeriodKey))
+      .filter((x): x is NonNullable<typeof x> => x !== null)
+  }, [previousInstallments, previousPeriodKey])
 
   // Contagem total de taxes/obligations/installments fora do filtro pra mostrar contexto quando vazio
   const totalsOutsidePeriod = useMemo(() => {
@@ -371,10 +393,10 @@ export default function DashboardPage() {
             <ProductivityStats
               obligations={obligations}
               taxes={filteredTaxes}
-              installments={filteredInstallments}
+              installments={installmentsForStats}
               previousObligations={previousObligations}
               previousTaxes={previousTaxes}
-              previousInstallments={previousInstallments}
+              previousInstallments={previousInstallmentsForStats}
               periodLabel={periodLabel}
             />
           </div>
