@@ -109,10 +109,23 @@ export const calculateDashboardStats = (
     })
     .filter((t) => inPeriod(t.calculatedDueDate, period))
 
-  // Parcelamentos no período — usa data da parcela atual
+  // Parcelamentos no período — inclui se QUALQUER parcela cair no filtro,
+  // não só a atual. Sem isso, parcelamento avançado pra parcela 5 (passada)
+  // ficava de fora de filtros futuros mesmo tendo parcelas no mês filtrado.
   const installmentsInPeriod = installments
+    .filter((i) => {
+      if (period === "all") return true
+      const firstDue = new Date(i.firstDueDate)
+      for (let n = 1; n <= i.installmentCount; n++) {
+        const d = adjustForWeekend(
+          buildSafeDate(firstDue.getFullYear(), firstDue.getMonth() + (n - 1), i.dueDay),
+          i.weekendRule,
+        )
+        if (inPeriod(d.toISOString(), period)) return true
+      }
+      return false
+    })
     .map((i) => ({ ...i, calculatedDueDate: installmentDueDate(i).toISOString() }))
-    .filter((i) => inPeriod(i.calculatedDueDate, period))
 
   const oblBucket = tallyByEffectiveStatus(obligationsInPeriod)
   const taxBucket = tallyByEffectiveStatus(taxesInPeriod)

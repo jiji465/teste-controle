@@ -85,18 +85,22 @@ export default function DashboardPage() {
     })
   }, [taxes, isLoading, isInPeriod])
 
-  // Parcelamentos cuja parcela atual cai no período selecionado.
-  // Usa a parcela atual (não todas) — se já avançou, mostra a próxima a pagar.
+  // Parcelamentos que TOCAM o período selecionado — inclui se QUALQUER
+  // parcela cair no filtro, não só a atual. Antes a Dashboard mostrava
+  // "0 parc." mesmo com 7 parcelamentos ativos porque a parcela atual
+  // estava num mês passado.
   const filteredInstallments = useMemo(() => {
     if (isLoading) return []
     return installments.filter((i) => {
       const firstDue = new Date(i.firstDueDate)
-      const monthsToAdd = i.currentInstallment - 1
-      const dueDate = adjustForWeekend(
-        buildSafeDate(firstDue.getFullYear(), firstDue.getMonth() + monthsToAdd, i.dueDay),
-        i.weekendRule,
-      )
-      return isInPeriod(dueDate)
+      for (let n = 1; n <= i.installmentCount; n++) {
+        const dueDate = adjustForWeekend(
+          buildSafeDate(firstDue.getFullYear(), firstDue.getMonth() + (n - 1), i.dueDay),
+          i.weekendRule,
+        )
+        if (isInPeriod(dueDate)) return true
+      }
+      return false
     })
   }, [installments, isLoading, isInPeriod])
 
