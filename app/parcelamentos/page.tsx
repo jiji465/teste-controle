@@ -91,7 +91,7 @@ export default function ParcelamentosPage() {
     obligationsWithDetails,
     refreshData,
   } = useData()
-  const { isInPeriod, periodLabel, isFiltering } = useSelectedPeriod()
+  const { isInPeriod, periodLabel, isFiltering, showAll } = useSelectedPeriod()
 
   // ─── Estado de filtro / ordenação / UI ───────────────────────────────────
   // Filtros persistidos no URL pra permitir compartilhar links com filtros
@@ -161,20 +161,57 @@ export default function ParcelamentosPage() {
     return false
   }
 
-  /** Status efetivo do parcelamento:
-   *   - completed: status no banco === completed
-   *   - overdue: data atual da parcela passou e não está concluído
-   *   - in_progress: tem qualquer parcela enviada ou paga (derivado), OU
-   *     o usuário clicou manualmente "Iniciar" (i.status === "in_progress")
-   *   - pending: nada enviado/pago e usuário não iniciou
+  /** Qual parcela MOSTRAR na linha? Quando filtra um mês específico,
+   *  mostra a parcela DAQUELE mês (não a current). Quando filtro é "all",
+   *  usa a current (próxima a concluir).
    *
-   * O derivado de "in_progress" via paidInstallments existe porque o card
-   * de detalhes permite "Marcar enviada" / "Confirmar pgto" sem passar
-   * pelo botão "Iniciar" — sem essa derivação, o badge ficava "Pendente"
-   * mesmo com parcelas pagas. Bug reportado e diagnosticado pelo agent
-   * debugger.
+   *  Bug reportado: filtro Maio mostrava vencimento de Junho (current) com
+   *  status "Em Andamento", quando o usuário esperava ver a parcela de Maio
+   *  (já concluída) marcada como concluída. */
+  const getDisplayParcela = (i: Installment): { number: number; dueDate: Date } => {
+    if (showAll) {
+      return { number: i.currentInstallment, dueDate: calculateDueDate(i) }
+    }
+    for (let n = 1; n <= i.installmentCount; n++) {
+      const date = calculateParcelaDueDate(i, n)
+      if (isInPeriod(date)) return { number: n, dueDate: date }
+    }
+    // Fallback: nenhuma parcela cai no período (não deveria acontecer
+    // porque já filtramos por installmentTouchesPeriod). Usa a atual.
+    return { number: i.currentInstallment, dueDate: calculateDueDate(i) }
+  }
+
+  /** Status visual da parcela DA LINHA (não do parcelamento todo).
+   *  - completed: parcela X tem sentAt OU paidAt
+   *  - overdue: parcela X não concluída e vencimento passou
+   *  - pending: parcela X não concluída, ainda no prazo
+   *  Note: não retorna "in_progress" no nível da parcela individual —
+   *  cada parcela é binária (feita ou não feita).
    */
-  const getStatus = (i: Installment): "pending" | "in_progress" | "completed" | "overdue" => {
+  const getParcelaStatus = (
+    i: Installment,
+    parcelNumber: number,
+  ): "pending" | "completed" | "overdue" => {
+    const record = (i.paidInstallments ?? []).find((p) => p.number === parcelNumber)
+    if (record?.paidAt || record?.sentAt) return "completed"
+    const date = calculateParcelaDueDate(i, parcelNumber)
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    return date < today ? "overdue" : "pending"
+  }
+
+  /** Status visual EXIBIDO na linha — para a parcela do período filtrado.
+   *  Em "all" continua usando o status agregado do parcelamento todo (sentido
+   *  diferente: "está em andamento? concluído de vez?"). */
+  const getStatus = (
+    i: Installment,
+  ): "pending" | "in_progress" | "completed" | "overdue" => {
+    if (!showAll) {
+      // Em filtro mensal: status da parcela do mês especificamente
+      const { number } = getDisplayParcela(i)
+      return getParcelaStatus(i, number)
+    }
+    // Sem filtro de período: status agregado do parcelamento (regra antiga)
     if (i.status === "completed") return "completed"
     const due = calculateDueDate(i)
     const today = new Date()
@@ -747,7 +784,9 @@ export default function ParcelamentosPage() {
               ) : (
                 visibleInstallments.map((i) => {
                   const status = getStatus(i)
-                  const dueDate = calculateDueDate(i)
+                  // Em filtro mensal, mostra a parcela DAQUELE mês (não a current).
+                  const display = getDisplayParcela(i)
+                  const dueDate = display.dueDate
                   const isSelected = selectedIds.has(i.id)
                   return (
                     <div
@@ -805,7 +844,7 @@ export default function ParcelamentosPage() {
                         <div>
                           <span className="text-muted-foreground">Parcela:</span>{" "}
                           <span className="font-mono font-medium tabular-nums">
-                            {i.currentInstallment}/{i.installmentCount}
+                            {display.number}/{i.installmentCount}
                           </span>
                         </div>
                         <div>
@@ -932,7 +971,9 @@ export default function ParcelamentosPage() {
                   ) : (
                     visibleInstallments.map((i) => {
                       const status = getStatus(i)
-                      const dueDate = calculateDueDate(i)
+                      // Em filtro mensal, mostra parcela DAQUELE mês (não a current).
+                      const display = getDisplayParcela(i)
+                      const dueDate = display.dueDate
                       const isSelected = selectedIds.has(i.id)
                       return (
                         <TableRow
@@ -976,7 +1017,7 @@ export default function ParcelamentosPage() {
                           <TableCell>{getClientName(i.clientId)}</TableCell>
                           <TableCell>{getTaxName(i.taxId)}</TableCell>
                           <TableCell className="font-mono tabular-nums">
-                            {i.currentInstallment}/{i.installmentCount}
+                            {display.number}/{i.installmentCount}
                           </TableCell>
                           <TableCell>
                             <div className="font-mono text-sm font-medium">{formatDate(dueDate)}</div>
