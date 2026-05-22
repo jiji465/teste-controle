@@ -2,6 +2,7 @@ import type React from "react"
 import type { Metadata } from "next"
 import { Geist, Geist_Mono } from "next/font/google"
 import { Suspense } from "react"
+import { AuthProvider } from "@/contexts/auth-context"
 import { DataProvider } from "@/contexts/data-context"
 import { PeriodProvider } from "@/contexts/period-context"
 import { AutoRecurrenceInitializer } from "@/components/auto-recurrence-initializer"
@@ -34,16 +35,18 @@ export default function RootLayout({
   return (
     <html lang="pt-BR" className={`${geistSans.variable} ${geistMono.variable}`}>
       <body className="font-sans antialiased">
-        <DataProvider>
-          <PeriodProvider>
-            <AutoRecurrenceInitializer />
-            <ErrorBoundary>
-              <Suspense fallback={null}>
-                <AppShell>{children}</AppShell>
-              </Suspense>
-            </ErrorBoundary>
-          </PeriodProvider>
-        </DataProvider>
+        <AuthProvider>
+          <DataProvider>
+            <PeriodProvider>
+              <AutoRecurrenceInitializer />
+              <ErrorBoundary>
+                <Suspense fallback={null}>
+                  <AppShell>{children}</AppShell>
+                </Suspense>
+              </ErrorBoundary>
+            </PeriodProvider>
+          </DataProvider>
+        </AuthProvider>
         <Toaster position="bottom-right" richColors />
       </body>
     </html>

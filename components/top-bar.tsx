@@ -15,6 +15,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { PeriodSwitcher } from "@/components/period-switcher"
+import { UserMenu } from "@/components/user-menu"
 import { useData } from "@/contexts/data-context"
 import { getObligationsWithDetails } from "@/lib/dashboard-utils"
 import { isOverdue, formatDate } from "@/lib/date-utils"
@@ -112,6 +113,8 @@ export function TopBar() {
               </PopoverContent>
             </Popover>
           )}
+
+          <UserMenu />
         </div>
       </div>
     </header>
