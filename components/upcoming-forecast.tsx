@@ -41,15 +41,42 @@ function parsePeriod(period: string | undefined): { year: number; month0: number
 }
 
 export function UpcomingForecast({ obligations, taxes, installments, currentMonth }: Props) {
-  const { nextLabel, counts, link } = useMemo(() => {
-    const { year, month0 } = parsePeriod(currentMonth)
-    // Próximo mês relativo ao "mês selecionado" (não ao mês de calendário real)
-    const nextDate = new Date(year, month0 + 1, 1)
-    const nextYear = nextDate.getFullYear()
-    const nextMonth0 = nextDate.getMonth()
-    const period = `${nextYear}-${String(nextMonth0 + 1).padStart(2, "0")}`
+  // Quando o filtro está em "Todos os períodos" (currentMonth === "all" ou
+  // ausente), mostra "Próximos 30 dias" a partir de HOJE em vez de "próximo
+  // mês de calendário". Antes mostrava sempre o próximo mês real, ignorando
+  // o contexto "all".
+  const isAllPeriods = !currentMonth || currentMonth === "all" || !/^\d{4}-\d{2}$/.test(currentMonth)
 
-    const matches = (d: Date) => d.getFullYear() === nextYear && d.getMonth() === nextMonth0
+  const { headerLabel, descPrefix, descRef, counts, link } = useMemo(() => {
+    let matches: (d: Date) => boolean
+    let headerLabel: string
+    let descPrefix: string
+    let descRef: string
+    let link: string
+
+    if (isAllPeriods) {
+      // Janela: [hoje, hoje+30 dias]
+      const today = new Date()
+      today.setHours(0, 0, 0, 0)
+      const limit = new Date(today)
+      limit.setDate(limit.getDate() + 30)
+      matches = (d: Date) => d >= today && d <= limit
+      headerLabel = "Próximos 30 dias"
+      descPrefix = "O que vence "
+      descRef = "nos próximos 30 dias"
+      link = "" // sem filtro específico — apenas leva ao Relatórios
+    } else {
+      const { year, month0 } = parsePeriod(currentMonth)
+      const nextDate = new Date(year, month0 + 1, 1)
+      const nextYear = nextDate.getFullYear()
+      const nextMonth0 = nextDate.getMonth()
+      const period = `${nextYear}-${String(nextMonth0 + 1).padStart(2, "0")}`
+      matches = (d: Date) => d.getFullYear() === nextYear && d.getMonth() === nextMonth0
+      headerLabel = "Próximo mês"
+      descPrefix = "O que vence em "
+      descRef = `${MONTH_NAMES[nextMonth0]}/${nextYear}`
+      link = `?period=${period}`
+    }
 
     let obs = 0
     let txs = 0
@@ -73,12 +100,8 @@ export function UpcomingForecast({ obligations, taxes, installments, currentMont
       if (matches(d)) parcs++
     }
 
-    return {
-      nextLabel: `${MONTH_NAMES[nextMonth0]}/${nextYear}`,
-      counts: { obs, txs, parcs },
-      link: `?period=${period}`,
-    }
-  }, [obligations, taxes, installments, currentMonth])
+    return { headerLabel, descPrefix, descRef, counts: { obs, txs, parcs }, link }
+  }, [obligations, taxes, installments, currentMonth, isAllPeriods])
 
   const total = counts.obs + counts.txs + counts.parcs
 
@@ -87,10 +110,11 @@ export function UpcomingForecast({ obligations, taxes, installments, currentMont
       <CardHeader className="pb-2">
         <CardTitle className="text-sm flex items-center gap-2">
           <TrendingUp className="size-4 text-blue-600" />
-          Próximo mês
+          {headerLabel}
         </CardTitle>
         <CardDescription className="text-xs">
-          O que vence em <span className="font-medium text-foreground">{nextLabel}</span>
+          {descPrefix}
+          <span className="font-medium text-foreground">{descRef}</span>
         </CardDescription>
       </CardHeader>
       <CardContent>

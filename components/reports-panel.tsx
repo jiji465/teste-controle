@@ -766,6 +766,7 @@ export function ReportsPanel({
           taxes={taxes}
           installments={installments}
           monthKey={heatmapMonthKey}
+          isAllPeriods={!filters.range.from && !filters.range.to}
         />
       </section>
 

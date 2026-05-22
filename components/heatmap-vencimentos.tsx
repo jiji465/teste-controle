@@ -27,6 +27,11 @@ type Props = {
   installments: Installment[]
   /** "YYYY-MM" — se vazio, usa mês corrente */
   monthKey?: string
+  /** True quando o filtro de range global é nulo ("Todos os períodos").
+   *  Usado pra exibir um aviso: o heatmap mostra um único mês mesmo
+   *  quando o usuário pediu "todos" — então deixamos claro qual mês está
+   *  na tela e por quê. */
+  isAllPeriods?: boolean
 }
 
 function colorForCount(count: number, max: number): { bg: string; text: string } {
@@ -38,7 +43,7 @@ function colorForCount(count: number, max: number): { bg: string; text: string }
   return { bg: "bg-red-300 dark:bg-red-950/70", text: "text-red-900 dark:text-red-100" }
 }
 
-export function HeatmapVencimentos({ obligations, taxes, installments, monthKey }: Props) {
+export function HeatmapVencimentos({ obligations, taxes, installments, monthKey, isAllPeriods }: Props) {
   const { year, month0, label, counts, max, total, peakDay } = useMemo(() => {
     let year: number
     let month0: number
@@ -86,6 +91,11 @@ export function HeatmapVencimentos({ obligations, taxes, installments, monthKey 
           Picos de Vencimento — {label}
         </CardTitle>
         <CardDescription className="text-xs">
+          {isAllPeriods && (
+            <span className="block text-amber-700 dark:text-amber-400 mb-0.5">
+              Filtro em "Todos os períodos" — heatmap só consegue mostrar 1 mês por vez, exibindo o atual.
+            </span>
+          )}
           {total} vencimento{total !== 1 ? "s" : ""} no mês
           {peakDay && max > 1 && (
             <>
