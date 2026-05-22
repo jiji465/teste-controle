@@ -65,6 +65,78 @@ function installmentDueDate(inst: Installment): Date {
   return adjustForWeekend(dueDate, inst.weekendRule)
 }
 
+/**
+ * Para um parcelamento e um período "YYYY-MM" (ou "all"), retorna uma versão
+ * "sintética" do parcelamento com:
+ *  - status: status DA PARCELA específica que cai no período (NÃO do
+ *    parcelamento inteiro). Concluída se tem sentAt/paidAt. Pendente ou
+ *    atrasada conforme a data.
+ *  - calculatedDueDate: data dessa parcela específica.
+ *  - parcelaNumber: número (1..installmentCount).
+ *
+ * Quando period === "all", usa a parcela atual e o status do parcelamento
+ * inteiro (combinado com data da parcela atual via effectiveStatus).
+ *
+ * Retorna null se nenhuma parcela cai no período (caso "YYYY-MM" sem match).
+ *
+ * Motivação: o usuário quer que "enviar a parcela do mês" conte como
+ * Concluído NAQUELE MÊS, mesmo que o parcelamento inteiro ainda tenha
+ * parcelas futuras pendentes.
+ */
+export function installmentInPeriod(
+  inst: Installment,
+  period: string,
+): (Installment & { calculatedDueDate: string; parcelaNumber: number }) | null {
+  const firstDue = new Date(inst.firstDueDate)
+  let targetN: number | null = null
+
+  if (period === "all" || !/^\d{4}-\d{2}$/.test(period)) {
+    targetN = inst.currentInstallment
+  } else {
+    for (let n = 1; n <= inst.installmentCount; n++) {
+      const d = adjustForWeekend(
+        buildSafeDate(firstDue.getFullYear(), firstDue.getMonth() + (n - 1), inst.dueDay),
+        inst.weekendRule,
+      )
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`
+      if (key === period) {
+        targetN = n
+        break
+      }
+    }
+    if (targetN === null) return null
+  }
+
+  const dueDate = adjustForWeekend(
+    buildSafeDate(firstDue.getFullYear(), firstDue.getMonth() + (targetN - 1), inst.dueDay),
+    inst.weekendRule,
+  )
+
+  // Status da parcela específica: concluída se tem sentAt OU paidAt
+  const record = (inst.paidInstallments ?? []).find((p) => p.number === targetN)
+  const isDone = !!(record?.paidAt || record?.sentAt)
+  let status: Installment["status"]
+  if (isDone) {
+    status = "completed"
+  } else {
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    status = dueDate < today ? "overdue" : "pending"
+  }
+
+  return {
+    ...inst,
+    status,
+    // completedAt da PARCELA (não do parcelamento todo). Importante pra
+    // ProductivityStats calcular "Taxa no Prazo" corretamente: compara
+    // doneAt da parcela <= dueDate da parcela.
+    completedAt: isDone ? record?.paidAt ?? record?.sentAt : undefined,
+    completedBy: isDone ? record?.paidBy ?? record?.sentBy : undefined,
+    calculatedDueDate: dueDate.toISOString(),
+    parcelaNumber: targetN,
+  }
+}
+
 type Bucket = { total: number; completed: number; overdue: number; pending: number }
 type StatusBucketable = { status: string; calculatedDueDate?: string | Date }
 
@@ -109,23 +181,13 @@ export const calculateDashboardStats = (
     })
     .filter((t) => inPeriod(t.calculatedDueDate, period))
 
-  // Parcelamentos no período — inclui se QUALQUER parcela cair no filtro,
-  // não só a atual. Sem isso, parcelamento avançado pra parcela 5 (passada)
-  // ficava de fora de filtros futuros mesmo tendo parcelas no mês filtrado.
+  // Parcelamentos no período — usa installmentInPeriod pra obter o status
+  // DA PARCELA do mês (não do parcelamento todo). Concluir a parcela de Maio
+  // faz o parcelamento contar como "Concluído" no filtro de Maio, mesmo que
+  // o parcelamento como um todo continue em andamento (faltam outras parcelas).
   const installmentsInPeriod = installments
-    .filter((i) => {
-      if (period === "all") return true
-      const firstDue = new Date(i.firstDueDate)
-      for (let n = 1; n <= i.installmentCount; n++) {
-        const d = adjustForWeekend(
-          buildSafeDate(firstDue.getFullYear(), firstDue.getMonth() + (n - 1), i.dueDay),
-          i.weekendRule,
-        )
-        if (inPeriod(d.toISOString(), period)) return true
-      }
-      return false
-    })
-    .map((i) => ({ ...i, calculatedDueDate: installmentDueDate(i).toISOString() }))
+    .map((i) => installmentInPeriod(i, period))
+    .filter((x): x is NonNullable<typeof x> => x !== null)
 
   const oblBucket = tallyByEffectiveStatus(obligationsInPeriod)
   const taxBucket = tallyByEffectiveStatus(taxesInPeriod)
@@ -210,6 +272,56 @@ export function taxesInRange(taxes: Tax[], range: DateRange): Tax[] {
     const date = calculateDueDateFromCompetency(t.competencyMonth, t.dueDay, t.weekendRule, t.dueMonth)
     return date ? dateInRange(date, range) : true
   })
+}
+
+/** Expande um parcelamento nas suas PARCELAS individuais que caem no range,
+ *  com status DA PARCELA (concluída se tem sentAt/paidAt, atrasada se data
+ *  passou, pendente caso contrário).
+ *
+ *  Usado em Relatórios pra contar "X de Y parcelas concluídas no período"
+ *  em vez de "X de Y parcelamentos inteiros" — bate com o modelo mental do
+ *  usuário: "enviei a parcela do mês = concluído naquele mês". */
+export function installmentParcelasInRange(
+  inst: Installment,
+  range: DateRange,
+): Array<{
+  parcelaNumber: number
+  dueDate: Date
+  status: "completed" | "overdue" | "pending"
+  /** Quando ficou concluída (sentAt ou paidAt). */
+  doneAt?: string
+}> {
+  const out: Array<{
+    parcelaNumber: number
+    dueDate: Date
+    status: "completed" | "overdue" | "pending"
+    doneAt?: string
+  }> = []
+  const firstDue = new Date(inst.firstDueDate)
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+
+  for (let n = 1; n <= inst.installmentCount; n++) {
+    const date = adjustForWeekend(
+      buildSafeDate(firstDue.getFullYear(), firstDue.getMonth() + (n - 1), inst.dueDay),
+      inst.weekendRule,
+    )
+    if (!dateInRange(date, range)) continue
+
+    const record = (inst.paidInstallments ?? []).find((p) => p.number === n)
+    const isDone = !!(record?.paidAt || record?.sentAt)
+    let status: "completed" | "overdue" | "pending"
+    if (isDone) status = "completed"
+    else status = date < today ? "overdue" : "pending"
+
+    out.push({
+      parcelaNumber: n,
+      dueDate: date,
+      status,
+      doneAt: record?.paidAt ?? record?.sentAt,
+    })
+  }
+  return out
 }
 
 /** Aplica filtro de date range em parcelamentos: inclui se QUALQUER parcela

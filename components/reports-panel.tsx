@@ -56,6 +56,7 @@ import {
   obligationsInRange,
   taxesInRange,
   installmentsInRange,
+  installmentParcelasInRange,
   monthlyEvolutionBuckets,
 } from "@/lib/dashboard-utils"
 import { dateInRange } from "@/lib/date-range"
@@ -164,9 +165,33 @@ export function ReportsPanel({
   }, [filteredObligations])
 
   const taxesCompleted = filteredTaxes.filter((t) => t.status === "completed").length
-  const installmentsCompleted = filteredInstallments.filter((i) => i.status === "completed").length
-  const totalAll = filteredObligations.length + filteredTaxes.length + filteredInstallments.length
-  const totalCompletedAll = stats.completed.length + taxesCompleted + installmentsCompleted
+
+  // Parcelas individuais que caem no range (1 parcelamento pode contribuir
+  // com N parcelas se range é multi-mês). Antes contávamos parcelamento
+  // INTEIRO como "concluído" — bug: parcelamento com 24 parcelas só virava
+  // concluído quando todas 24 fossem pagas. Modelo do usuário: cada parcela
+  // do mês é uma unidade de "entregue".
+  const parcelasInRange = useMemo(() => {
+    const out: Array<{
+      inst: Installment
+      parcelaNumber: number
+      dueDate: Date
+      status: "completed" | "overdue" | "pending"
+      doneAt?: string
+    }> = []
+    for (const inst of filteredInstallments) {
+      for (const p of installmentParcelasInRange(inst, filters.range)) {
+        out.push({ inst, ...p })
+      }
+    }
+    return out
+  }, [filteredInstallments, filters.range])
+
+  const parcelasCompleted = parcelasInRange.filter((p) => p.status === "completed").length
+  const totalParcelas = parcelasInRange.length
+
+  const totalAll = filteredObligations.length + filteredTaxes.length + totalParcelas
+  const totalCompletedAll = stats.completed.length + taxesCompleted + parcelasCompleted
   const overallRate = totalAll > 0 ? Math.round((totalCompletedAll / totalAll) * 100) : 0
 
   const completedOnTime = useMemo(
@@ -265,26 +290,22 @@ export function ReportsPanel({
       else if (eff === "overdue") e.overdue++
       else e.pending++
     }
-    // Parcelamentos (calcula data da parcela atual)
-    for (const i of filteredInstallments) {
-      const name = clients.find((c) => c.id === i.clientId)?.name || "Cliente"
-      const e = getOrCreate(i.clientId, name)
+    // Parcelamentos — conta cada PARCELA do período como uma unidade.
+    // Mesma lógica do contador "Parcelas no período" da Visão Geral. Status
+    // é PER-PARCELA (concluída se sentAt/paidAt, atrasada/pendente conforme
+    // data). Não usa o status do parcelamento inteiro — esse só vira
+    // "completed" quando TODAS as parcelas terminam.
+    for (const p of parcelasInRange) {
+      const name = clients.find((c) => c.id === p.inst.clientId)?.name || "Cliente"
+      const e = getOrCreate(p.inst.clientId, name)
       e.total++
       e.parcCount++
-      const firstDue = new Date(i.firstDueDate)
-      const monthsToAdd = i.currentInstallment - 1
-      const dueDate = adjustForWeekend(
-        buildSafeDate(firstDue.getFullYear(), firstDue.getMonth() + monthsToAdd, i.dueDay),
-        i.weekendRule,
-      )
-      const eff = effectiveStatus({ status: i.status, calculatedDueDate: dueDate })
-      if (eff === "completed") e.completed++
-      else if (eff === "in_progress") e.inProgress++
-      else if (eff === "overdue") e.overdue++
+      if (p.status === "completed") e.completed++
+      else if (p.status === "overdue") e.overdue++
       else e.pending++
     }
     return [...map.values()].sort((a, b) => b.total - a.total)
-  }, [filteredObligations, filteredTaxes, filteredInstallments, clients])
+  }, [filteredObligations, filteredTaxes, parcelasInRange, clients])
 
   const byRecurrence = useMemo(() => {
     const map: Record<string, number> = {}
@@ -346,25 +367,26 @@ export function ReportsPanel({
         })
       }
     }
-    for (const i of filteredInstallments) {
-      if (i.status === "completed") {
-        const clientName = clients.find((c) => c.id === i.clientId)?.name ?? "—"
-        out.push({
-          id: i.id,
-          name: i.name,
-          clientName,
-          completedAt: i.completedAt,
-          href: `/parcelamentos?clientId=${i.clientId}`,
-          typeLabel: "Parcela",
-        })
-      }
+    // Parcelas individuais concluídas no período — não o parcelamento todo.
+    // Cada parcela é 1 linha com "PERT-INSS — parcela 6/24" + data de conclusão.
+    for (const p of parcelasInRange) {
+      if (p.status !== "completed") continue
+      const clientName = clients.find((c) => c.id === p.inst.clientId)?.name ?? "—"
+      out.push({
+        id: `${p.inst.id}-parc${p.parcelaNumber}`,
+        name: `${p.inst.name} — parcela ${p.parcelaNumber}/${p.inst.installmentCount}`,
+        clientName,
+        completedAt: p.doneAt,
+        href: `/parcelamentos?clientId=${p.inst.clientId}`,
+        typeLabel: "Parcela",
+      })
     }
     return out.sort((a, b) => {
       const da = a.completedAt ? new Date(a.completedAt).getTime() : 0
       const db = b.completedAt ? new Date(b.completedAt).getTime() : 0
       return db - da
     })
-  }, [filteredObligations, filteredTaxes, filteredInstallments, clients])
+  }, [filteredObligations, filteredTaxes, parcelasInRange, clients])
 
   // Parcelamentos do período
   const installmentsInPeriod = useMemo(() => {
@@ -410,8 +432,8 @@ export function ReportsPanel({
       { metrica: "Taxa no prazo (%)", valor: onTimeRate },
       { metrica: "Total de guias de imposto", valor: filteredTaxes.length },
       { metrica: "Guias concluídas", valor: taxesCompleted },
-      { metrica: "Total de parcelamentos", valor: filteredInstallments.length },
-      { metrica: "Parcelamentos concluídos", valor: installmentsCompleted },
+      { metrica: "Total de parcelas no período", valor: totalParcelas },
+      { metrica: "Parcelas concluídas no período", valor: parcelasCompleted },
       { metrica: "Taxa global combinada (%)", valor: overallRate },
     ]
 
@@ -610,9 +632,9 @@ export function ReportsPanel({
                 </p>
               </div>
               <div>
-                <p className="text-xs text-muted-foreground">Parcelamentos</p>
+                <p className="text-xs text-muted-foreground">Parcelas no período</p>
                 <p className="text-2xl font-bold tabular-nums">
-                  {installmentsCompleted}/{filteredInstallments.length}
+                  {parcelasCompleted}/{totalParcelas}
                 </p>
               </div>
             </div>
