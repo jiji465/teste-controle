@@ -95,6 +95,48 @@ export type RecurrenceType = "monthly" | "bimonthly" | "quarterly" | "semiannual
 
 export type Priority = "low" | "medium" | "high" | "urgent"
 
+// ─── Serviços Avulsos ────────────────────────────────────────────────────────
+// 4º tipo de tarefa: serviços esporádicos (NF-e avulsa, consultoria, etc.)
+// Diferenças vs Obrigações/Guias: usa data única (dueDate) em vez de
+// "competência + dia", e tem categoria editável.
+
+export type ServiceCategory = "nf_emission" | "consulting" | "other"
+
+export const SERVICE_CATEGORY_LABELS: Record<ServiceCategory, string> = {
+  nf_emission: "Emissão de NF",
+  consulting: "Consultoria",
+  other: "Outros",
+}
+
+export const SERVICE_CATEGORY_COLORS: Record<ServiceCategory, string> = {
+  nf_emission: "bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300",
+  consulting: "bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300",
+  other: "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300",
+}
+
+export type Service = {
+  id: string
+  name: string
+  clientId: string
+  description?: string
+  category: ServiceCategory
+  /** Data única do serviço (não "competência" como obrigações/guias). */
+  dueDate: string
+  status: "pending" | "in_progress" | "completed" | "overdue"
+  priority: Priority
+  /** Recorrência opcional. undefined = serviço one-off (default). */
+  recurrence?: RecurrenceType
+  recurrenceInterval?: number
+  recurrenceEndDate?: string
+  autoGenerate?: boolean
+  notes?: string
+  tags?: string[]
+  completedAt?: string
+  completedBy?: string
+  history?: ObligationHistory[]
+  createdAt: string
+}
+
 export type CertificateType = "federal" | "state" | "municipal" | "fgts" | "labor"
 
 export type Certificate = {
@@ -259,6 +301,7 @@ export type DashboardStats = {
     obligations: { total: number; completed: number; overdue: number; pending: number }
     taxes: { total: number; completed: number; overdue: number; pending: number }
     installments: { total: number; completed: number; overdue: number; pending: number }
+    services: { total: number; completed: number; overdue: number; pending: number }
   }
 }
 

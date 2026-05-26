@@ -48,7 +48,7 @@ import {
 } from "recharts"
 import { exportMultiSheetXlsx, timestampFilename } from "@/lib/export-utils"
 import { TAX_REGIME_LABELS } from "@/lib/types"
-import type { ObligationWithDetails, Tax, Installment, Client } from "@/lib/types"
+import type { ObligationWithDetails, Tax, Installment, Service, Client } from "@/lib/types"
 import { formatDate, buildSafeDate, adjustForWeekend, calculateDueDateFromCompetency } from "@/lib/date-utils"
 import { effectiveStatus } from "@/lib/obligation-status"
 import { getRecurrenceDescription } from "@/lib/recurrence-utils"
@@ -70,6 +70,7 @@ type Props = {
   obligations: ObligationWithDetails[]
   taxes?: Tax[]
   installments?: Installment[]
+  services?: Service[]
   clients?: Client[]
 }
 
@@ -80,6 +81,7 @@ export function ReportsPanel({
   obligations,
   taxes = [],
   installments = [],
+  services = [],
   clients = [],
 }: Props) {
   // Inicializa do localStorage (resolve preset → range)
@@ -148,6 +150,26 @@ export function ReportsPanel({
     return result
   }, [installments, filters])
 
+  const filteredServices = useMemo(() => {
+    let result = services.filter((s) => {
+      if (filters.range.from || filters.range.to) {
+        return dateInRange(s.dueDate, filters.range)
+      }
+      return true
+    })
+    if (filters.clientIds.length > 0) {
+      const set = new Set(filters.clientIds)
+      result = result.filter((s) => set.has(s.clientId))
+    }
+    if (filters.statuses.length > 0) {
+      const set = new Set<FilterStatus>(filters.statuses)
+      result = result.filter((s) =>
+        set.has(effectiveStatus({ status: s.status, calculatedDueDate: s.dueDate }) as FilterStatus),
+      )
+    }
+    return result
+  }, [services, filters])
+
   // Stats consolidadas
   const stats = useMemo(() => {
     const completed: ObligationWithDetails[] = []
@@ -190,8 +212,11 @@ export function ReportsPanel({
   const parcelasCompleted = parcelasInRange.filter((p) => p.status === "completed").length
   const totalParcelas = parcelasInRange.length
 
-  const totalAll = filteredObligations.length + filteredTaxes.length + totalParcelas
-  const totalCompletedAll = stats.completed.length + taxesCompleted + parcelasCompleted
+  const servicesCompleted = filteredServices.filter((s) => s.status === "completed").length
+  const totalAll =
+    filteredObligations.length + filteredTaxes.length + totalParcelas + filteredServices.length
+  const totalCompletedAll =
+    stats.completed.length + taxesCompleted + parcelasCompleted + servicesCompleted
   const overallRate = totalAll > 0 ? Math.round((totalCompletedAll / totalAll) * 100) : 0
 
   const completedOnTime = useMemo(
@@ -244,6 +269,7 @@ export function ReportsPanel({
       obrigCount: number
       guiaCount: number
       parcCount: number
+      svcCount: number
     }
     const map = new Map<string, Entry>()
     const getOrCreate = (id: string, name: string): Entry => {
@@ -260,6 +286,7 @@ export function ReportsPanel({
           obrigCount: 0,
           guiaCount: 0,
           parcCount: 0,
+          svcCount: 0,
         }
         map.set(id, e)
       }
@@ -304,8 +331,20 @@ export function ReportsPanel({
       else if (p.status === "overdue") e.overdue++
       else e.pending++
     }
+    // Serviços
+    for (const sv of filteredServices) {
+      const name = clients.find((c) => c.id === sv.clientId)?.name || "Cliente"
+      const e = getOrCreate(sv.clientId, name)
+      e.total++
+      e.svcCount++
+      const eff = effectiveStatus({ status: sv.status, calculatedDueDate: sv.dueDate })
+      if (eff === "completed") e.completed++
+      else if (eff === "in_progress") e.inProgress++
+      else if (eff === "overdue") e.overdue++
+      else e.pending++
+    }
     return [...map.values()].sort((a, b) => b.total - a.total)
-  }, [filteredObligations, filteredTaxes, parcelasInRange, clients])
+  }, [filteredObligations, filteredTaxes, parcelasInRange, filteredServices, clients])
 
   const byRecurrence = useMemo(() => {
     const map: Record<string, number> = {}
@@ -338,7 +377,7 @@ export function ReportsPanel({
     clientName: string
     completedAt: string | undefined
     href: string
-    typeLabel: "Obrigação" | "Guia" | "Parcela"
+    typeLabel: "Obrigação" | "Guia" | "Parcela" | "Serviço"
   }
   const unifiedCompleted = useMemo<CompletedItem[]>(() => {
     const out: CompletedItem[] = []
@@ -381,12 +420,25 @@ export function ReportsPanel({
         typeLabel: "Parcela",
       })
     }
+    // Serviços concluídos
+    for (const sv of filteredServices) {
+      if (sv.status !== "completed") continue
+      const clientName = clients.find((c) => c.id === sv.clientId)?.name ?? "—"
+      out.push({
+        id: sv.id,
+        name: sv.name,
+        clientName,
+        completedAt: sv.completedAt,
+        href: `/servicos?clientId=${sv.clientId}`,
+        typeLabel: "Serviço",
+      })
+    }
     return out.sort((a, b) => {
       const da = a.completedAt ? new Date(a.completedAt).getTime() : 0
       const db = b.completedAt ? new Date(b.completedAt).getTime() : 0
       return db - da
     })
-  }, [filteredObligations, filteredTaxes, parcelasInRange, clients])
+  }, [filteredObligations, filteredTaxes, parcelasInRange, filteredServices, clients])
 
   // Parcelamentos do período
   const installmentsInPeriod = useMemo(() => {
@@ -613,7 +665,7 @@ export function ReportsPanel({
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
               <div>
                 <p className="text-xs text-muted-foreground">Taxa global</p>
                 <p className="text-2xl font-bold">{overallRate}%</p>
@@ -635,6 +687,12 @@ export function ReportsPanel({
                 <p className="text-xs text-muted-foreground">Parcelas no período</p>
                 <p className="text-2xl font-bold tabular-nums">
                   {parcelasCompleted}/{totalParcelas}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Serviços</p>
+                <p className="text-2xl font-bold tabular-nums">
+                  {servicesCompleted}/{filteredServices.length}
                 </p>
               </div>
             </div>
@@ -880,7 +938,7 @@ export function ReportsPanel({
           <CardHeader>
             <CardTitle className="text-base">Itens por Cliente</CardTitle>
             <CardDescription className="text-xs">
-              Obrigações + guias + parcelamentos. Clique pra ver os itens do cliente.
+              Obrigações + guias + parcelamentos + serviços. Clique pra ver os itens do cliente.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -891,6 +949,7 @@ export function ReportsPanel({
                 if (entry.obrigCount) typeParts.push(`${entry.obrigCount} obrig.`)
                 if (entry.guiaCount) typeParts.push(`${entry.guiaCount} guias`)
                 if (entry.parcCount) typeParts.push(`${entry.parcCount} parc.`)
+                if (entry.svcCount) typeParts.push(`${entry.svcCount} serv.`)
                 return (
                   <Link
                     key={entry.clientId}

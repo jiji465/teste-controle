@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { LayoutDashboard, FileText, Calendar, Receipt, Menu, X, BarChart3, Bell, CreditCard, Building2, Layers, AlertTriangle, Clock, ArrowRight, RefreshCw } from "lucide-react"
+import { LayoutDashboard, FileText, Calendar, Receipt, Menu, X, BarChart3, Bell, CreditCard, Building2, Layers, AlertTriangle, Clock, ArrowRight, RefreshCw, Briefcase } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { getObligationsWithDetails } from "@/lib/dashboard-utils"
 import { isOverdue, formatDate } from "@/lib/date-utils"
@@ -55,6 +55,7 @@ export function Navigation() {
     { href: "/impostos", label: "Guias de Imposto", icon: Receipt },
     { href: "/obrigacoes", label: "Obrigações Acessórias", icon: FileText },
     { href: "/parcelamentos", label: "Parcelamentos", icon: CreditCard },
+    { href: "/servicos", label: "Serviços", icon: Briefcase },
     { href: "/calendario", label: "Calendário", icon: Calendar },
     { href: "/relatorios", label: "Relatórios", icon: BarChart3 },
     { href: "/templates", label: "Templates", icon: Layers },

@@ -5,7 +5,7 @@ import { ReportsPanel } from "@/components/reports-panel"
 import { useData } from "@/contexts/data-context"
 
 export default function RelatoriosPage() {
-  const { clients, taxes, installments, obligationsWithDetails, isLoading } = useData()
+  const { clients, taxes, installments, services, obligationsWithDetails, isLoading } = useData()
 
   const obligations = useMemo(
     () => (isLoading || !clients.length ? [] : obligationsWithDetails),
@@ -20,7 +20,13 @@ export default function RelatoriosPage() {
           <p className="text-sm text-muted-foreground">Análise detalhada de obrigações fiscais e produtividade</p>
         </div>
 
-        <ReportsPanel obligations={obligations} taxes={taxes} installments={installments} clients={clients} />
+        <ReportsPanel
+          obligations={obligations}
+          taxes={taxes}
+          installments={installments}
+          services={services}
+          clients={clients}
+        />
       </div>
     </div>
   )
