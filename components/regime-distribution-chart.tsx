@@ -11,7 +11,7 @@ import {
   PolarAngleAxis,
 } from "recharts"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
-import type { ObligationWithDetails, Client, Tax, Installment } from "@/lib/types"
+import type { ObligationWithDetails, Client, Tax, Installment, Service } from "@/lib/types"
 import { TAX_REGIME_LABELS } from "@/lib/types"
 import { BUSINESS_ACTIVITY_LABELS, type BusinessActivity } from "@/lib/obligation-templates"
 import { effectiveStatus } from "@/lib/obligation-status"
@@ -25,6 +25,8 @@ type RegimeDistributionChartProps = {
   taxes?: Tax[]
   /** Parcelamentos filtrados pelo período. Quando ausentes, idem. */
   installments?: Installment[]
+  /** Serviços filtrados pelo período. */
+  services?: Service[]
 }
 
 // === Cores base (cada uma vira um gradient via <defs>) ===
@@ -60,10 +62,12 @@ function ObligationsHealthCard({
   obligations,
   taxes = [],
   installments = [],
+  services = [],
 }: {
   obligations: ObligationWithDetails[]
   taxes?: Tax[]
   installments?: Installment[]
+  services?: Service[]
 }) {
   const counts = useMemo(() => {
     const c: Record<string, number> = { pending: 0, in_progress: 0, completed: 0, overdue: 0 }
@@ -95,10 +99,16 @@ function ObligationsHealthCard({
       const s = effectiveStatus(enriched)
       if (c[s] !== undefined) c[s]++
     }
+    // Serviços: usa dueDate direto
+    for (const sv of services) {
+      const enriched = { status: sv.status, calculatedDueDate: sv.dueDate }
+      const s = effectiveStatus(enriched)
+      if (c[s] !== undefined) c[s]++
+    }
     return c
-  }, [obligations, taxes, installments])
+  }, [obligations, taxes, installments, services])
 
-  const total = obligations.length + taxes.length + installments.length
+  const total = obligations.length + taxes.length + installments.length + services.length
   const completedPct = total > 0 ? Math.round((counts.completed / total) * 100) : 0
   const gaugeColor =
     completedPct >= 80 ? "#10b981" : completedPct >= 50 ? "#3b82f6" : completedPct >= 30 ? "#f59e0b" : "#ef4444"
@@ -110,6 +120,7 @@ function ObligationsHealthCard({
   if (obligations.length) breakdownParts.push(`${obligations.length} obrig.`)
   if (taxes.length) breakdownParts.push(`${taxes.length} guias`)
   if (installments.length) breakdownParts.push(`${installments.length} parc.`)
+  if (services.length) breakdownParts.push(`${services.length} serv.`)
   const description =
     breakdownParts.length > 1
       ? `${total} no total · ${breakdownParts.join(" · ")}`
@@ -496,8 +507,9 @@ export function RegimeDistributionChart({
   clients,
   taxes = [],
   installments = [],
+  services = [],
 }: RegimeDistributionChartProps) {
-  const totalTasks = obligations.length + taxes.length + installments.length
+  const totalTasks = obligations.length + taxes.length + installments.length + services.length
   if (totalTasks === 0 && clients.length === 0) return null
 
   const cards = [
@@ -507,6 +519,7 @@ export function RegimeDistributionChart({
         obligations={obligations}
         taxes={taxes}
         installments={installments}
+        services={services}
       />
     ),
     clients.length > 0 && <RegimeCard key="regime" clients={clients} />,

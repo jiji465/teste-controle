@@ -28,8 +28,9 @@ import {
   FileText,
   Receipt,
   CreditCard,
+  Briefcase,
 } from "lucide-react"
-import type { ObligationWithDetails, Tax, Client, Installment } from "@/lib/types"
+import type { ObligationWithDetails, Tax, Client, Installment, Service } from "@/lib/types"
 import {
   adjustForWeekend,
   buildSafeDate,
@@ -42,6 +43,7 @@ type Props = {
   obligations: ObligationWithDetails[]
   taxes: Tax[]
   installments: Installment[]
+  services?: Service[]
   clients: Client[]
   onCompleteObligation?: (o: ObligationWithDetails) => void | Promise<void>
 }
@@ -53,7 +55,7 @@ type UrgencyItem = {
   clientId: string
   dueDate: Date
   tier: UrgencyTier
-  type: "obrigacao" | "guia" | "parcela"
+  type: "obrigacao" | "guia" | "parcela" | "servico"
   href: string
   /** Só preenchido pra obrigações — usado pra ação rápida "Concluir" */
   obligation?: ObligationWithDetails
@@ -129,12 +131,14 @@ const TYPE_META = {
   obrigacao: { label: "Obrigação", icon: FileText, color: "text-purple-600 dark:text-purple-400" },
   guia: { label: "Guia", icon: Receipt, color: "text-blue-600 dark:text-blue-400" },
   parcela: { label: "Parcela", icon: CreditCard, color: "text-amber-600 dark:text-amber-400" },
+  servico: { label: "Serviço", icon: Briefcase, color: "text-emerald-600 dark:text-emerald-400" },
 }
 
 export function UrgencyTrail({
   obligations,
   taxes,
   installments,
+  services = [],
   clients,
   onCompleteObligation,
 }: Props) {
@@ -205,9 +209,28 @@ export function UrgencyTrail({
       })
     }
 
+    // Serviços: usam dueDate único
+    for (const sv of services) {
+      if (sv.status === "completed") continue
+      const date = new Date(sv.dueDate)
+      if (Number.isNaN(date.getTime())) continue
+      const tier = urgencyTier(date, sv.status)
+      if (!tier || tier === "later") continue
+      result.push({
+        id: sv.id,
+        name: sv.name,
+        clientName: clientName(sv.clientId),
+        clientId: sv.clientId,
+        dueDate: date,
+        tier,
+        type: "servico",
+        href: `/servicos?clientId=${sv.clientId}`,
+      })
+    }
+
     // Ordena por data de vencimento
     return result.sort((a, b) => a.dueDate.getTime() - b.dueDate.getTime())
-  }, [obligations, taxes, installments, clients])
+  }, [obligations, taxes, installments, services, clients])
 
   const byTier = useMemo(() => {
     const map: Record<TierConfig["key"], UrgencyItem[]> = {
@@ -318,7 +341,7 @@ function ExpandedTierPanel({
 }) {
   // Agrupa por tipo pra mostrar contagem
   const counts = useMemo(() => {
-    const c = { obrigacao: 0, guia: 0, parcela: 0 }
+    const c = { obrigacao: 0, guia: 0, parcela: 0, servico: 0 }
     for (const it of items) c[it.type]++
     return c
   }, [items])

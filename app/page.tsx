@@ -37,7 +37,7 @@ import { toast } from "sonner"
 // também gradient + accent dinâmicos por horário (manhã/tarde/entardecer/noite).
 
 export default function DashboardPage() {
-  const { clients, taxes, obligations: rawObligations, obligationsWithDetails, installments, lockedPeriods, isLoading, refreshData, togglePeriodLock } = useData()
+  const { clients, taxes, obligations: rawObligations, obligationsWithDetails, installments, services, lockedPeriods, isLoading, refreshData, togglePeriodLock } = useData()
   const [stats, setStats] = useState<DashboardStats | null>(null)
   const [isMounted, setIsMounted] = useState(false)
   const completeObligation = async (obl: ObligationWithDetails, e?: React.MouseEvent) => {
@@ -104,6 +104,12 @@ export default function DashboardPage() {
     })
   }, [installments, isLoading, isInPeriod])
 
+  // Serviços filtrados pelo período (usa dueDate único)
+  const filteredServices = useMemo(() => {
+    if (isLoading) return []
+    return services.filter((s) => isInPeriod(s.dueDate))
+  }, [services, isLoading, isInPeriod])
+
   // Versão "sintética" dos parcelamentos com status DA PARCELA do período
   // (não do parcelamento todo). Usada nos contadores que precisam dizer
   // "X parcelas concluídas em Maio" em vez de "X parcelamentos inteiros
@@ -168,6 +174,13 @@ export default function DashboardPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [installments, previousPeriodKey])
 
+  // Serviços do mês anterior pra delta de Produtividade
+  const previousServices = useMemo(() => {
+    if (!previousPeriodKey) return undefined
+    return services.filter((s) => inPreviousPeriod(s.dueDate))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [services, previousPeriodKey])
+
   // Versão sintética dos parcelamentos do mês anterior (mesma lógica que
   // installmentsForStats, mas pro período anterior).
   const previousInstallmentsForStats = useMemo(() => {
@@ -194,9 +207,18 @@ export default function DashboardPage() {
       // Passa todos os tipos pra que o "Resumo Geral" reflita obrigações +
       // guias + parcelamentos. Antes só obrigações entravam, então marcar
       // uma guia como concluída não afetava nenhum card do dashboard.
-      setStats(calculateDashboardStats(clients, obligations, filteredTaxes, filteredInstallments, period))
+      setStats(
+        calculateDashboardStats(
+          clients,
+          obligations,
+          filteredTaxes,
+          filteredInstallments,
+          period,
+          filteredServices,
+        ),
+      )
     }
-  }, [isLoading, clients, obligations, filteredTaxes, filteredInstallments, period])
+  }, [isLoading, clients, obligations, filteredTaxes, filteredInstallments, filteredServices, period])
 
   const updateData = async () => {
     await refreshData()
@@ -352,6 +374,7 @@ export default function DashboardPage() {
               clients={clients}
               taxes={filteredTaxes}
               installments={installmentsForStats}
+              services={filteredServices}
             />
           </div>
 
@@ -369,6 +392,7 @@ export default function DashboardPage() {
                 obligations={obligations}
                 taxes={filteredTaxes}
                 installments={filteredInstallments}
+                services={filteredServices}
                 clients={clients}
                 onCompleteObligation={completeObligation}
               />
@@ -376,6 +400,7 @@ export default function DashboardPage() {
                 obligations={obligationsWithDetails}
                 taxes={taxes}
                 installments={installments}
+                services={services}
                 currentMonth={period}
               />
             </div>

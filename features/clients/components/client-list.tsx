@@ -13,11 +13,17 @@ import { BulkActionsBar } from "@/components/bulk-actions-bar"
 import { ConfirmDialog, type ConfirmState } from "@/components/ui/confirm-dialog"
 import { ClientForm } from "./client-form"
 import { ClientDetails } from "./client-details"
-import { MoreVertical, Pencil, Trash2, Search, Plus, Building2, Sparkles, Filter, CheckCircle2, XCircle, Scale, Briefcase, MapPin, ToggleLeft, ArrowUpDown, Eye } from "lucide-react"
+import { MoreVertical, Pencil, Trash2, Search, Plus, Building2, Sparkles, Filter, CheckCircle2, XCircle, Scale, Briefcase, MapPin, ToggleLeft, ArrowUpDown, Eye, Archive, RotateCcw } from "lucide-react"
 import { FilterBar, FilterPill } from "@/components/filter-panel"
 import type { Client, TaxRegime } from "@/lib/types"
 import { TAX_REGIME_LABELS, TAX_REGIME_COLORS } from "@/lib/types"
-import { saveClient, deleteClient, DuplicateClientError } from "@/features/clients/services"
+import {
+  saveClient,
+  deleteClient,
+  archiveClient,
+  reactivateClient,
+  DuplicateClientError,
+} from "@/features/clients/services"
 import { TemplateApplyDialog } from "@/components/template-apply-dialog"
 import { type TemplateItem, type BusinessActivity, BUSINESS_ACTIVITY_LABELS } from "@/lib/obligation-templates"
 import { applyTemplateToClient, summarizeApplyResult, type CompetencyRange } from "@/lib/template-applier"
@@ -31,7 +37,7 @@ type ClientListProps = {
 }
 
 export function ClientList({ clients, onUpdate }: ClientListProps) {
-  const { taxes } = useData()
+  const { taxes, obligations, installments } = useData()
   const [search, setSearch] = useState("")
   const [editingClient, setEditingClient] = useState<Client | undefined>()
   const [isFormOpen, setIsFormOpen] = useState(false)
@@ -162,9 +168,10 @@ export function ClientList({ clients, onUpdate }: ClientListProps) {
 
   const handleDelete = (id: string) => {
     setConfirmState({
-      title: "Excluir empresa",
-      description: "Tem certeza que deseja excluir esta empresa? Todas as obrigações e parcelamentos vinculados também serão removidos.",
-      confirmLabel: "Excluir",
+      title: "Excluir empresa DEFINITIVAMENTE",
+      description:
+        "TODOS os dados desta empresa serão apagados — incluindo histórico de obrigações, guias e parcelamentos JÁ CONCLUÍDOS. Esta ação não pode ser desfeita. Se você quer só parar de trabalhar com esse cliente, prefira 'Arquivar' (preserva o histórico).",
+      confirmLabel: "Excluir tudo",
       destructive: true,
       onConfirm: async () => {
         try {
@@ -177,6 +184,66 @@ export function ClientList({ clients, onUpdate }: ClientListProps) {
         }
       },
     })
+  }
+
+  const handleArchive = (id: string) => {
+    // Calcula totais ANTES pra mostrar no dialog
+    const cObrigs = obligations.filter((o) => o.clientId === id)
+    const cTaxes = taxes.filter((t) => t.clientId === id)
+    const cInsts = installments.filter((i) => i.clientId === id)
+    const obrigsToRemove = cObrigs.filter((o) => o.status !== "completed").length
+    const taxesToRemove = cTaxes.filter((t) => t.status !== "completed").length
+    const instsToRemove = cInsts.filter(
+      (i) => !((i.paidInstallments ?? []).some((p) => p.paidAt || p.sentAt)),
+    ).length
+    const preserved =
+      cObrigs.filter((o) => o.status === "completed").length +
+      cTaxes.filter((t) => t.status === "completed").length +
+      cInsts.filter((i) => (i.paidInstallments ?? []).some((p) => p.paidAt || p.sentAt)).length
+
+    const removalParts: string[] = []
+    if (obrigsToRemove) removalParts.push(`${obrigsToRemove} obrig.`)
+    if (taxesToRemove) removalParts.push(`${taxesToRemove} guias`)
+    if (instsToRemove) removalParts.push(`${instsToRemove} parc.`)
+    const removalText = removalParts.length > 0 ? removalParts.join(", ") : "nada"
+
+    setConfirmState({
+      title: "Arquivar empresa",
+      description:
+        `Itens pendentes a remover: ${removalText}. ` +
+        `Itens concluídos preservados como histórico: ${preserved}. ` +
+        `A empresa fica marcada como Inativa — você pode reativar depois.`,
+      confirmLabel: "Arquivar",
+      onConfirm: async () => {
+        try {
+          const result = await archiveClient(id)
+          const parts: string[] = []
+          if (result.obrigacoesDeleted) parts.push(`${result.obrigacoesDeleted} obrig.`)
+          if (result.guiasDeleted) parts.push(`${result.guiasDeleted} guias`)
+          if (result.parcelasDeleted) parts.push(`${result.parcelasDeleted} parc.`)
+          const removed = parts.length > 0 ? parts.join(", ") : "nada"
+          toast.success(
+            `Empresa arquivada · ${removed} removidos · ${result.preservedCount} preservados no histórico`,
+            { duration: 6000 },
+          )
+          onUpdate()
+        } catch (error) {
+          toast.error("Erro ao arquivar empresa")
+          console.error("[clients] archive error:", error)
+        }
+      },
+    })
+  }
+
+  const handleReactivate = async (id: string) => {
+    try {
+      await reactivateClient(id)
+      toast.success("Empresa reativada")
+      onUpdate()
+    } catch (error) {
+      toast.error("Erro ao reativar empresa")
+      console.error("[clients] reactivate error:", error)
+    }
   }
 
   const toggleSelect = (id: string) => {
@@ -582,11 +649,25 @@ export function ClientList({ clients, onUpdate }: ClientListProps) {
                         <DropdownMenuItem onClick={() => setTemplateClient(client)}>
                           <Sparkles className="mr-2 h-4 w-4" /> Aplicar Template
                         </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        {client.status === "inactive" ? (
+                          <DropdownMenuItem onClick={() => handleReactivate(client.id)}>
+                            <RotateCcw className="mr-2 h-4 w-4" /> Reativar
+                          </DropdownMenuItem>
+                        ) : (
+                          <DropdownMenuItem onClick={() => handleArchive(client.id)}>
+                            <Archive className="mr-2 h-4 w-4" />
+                            Arquivar
+                            <span className="ml-auto text-[10px] text-muted-foreground">
+                              mantém histórico
+                            </span>
+                          </DropdownMenuItem>
+                        )}
                         <DropdownMenuItem
                           onClick={() => handleDelete(client.id)}
                           className="text-red-600 focus:text-red-600 focus:bg-red-50 dark:focus:bg-red-950/50"
                         >
-                          <Trash2 className="mr-2 h-4 w-4" /> Excluir
+                          <Trash2 className="mr-2 h-4 w-4" /> Excluir definitivamente
                         </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>

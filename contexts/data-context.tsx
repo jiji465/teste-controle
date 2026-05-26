@@ -1,8 +1,9 @@
 "use client"
 
 import React, { createContext, useContext, useState, useEffect, useMemo, ReactNode } from "react"
-import type { Client, Tax, Obligation, Installment, ObligationWithDetails } from "@/lib/types"
+import type { Client, Tax, Obligation, Installment, Service, ObligationWithDetails } from "@/lib/types"
 import { getClients, getTaxes, getObligations, getInstallments } from "@/lib/supabase/database"
+import { getServices } from "@/features/services/services"
 import { getObligationsWithDetails } from "@/lib/dashboard-utils"
 // seedDefaultTemplates foi movido pra rodar SÓ na página /templates pra
 // evitar duas chamadas concorrentes (era chamado aqui E lá, gerando race
@@ -17,6 +18,7 @@ interface DataContextType {
    *  Usar isso em vez de chamar getObligationsWithDetails em cada página. */
   obligationsWithDetails: ObligationWithDetails[]
   installments: Installment[]
+  services: Service[]
   lockedPeriods: string[]
   isLoading: boolean
   isRefreshing: boolean
@@ -32,6 +34,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [taxes, setTaxes] = useState<Tax[]>([])
   const [obligations, setObligations] = useState<Obligation[]>([])
   const [installments, setInstallments] = useState<Installment[]>([])
+  const [services, setServices] = useState<Service[]>([])
   const [lockedPeriods, setLockedPeriods] = useState<string[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [isRefreshing, setIsRefreshing] = useState(false)
@@ -44,11 +47,18 @@ export function DataProvider({ children }: { children: ReactNode }) {
     if (lastRefreshAt === null) setIsLoading(true)
     try {
       const { getLockedPeriods } = await import("@/lib/supabase/database")
-      const [cls, txs, obs, insts, lps] = await Promise.all([
+      const [cls, txs, obs, insts, svcs, lps] = await Promise.all([
         getClients(),
         getTaxes(),
         getObligations(),
         getInstallments(),
+        // Services: nova entidade. Se a tabela ainda não foi criada no
+        // Supabase (migration 012 não rodada), getServices retorna [] sem
+        // quebrar o app.
+        getServices().catch((e) => {
+          console.warn("[data] getServices falhou (rode migration 012?):", e)
+          return []
+        }),
         getLockedPeriods(),
         // Templates: força ler do Supabase e atualizar localStorage
         getCustomTemplatesAsync().catch((e) => {
@@ -60,6 +70,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       setTaxes(txs)
       setObligations(obs)
       setInstallments(insts)
+      setServices(svcs)
       setLockedPeriods(lps)
       setLastRefreshAt(Date.now())
     } catch (error) {
@@ -110,8 +121,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   // Expose empty arrays during SSR to prevent hydration mismatch
   const value = isMounted
-    ? { clients, taxes, obligations, obligationsWithDetails, installments, lockedPeriods, isLoading, isRefreshing, lastRefreshAt, refreshData, togglePeriodLock }
-    : { clients: [], taxes: [], obligations: [], obligationsWithDetails: [], installments: [], lockedPeriods: [], isLoading: true, isRefreshing: false, lastRefreshAt: null, refreshData, togglePeriodLock }
+    ? { clients, taxes, obligations, obligationsWithDetails, installments, services, lockedPeriods, isLoading, isRefreshing, lastRefreshAt, refreshData, togglePeriodLock }
+    : { clients: [], taxes: [], obligations: [], obligationsWithDetails: [], installments: [], services: [], lockedPeriods: [], isLoading: true, isRefreshing: false, lastRefreshAt: null, refreshData, togglePeriodLock }
 
   return (
     <DataContext.Provider value={value}>

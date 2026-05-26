@@ -95,3 +95,159 @@ export async function deleteClient(id: string): Promise<void> {
   const { error } = await supabase.from("clients").delete().eq("id", id)
   if (error) { console.error("[db] Error deleting client:", error); throw error }
 }
+
+export type ArchiveClientResult = {
+  /** Obrigações apagadas (pending/in_progress/overdue/etc — qualquer != completed) */
+  obrigacoesDeleted: number
+  /** Guias apagadas */
+  guiasDeleted: number
+  /** Parcelamentos apagados (só os SEM nenhuma parcela paga/enviada) */
+  parcelasDeleted: number
+  /** Itens concluídos preservados como histórico (obrig + guia + parc com pagamento) */
+  preservedCount: number
+}
+
+/**
+ * Arquiva um cliente preservando o histórico do que já foi feito:
+ *  - Apaga obrigações/guias com status != "completed".
+ *  - Apaga parcelamentos sem qualquer parcela paga/enviada.
+ *  - Preserva: itens concluídos + parcelamentos com pelo menos uma parcela paga.
+ *  - Marca client.status = "inactive" (cliente continua referenciável por FK).
+ *
+ * Use isso em vez de deleteClient quando o cliente deixou de ser cliente
+ * mas você quer manter o histórico do que entregou pra ele.
+ */
+export async function archiveClient(id: string): Promise<ArchiveClientResult> {
+  const result: ArchiveClientResult = {
+    obrigacoesDeleted: 0,
+    guiasDeleted: 0,
+    parcelasDeleted: 0,
+    preservedCount: 0,
+  }
+
+  if (!hasSupabaseConfig()) {
+    // Fallback localStorage (dev sem Supabase configurado)
+    const obs = local.getObligations().filter((o) => o.clientId === id)
+    const txs = local.getTaxes().filter((t) => t.clientId === id)
+    const insts = local.getInstallments().filter((i) => i.clientId === id)
+
+    for (const o of obs) {
+      if (o.status === "completed") result.preservedCount++
+      else {
+        local.deleteObligation(o.id)
+        result.obrigacoesDeleted++
+      }
+    }
+    for (const t of txs) {
+      if (t.status === "completed") result.preservedCount++
+      else {
+        local.deleteTax(t.id)
+        result.guiasDeleted++
+      }
+    }
+    for (const i of insts) {
+      const hasPayment = (i.paidInstallments ?? []).some((p) => p.paidAt || p.sentAt)
+      if (hasPayment) result.preservedCount++
+      else {
+        local.deleteInstallment(i.id)
+        result.parcelasDeleted++
+      }
+    }
+    const client = local.getClients().find((c) => c.id === id)
+    if (client) local.saveClient({ ...client, status: "inactive" })
+    return result
+  }
+
+  const supabase = getSupabaseClient()
+
+  // 1. Obrigações: deleta as não-concluídas; conta as preservadas
+  const { data: obrigRows } = await supabase
+    .from("obligations")
+    .select("id, status")
+    .eq("client_id", id)
+  const obrigToDelete: string[] = []
+  for (const r of (obrigRows as Array<{ id: string; status: string }> | null) ?? []) {
+    if (r.status === "completed") result.preservedCount++
+    else obrigToDelete.push(r.id)
+  }
+  if (obrigToDelete.length > 0) {
+    const { error } = await supabase.from("obligations").delete().in("id", obrigToDelete)
+    if (error) {
+      console.error("[archive] Error deleting obligations:", error)
+      throw error
+    }
+    result.obrigacoesDeleted = obrigToDelete.length
+  }
+
+  // 2. Guias: idem
+  const { data: taxRows } = await supabase
+    .from("taxes")
+    .select("id, status")
+    .eq("client_id", id)
+  const taxToDelete: string[] = []
+  for (const r of (taxRows as Array<{ id: string; status: string }> | null) ?? []) {
+    if (r.status === "completed") result.preservedCount++
+    else taxToDelete.push(r.id)
+  }
+  if (taxToDelete.length > 0) {
+    const { error } = await supabase.from("taxes").delete().in("id", taxToDelete)
+    if (error) {
+      console.error("[archive] Error deleting taxes:", error)
+      throw error
+    }
+    result.guiasDeleted = taxToDelete.length
+  }
+
+  // 3. Parcelamentos: preserva se tem qualquer parcela paga/enviada
+  const { data: instRows } = await supabase
+    .from("installments")
+    .select("id, paid_installments")
+    .eq("client_id", id)
+  const instToDelete: string[] = []
+  for (const r of (instRows as Array<{
+    id: string
+    paid_installments: Array<{ paidAt?: string; sentAt?: string }> | null
+  }> | null) ?? []) {
+    const hasPayment = (r.paid_installments ?? []).some((p) => p.paidAt || p.sentAt)
+    if (hasPayment) result.preservedCount++
+    else instToDelete.push(r.id)
+  }
+  if (instToDelete.length > 0) {
+    const { error } = await supabase.from("installments").delete().in("id", instToDelete)
+    if (error) {
+      console.error("[archive] Error deleting installments:", error)
+      throw error
+    }
+    result.parcelasDeleted = instToDelete.length
+  }
+
+  // 4. Marca cliente como inativo
+  const { error: clientErr } = await supabase
+    .from("clients")
+    .update({ status: "inactive" })
+    .eq("id", id)
+  if (clientErr) {
+    console.error("[archive] Error updating client status:", clientErr)
+    throw clientErr
+  }
+
+  return result
+}
+
+/**
+ * Reativa um cliente arquivado (status: inactive → active).
+ * O histórico (itens concluídos preservados) continua intacto.
+ */
+export async function reactivateClient(id: string): Promise<void> {
+  if (!hasSupabaseConfig()) {
+    const client = local.getClients().find((c) => c.id === id)
+    if (client) local.saveClient({ ...client, status: "active" })
+    return
+  }
+  const supabase = getSupabaseClient()
+  const { error } = await supabase.from("clients").update({ status: "active" }).eq("id", id)
+  if (error) {
+    console.error("[db] Error reactivating client:", error)
+    throw error
+  }
+}

@@ -1,4 +1,12 @@
-import type { DashboardStats, ObligationWithDetails, Client, Tax, Obligation, Installment } from "./types"
+import type {
+  DashboardStats,
+  ObligationWithDetails,
+  Client,
+  Tax,
+  Obligation,
+  Installment,
+  Service,
+} from "./types"
 import {
   adjustForWeekend,
   buildSafeDate,
@@ -169,6 +177,7 @@ export const calculateDashboardStats = (
   taxes: Tax[],
   installments: Installment[],
   period: string,
+  services: Service[] = [],
 ): DashboardStats => {
   // Obrigações no período (já vêm com calculatedDueDate)
   const obligationsInPeriod = obligations.filter((o) => inPeriod(o.calculatedDueDate, period))
@@ -189,9 +198,15 @@ export const calculateDashboardStats = (
     .map((i) => installmentInPeriod(i, period))
     .filter((x): x is NonNullable<typeof x> => x !== null)
 
+  // Serviços no período — usam data única (dueDate), não competência
+  const servicesInPeriod = services
+    .map((s) => ({ ...s, calculatedDueDate: s.dueDate }))
+    .filter((s) => inPeriod(s.calculatedDueDate, period))
+
   const oblBucket = tallyByEffectiveStatus(obligationsInPeriod)
   const taxBucket = tallyByEffectiveStatus(taxesInPeriod)
   const instBucket = tallyByEffectiveStatus(installmentsInPeriod)
+  const svcBucket = tallyByEffectiveStatus(servicesInPeriod)
 
   // Vencendo nos próximos 7 dias — qualquer item ainda em aberto cuja data
   // está dentro de [hoje, hoje+7]. Já dentro do período por construção.
@@ -207,12 +222,16 @@ export const calculateDashboardStats = (
     ).length +
     installmentsInPeriod.filter(
       (i) => effectiveStatus(i) !== "completed" && isUpcomingThisWeek(i.calculatedDueDate),
+    ).length +
+    servicesInPeriod.filter(
+      (s) => effectiveStatus(s) !== "completed" && isUpcomingThisWeek(s.calculatedDueDate),
     ).length
 
-  const totalItems = oblBucket.total + taxBucket.total + instBucket.total
-  const completedInPeriod = oblBucket.completed + taxBucket.completed + instBucket.completed
-  const overdueItems = oblBucket.overdue + taxBucket.overdue + instBucket.overdue
-  const pendingItems = oblBucket.pending + taxBucket.pending + instBucket.pending
+  const totalItems = oblBucket.total + taxBucket.total + instBucket.total + svcBucket.total
+  const completedInPeriod =
+    oblBucket.completed + taxBucket.completed + instBucket.completed + svcBucket.completed
+  const overdueItems = oblBucket.overdue + taxBucket.overdue + instBucket.overdue + svcBucket.overdue
+  const pendingItems = oblBucket.pending + taxBucket.pending + instBucket.pending + svcBucket.pending
 
   const activeClients = clients.filter((c) => c.status === "active").length
 
@@ -228,6 +247,7 @@ export const calculateDashboardStats = (
       obligations: oblBucket,
       taxes: taxBucket,
       installments: instBucket,
+      services: svcBucket,
     },
   }
 }
@@ -322,6 +342,12 @@ export function installmentParcelasInRange(
     })
   }
   return out
+}
+
+/** Filtro de date range pra serviços (compara dueDate). */
+export function servicesInRange(services: Service[], range: DateRange): Service[] {
+  if (!range.from && !range.to) return services
+  return services.filter((s) => dateInRange(s.dueDate, range))
 }
 
 /** Aplica filtro de date range em parcelamentos: inclui se QUALQUER parcela

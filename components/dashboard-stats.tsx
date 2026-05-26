@@ -30,6 +30,7 @@ export function DashboardStatsCards({ stats, periodLabel }: DashboardStatsProps)
     if (t.obligations[key]) parts.push(`${t.obligations[key]} obrig.`)
     if (t.taxes[key]) parts.push(`${t.taxes[key]} guias`)
     if (t.installments[key]) parts.push(`${t.installments[key]} parc.`)
+    if (t.services[key]) parts.push(`${t.services[key]} serv.`)
     return parts.join(" · ")
   }
 
@@ -50,8 +51,8 @@ export function DashboardStatsCards({ stats, periodLabel }: DashboardStatsProps)
       value: stats.totalItems,
       subtitle:
         breakdown("pending") || breakdown("completed")
-          ? `${t.obligations.total} obrig. · ${t.taxes.total} guias · ${t.installments.total} parc.`
-          : "Obrigações + guias + parcelamentos",
+          ? `${t.obligations.total} obrig. · ${t.taxes.total} guias · ${t.installments.total} parc. · ${t.services.total} serv.`
+          : "Obrigações + guias + parcelamentos + serviços",
       icon: FileText,
       iconBg: "bg-purple-500/10 dark:bg-purple-500/20",
       iconColor: "text-purple-600 dark:text-purple-400",

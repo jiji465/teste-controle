@@ -10,8 +10,8 @@ import { useMemo } from "react"
 import Link from "next/link"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { TrendingUp, FileText, Receipt, CreditCard } from "lucide-react"
-import type { ObligationWithDetails, Tax, Installment } from "@/lib/types"
+import { TrendingUp, FileText, Receipt, CreditCard, Briefcase } from "lucide-react"
+import type { ObligationWithDetails, Tax, Installment, Service } from "@/lib/types"
 import {
   adjustForWeekend,
   buildSafeDate,
@@ -22,6 +22,7 @@ type Props = {
   obligations: ObligationWithDetails[]
   taxes: Tax[]
   installments: Installment[]
+  services?: Service[]
   /** Mês de referência ("YYYY-MM"). Se vazio, usa mês corrente. */
   currentMonth?: string
 }
@@ -40,7 +41,7 @@ function parsePeriod(period: string | undefined): { year: number; month0: number
   return { year: now.getFullYear(), month0: now.getMonth() }
 }
 
-export function UpcomingForecast({ obligations, taxes, installments, currentMonth }: Props) {
+export function UpcomingForecast({ obligations, taxes, installments, services = [], currentMonth }: Props) {
   // Quando o filtro está em "Todos os períodos" (currentMonth === "all" ou
   // ausente), mostra "Próximos 30 dias" a partir de HOJE em vez de "próximo
   // mês de calendário". Antes mostrava sempre o próximo mês real, ignorando
@@ -81,6 +82,7 @@ export function UpcomingForecast({ obligations, taxes, installments, currentMont
     let obs = 0
     let txs = 0
     let parcs = 0
+    let svcs = 0
 
     for (const o of obligations) {
       const d = new Date(o.calculatedDueDate)
@@ -99,11 +101,15 @@ export function UpcomingForecast({ obligations, taxes, installments, currentMont
       )
       if (matches(d)) parcs++
     }
+    for (const sv of services) {
+      const d = new Date(sv.dueDate)
+      if (!Number.isNaN(d.getTime()) && matches(d)) svcs++
+    }
 
-    return { headerLabel, descPrefix, descRef, counts: { obs, txs, parcs }, link }
+    return { headerLabel, descPrefix, descRef, counts: { obs, txs, parcs, svcs }, link }
   }, [obligations, taxes, installments, currentMonth, isAllPeriods])
 
-  const total = counts.obs + counts.txs + counts.parcs
+  const total = counts.obs + counts.txs + counts.parcs + counts.svcs
 
   return (
     <Card className="overflow-hidden ring-1 ring-blue-500/10 hover:ring-blue-500/30 transition-all">
@@ -139,6 +145,11 @@ export function UpcomingForecast({ obligations, taxes, installments, currentMont
           {counts.parcs > 0 && (
             <Badge variant="outline" className="gap-1">
               <CreditCard className="size-3" /> {counts.parcs} parc.
+            </Badge>
+          )}
+          {counts.svcs > 0 && (
+            <Badge variant="outline" className="gap-1">
+              <Briefcase className="size-3" /> {counts.svcs} serv.
             </Badge>
           )}
           {total === 0 && (
