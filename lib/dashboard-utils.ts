@@ -384,7 +384,7 @@ export type MonthlyBucket = {
 }
 
 /** Gera buckets mensais para os últimos N meses, somando obrigações + guias
- *  + parcelamentos. Usa effectiveStatus pra classificar.
+ *  + parcelamentos + serviços. Usa effectiveStatus pra classificar.
  *  - clientIds: se fornecido, restringe aos clientes da lista (vazio = todos)
  */
 export function monthlyEvolutionBuckets(
@@ -394,6 +394,7 @@ export function monthlyEvolutionBuckets(
   months: number = 12,
   ref: Date = new Date(),
   clientIds: string[] = [],
+  services: Service[] = [],
 ): MonthlyBucket[] {
   const buckets: MonthlyBucket[] = []
   const monthNames = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"]
@@ -441,6 +442,13 @@ export function monthlyEvolutionBuckets(
     const key = bucketKey(date)
     tally(key, effectiveStatus({ status: i.status, calculatedDueDate: date }))
   }
+  for (const s of services) {
+    if (clientFilter && !clientFilter.has(s.clientId)) continue
+    const date = new Date(s.dueDate)
+    if (Number.isNaN(date.getTime())) continue
+    const key = bucketKey(date)
+    tally(key, effectiveStatus({ status: s.status, calculatedDueDate: s.dueDate }))
+  }
 
   // Taxa de conclusão por mês
   for (const b of buckets) {
@@ -461,6 +469,7 @@ export function heatmapByDay(
   installments: Installment[],
   year: number,
   month0: number, // 0-based (jan=0)
+  services: Service[] = [],
 ): number[] {
   const daysInMonth = new Date(year, month0 + 1, 0).getDate()
   const counts: number[] = Array(31).fill(0)
@@ -478,6 +487,10 @@ export function heatmapByDay(
   for (const i of installments) {
     const d = installmentDueDate(i)
     if (matches(d)) counts[d.getDate() - 1]++
+  }
+  for (const s of services) {
+    const d = new Date(s.dueDate)
+    if (!Number.isNaN(d.getTime()) && matches(d)) counts[d.getDate() - 1]++
   }
 
   // Zera dias inexistentes (ex: 30, 31 em fev)

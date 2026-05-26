@@ -12,7 +12,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import { Shield, TrendingUp, AlertTriangle, ArrowRight, Award } from "lucide-react"
-import type { Client, ObligationWithDetails, Tax, Installment } from "@/lib/types"
+import type { Client, ObligationWithDetails, Tax, Installment, Service } from "@/lib/types"
 import {
   calculateClientCompliance,
   sortWorstFirst,
@@ -26,6 +26,7 @@ type Props = {
   obligations: ObligationWithDetails[]
   taxes: Tax[]
   installments: Installment[]
+  services?: Service[]
 }
 
 const GRADE_STYLE: Record<ComplianceGrade, { bg: string; text: string; border: string; label: string }> = {
@@ -49,12 +50,12 @@ const GRADE_STYLE: Record<ComplianceGrade, { bg: string; text: string; border: s
   },
 }
 
-export function ComplianceScoreList({ clients, obligations, taxes, installments }: Props) {
+export function ComplianceScoreList({ clients, obligations, taxes, installments, services }: Props) {
   const [sortMode, setSortMode] = useState<"worst" | "best">("worst")
   const [showAll, setShowAll] = useState(false)
 
   const { sorted, stats } = useMemo(() => {
-    const all = calculateClientCompliance(clients, obligations, taxes, installments)
+    const all = calculateClientCompliance(clients, obligations, taxes, installments, services)
     const withActivity = all.filter((e) => e.totalItems > 0)
     const sorted = sortMode === "worst" ? sortWorstFirst(withActivity) : sortBestFirst(withActivity)
     const stats = {
@@ -64,7 +65,7 @@ export function ComplianceScoreList({ clients, obligations, taxes, installments 
       total: withActivity.length,
     }
     return { sorted, stats }
-  }, [clients, obligations, taxes, installments, sortMode])
+  }, [clients, obligations, taxes, installments, services, sortMode])
 
   const visible = showAll ? sorted : sorted.slice(0, 5)
 

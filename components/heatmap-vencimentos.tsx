@@ -11,7 +11,7 @@
 import { useMemo } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { CalendarHeart } from "lucide-react"
-import type { ObligationWithDetails, Tax, Installment } from "@/lib/types"
+import type { ObligationWithDetails, Tax, Installment, Service } from "@/lib/types"
 import { heatmapByDay } from "@/lib/dashboard-utils"
 
 const MONTH_NAMES = [
@@ -25,6 +25,7 @@ type Props = {
   obligations: ObligationWithDetails[]
   taxes: Tax[]
   installments: Installment[]
+  services?: Service[]
   /** "YYYY-MM" — se vazio, usa mês corrente */
   monthKey?: string
   /** True quando o filtro de range global é nulo ("Todos os períodos").
@@ -43,7 +44,7 @@ function colorForCount(count: number, max: number): { bg: string; text: string }
   return { bg: "bg-red-300 dark:bg-red-950/70", text: "text-red-900 dark:text-red-100" }
 }
 
-export function HeatmapVencimentos({ obligations, taxes, installments, monthKey, isAllPeriods }: Props) {
+export function HeatmapVencimentos({ obligations, taxes, installments, services, monthKey, isAllPeriods }: Props) {
   const { year, month0, label, counts, max, total, peakDay } = useMemo(() => {
     let year: number
     let month0: number
@@ -56,7 +57,7 @@ export function HeatmapVencimentos({ obligations, taxes, installments, monthKey,
       year = now.getFullYear()
       month0 = now.getMonth()
     }
-    const counts = heatmapByDay(obligations, taxes, installments, year, month0)
+    const counts = heatmapByDay(obligations, taxes, installments, year, month0, services)
     const daysInMonth = new Date(year, month0 + 1, 0).getDate()
     const usable = counts.slice(0, daysInMonth)
     const max = Math.max(...usable, 1)
@@ -72,7 +73,7 @@ export function HeatmapVencimentos({ obligations, taxes, installments, monthKey,
       total,
       peakDay,
     }
-  }, [obligations, taxes, installments, monthKey])
+  }, [obligations, taxes, installments, services, monthKey])
 
   const daysInMonth = new Date(year, month0 + 1, 0).getDate()
   const firstWeekday = new Date(year, month0, 1).getDay() // 0=domingo

@@ -242,8 +242,9 @@ export function ReportsPanel({
         12,
         new Date(),
         filters.clientIds,
+        services,
       ),
-    [obligations, taxes, installments, filters.clientIds],
+    [obligations, taxes, installments, services, filters.clientIds],
   )
 
   // Mês para heatmap: usa o "to" do range se existir, senão hoje
@@ -836,6 +837,7 @@ export function ReportsPanel({
           obligations={filteredObligations}
           taxes={filteredTaxes}
           installments={filteredInstallments}
+          services={filteredServices}
         />
       </section>
 
@@ -845,6 +847,7 @@ export function ReportsPanel({
           obligations={obligations}
           taxes={taxes}
           installments={installments}
+          services={services}
           monthKey={heatmapMonthKey}
           isAllPeriods={!filters.range.from && !filters.range.to}
         />

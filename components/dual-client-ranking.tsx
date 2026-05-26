@@ -15,7 +15,7 @@ import Link from "next/link"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Trophy, AlertTriangle, ArrowRight, Shield } from "lucide-react"
-import type { Client, ObligationWithDetails, Tax, Installment } from "@/lib/types"
+import type { Client, ObligationWithDetails, Tax, Installment, Service } from "@/lib/types"
 import {
   calculateClientCompliance,
   sortBestFirst,
@@ -29,6 +29,7 @@ type Props = {
   obligations: ObligationWithDetails[]
   taxes: Tax[]
   installments: Installment[]
+  services?: Service[]
 }
 
 const GRADE_STYLE: Record<ComplianceGrade, { bg: string; text: string; border: string }> = {
@@ -76,15 +77,15 @@ function ClientRow({ entry, side }: { entry: ClientCompliance; side: "best" | "w
   )
 }
 
-export function DualClientRanking({ clients, obligations, taxes, installments }: Props) {
+export function DualClientRanking({ clients, obligations, taxes, installments, services }: Props) {
   const { best, worst } = useMemo(() => {
-    const all = calculateClientCompliance(clients, obligations, taxes, installments)
+    const all = calculateClientCompliance(clients, obligations, taxes, installments, services)
     const withActivity = all.filter((e) => e.totalItems > 0)
     return {
       best: sortBestFirst(withActivity).filter((e) => e.grade === "A").slice(0, 5),
       worst: sortWorstFirst(withActivity).filter((e) => e.grade === "C" || e.currentlyOverdue > 0).slice(0, 5),
     }
-  }, [clients, obligations, taxes, installments])
+  }, [clients, obligations, taxes, installments, services])
 
   const hasBest = best.length > 0
   const hasWorst = worst.length > 0

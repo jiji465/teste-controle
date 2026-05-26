@@ -2,7 +2,7 @@
  * Cálculo de "Compliance Score" por cliente — nota A/B/C baseada em
  * taxa de cumprimento no prazo + quantidade de atrasos atuais.
  */
-import type { Client, ObligationWithDetails, Tax, Installment } from "./types"
+import type { Client, ObligationWithDetails, Tax, Installment, Service } from "./types"
 import { effectiveStatus } from "./obligation-status"
 import { adjustForWeekend, buildSafeDate, calculateDueDateFromCompetency } from "./date-utils"
 
@@ -56,6 +56,7 @@ export function calculateClientCompliance(
   obligations: ObligationWithDetails[],
   taxes: Tax[],
   installments: Installment[],
+  services: Service[] = [],
 ): ClientCompliance[] {
   const result: ClientCompliance[] = []
 
@@ -105,6 +106,20 @@ export function calculateClientCompliance(
       if (eff === "completed") {
         completed++
         if (completedOnTimeCheck(i.completedAt, due)) completedOnTime++
+      } else if (eff === "overdue") {
+        currentlyOverdue++
+      }
+    }
+
+    // Serviços do cliente — usam data única (dueDate)
+    for (const s of services) {
+      if (s.clientId !== client.id) continue
+      totalItems++
+      const due = new Date(s.dueDate)
+      const eff = effectiveStatus({ status: s.status, calculatedDueDate: s.dueDate })
+      if (eff === "completed") {
+        completed++
+        if (completedOnTimeCheck(s.completedAt, due)) completedOnTime++
       } else if (eff === "overdue") {
         currentlyOverdue++
       }

@@ -437,6 +437,7 @@ export default function DashboardPage() {
               obligations={obligationsWithDetails}
               taxes={taxes}
               installments={installments}
+              services={services}
             />
           </div>
 
@@ -450,6 +451,7 @@ export default function DashboardPage() {
               obligations={obligationsWithDetails}
               taxes={taxes}
               installments={installments}
+              services={services}
               clients={clients}
             />
           </div>

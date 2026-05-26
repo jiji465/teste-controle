@@ -2,7 +2,7 @@
 
 /**
  * RecentActivity — timeline vertical mostrando ação, autor (`completedBy`)
- * e tempo relativo. Considera obrigações + guias + parcelas.
+ * e tempo relativo. Considera obrigações + guias + parcelas + serviços.
  *
  * Por padrão mostra só 5 itens; usuário expande pra ver até `limit` (default 10).
  * Sem isso, a seção empurrava o resto do dashboard pra muito longe.
@@ -21,9 +21,10 @@ import {
   FileText,
   Receipt,
   CreditCard,
+  Briefcase,
   User,
 } from "lucide-react"
-import type { ObligationWithDetails, Tax, Installment, Client } from "@/lib/types"
+import type { ObligationWithDetails, Tax, Installment, Service, Client } from "@/lib/types"
 import { effectiveStatus } from "@/lib/obligation-status"
 import {
   adjustForWeekend,
@@ -31,7 +32,7 @@ import {
   calculateDueDateFromCompetency,
 } from "@/lib/date-utils"
 
-type ItemType = "obrigacao" | "guia" | "parcela"
+type ItemType = "obrigacao" | "guia" | "parcela" | "servico"
 
 type ActivityItem = {
   id: string
@@ -49,6 +50,7 @@ type Props = {
   obligations: ObligationWithDetails[]
   taxes: Tax[]
   installments: Installment[]
+  services?: Service[]
   clients: Client[]
   /** Máximo de itens a mostrar. Default 10. */
   limit?: number
@@ -97,18 +99,21 @@ const TYPE_ICON = {
   obrigacao: FileText,
   guia: Receipt,
   parcela: CreditCard,
+  servico: Briefcase,
 } as const
 
 const TYPE_LABEL = {
   obrigacao: "Obrigação",
   guia: "Guia",
   parcela: "Parcela",
+  servico: "Serviço",
 } as const
 
 export function RecentActivity({
   obligations,
   taxes,
   installments,
+  services = [],
   clients,
   limit = 10,
 }: Props) {
@@ -206,8 +211,35 @@ export function RecentActivity({
       }
     }
 
+    for (const s of services) {
+      if (s.completedAt) {
+        items.push({
+          id: `svc-${s.id}-c`,
+          itemName: s.name,
+          clientName: clientName(s.clientId),
+          clientId: s.clientId,
+          href: `/servicos?clientId=${s.clientId}`,
+          type: "servico",
+          action: "completed",
+          actor: s.completedBy,
+          timestamp: new Date(s.completedAt),
+        })
+      } else if (effectiveStatus({ status: s.status, calculatedDueDate: s.dueDate }) === "overdue") {
+        items.push({
+          id: `svc-${s.id}-o`,
+          itemName: s.name,
+          clientName: clientName(s.clientId),
+          clientId: s.clientId,
+          href: `/servicos?clientId=${s.clientId}`,
+          type: "servico",
+          action: "overdue",
+          timestamp: new Date(s.dueDate),
+        })
+      }
+    }
+
     return items.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime()).slice(0, limit)
-  }, [obligations, taxes, installments, clients, limit])
+  }, [obligations, taxes, installments, services, clients, limit])
 
   if (activities.length === 0) {
     return (
