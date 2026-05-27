@@ -1,4 +1,4 @@
-import type { Service, ServiceCategory, RecurrenceType, Priority } from "@/lib/types"
+import type { Service, ServiceCategory, RecurrenceType, Priority, WeekendRule } from "@/lib/types"
 import { hasSupabaseConfig, getSupabaseClient } from "@/lib/supabase/core"
 
 // Storage local não cobre Serviços (Service é nova entidade). Em modo
@@ -12,6 +12,7 @@ function mapServiceToDb(s: Service) {
     description: s.description || null,
     category: s.category,
     due_date: s.dueDate,
+    weekend_rule: s.weekendRule ?? "postpone",
     status: s.status,
     priority: s.priority,
     recurrence: s.recurrence || null,
@@ -35,6 +36,7 @@ function mapDbToService(row: any): Service {
     description: row.description ?? undefined,
     category: (row.category ?? "other") as ServiceCategory,
     dueDate: row.due_date,
+    weekendRule: (row.weekend_rule ?? "postpone") as WeekendRule,
     status: row.status,
     priority: row.priority as Priority,
     recurrence: (row.recurrence ?? undefined) as RecurrenceType | undefined,

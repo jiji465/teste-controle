@@ -30,10 +30,10 @@ import {
   Copy,
   Briefcase,
 } from "lucide-react"
-import type { Service, Client, Priority, ServiceCategory } from "@/lib/types"
+import type { Service, Client, Priority, ServiceCategory, WeekendRule } from "@/lib/types"
 import { SERVICE_CATEGORY_LABELS, SERVICE_CATEGORY_COLORS } from "@/lib/types"
 import { saveService, deleteService } from "@/features/services/services"
-import { formatDate, isOverdue } from "@/lib/date-utils"
+import { adjustForWeekend, buildSafeDate, formatDate, isOverdue } from "@/lib/date-utils"
 import { matchesText } from "@/lib/utils"
 import { toast } from "sonner"
 
@@ -51,12 +51,23 @@ type BulkEditForm = {
   priority: "" | Priority
   status: "" | "pending" | "in_progress" | "completed"
   category: "" | ServiceCategory
+  weekendRule: "" | WeekendRule
 }
 
 const EMPTY_BULK_FORM: BulkEditForm = {
   priority: "",
   status: "",
   category: "",
+  weekendRule: "",
+}
+
+/** Aplica a regra de fim de semana numa string "AAAA-MM-DD" sem mexer em
+ *  timezone — buildSafeDate evita o pulo de dia. */
+function applyWeekendRuleToYmd(ymd: string, rule: WeekendRule): string {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd) || rule === "keep") return ymd
+  const [y, m, d] = ymd.split("-").map(Number)
+  const adjusted = adjustForWeekend(buildSafeDate(y, m - 1, d), rule)
+  return `${adjusted.getFullYear()}-${String(adjusted.getMonth() + 1).padStart(2, "0")}-${String(adjusted.getDate()).padStart(2, "0")}`
 }
 
 function effectiveServiceStatus(s: Service): Service["status"] {
@@ -303,8 +314,8 @@ export const ServiceList = forwardRef<ServiceListHandle, ServiceListProps>(funct
 
   const handleBulkEditApply = async () => {
     if (selectedIds.size === 0) return
-    const { priority, status, category } = bulkForm
-    if (!priority && !status && !category) {
+    const { priority, status, category, weekendRule } = bulkForm
+    if (!priority && !status && !category && !weekendRule) {
       toast.info("Preencha pelo menos um campo para aplicar")
       return
     }
@@ -315,6 +326,7 @@ export const ServiceList = forwardRef<ServiceListHandle, ServiceListProps>(funct
       if (priority) changes.push(`prioridade: ${priority}`)
       if (status) changes.push(`status: ${status}`)
       if (category) changes.push(`categoria: ${category}`)
+      if (weekendRule) changes.push(`regra fim de semana: ${weekendRule}`)
       const description = `Edição em lote — ${changes.join(", ")}`
 
       await Promise.all(
@@ -323,6 +335,16 @@ export const ServiceList = forwardRef<ServiceListHandle, ServiceListProps>(funct
           if (priority) updated.priority = priority as Priority
           if (status) updated.status = status
           if (category) updated.category = category as ServiceCategory
+          if (weekendRule) {
+            // Aplica a nova regra na data já salva. Importante usar a data
+            // ORIGINAL caso o usuário esteja mudando de "postpone" pra
+            // "anticipate" — mas como só guardamos a data efetiva, o que dá
+            // pra fazer é: se o rule novo for "keep", mantém a data; se for
+            // postpone/anticipate, reaplicar a partir da data atual. Em 99%
+            // dos casos a data já é dia útil então não muda nada.
+            updated.weekendRule = weekendRule as WeekendRule
+            updated.dueDate = applyWeekendRuleToYmd(s.dueDate, weekendRule as WeekendRule)
+          }
           updated.history = [
             ...(s.history || []),
             {
@@ -927,6 +949,28 @@ export const ServiceList = forwardRef<ServiceListHandle, ServiceListProps>(funct
                   {(Object.entries(SERVICE_CATEGORY_LABELS) as [ServiceCategory, string][]).map(([v, l]) => (
                     <SelectItem key={v} value={v}>{l}</SelectItem>
                   ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid gap-2">
+              <Label>Se cair em fim de semana / feriado</Label>
+              <Select
+                value={bulkForm.weekendRule || "__keep__"}
+                onValueChange={(v) =>
+                  setBulkForm((f) => ({
+                    ...f,
+                    weekendRule: v === "__keep__" ? "" : (v as WeekendRule),
+                  }))
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__keep__">(não alterar)</SelectItem>
+                  <SelectItem value="postpone">Postergar p/ próximo útil</SelectItem>
+                  <SelectItem value="anticipate">Antecipar p/ útil anterior</SelectItem>
+                  <SelectItem value="keep">Manter na data</SelectItem>
                 </SelectContent>
               </Select>
             </div>

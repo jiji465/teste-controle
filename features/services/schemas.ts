@@ -9,6 +9,7 @@ export const serviceSchema = z.object({
   description: z.string().optional().or(z.literal("")),
   category: serviceCategorySchema.default("other"),
   dueDate: z.string().min(1, "Data é obrigatória").regex(/^\d{4}-\d{2}-\d{2}$/, "Data inválida (AAAA-MM-DD)"),
+  weekendRule: z.enum(["postpone", "anticipate", "keep"]).default("postpone"),
   status: z.enum(["pending", "in_progress", "completed", "overdue"]).default("pending"),
   priority: z.enum(["low", "medium", "high", "urgent"]).default("medium"),
   recurrence: z

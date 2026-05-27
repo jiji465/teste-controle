@@ -120,8 +120,17 @@ export type Service = {
   clientId: string
   description?: string
   category: ServiceCategory
-  /** Data única do serviço (não "competência" como obrigações/guias). */
+  /** Data única do serviço (não "competência" como obrigações/guias).
+   *  IMPORTANTE: o que fica salvo aqui já é a data EFETIVA (com a regra de
+   *  fim de semana aplicada). O usuário pode ter digitado um sábado, mas
+   *  com weekendRule='postpone' a gente salva a segunda-feira. */
   dueDate: string
+  /** Regra de fim de semana / feriado aplicada na data:
+   *  - 'postpone' (default): posterga pro próximo dia útil
+   *  - 'anticipate': antecipa pro dia útil anterior
+   *  - 'keep': mantém na data digitada
+   *  Quando undefined (registros antigos), assume 'postpone'. */
+  weekendRule?: WeekendRule
   status: "pending" | "in_progress" | "completed" | "overdue"
   priority: Priority
   /** Recorrência opcional. undefined = serviço one-off (default). */
