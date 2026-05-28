@@ -161,6 +161,9 @@ export function ServiceForm({ service, clients, open, onOpenChange, onSave }: Pr
 
   // Mostra um aviso amigável se a data digitada cair em fim de semana /
   // feriado e a regra for postpone/anticipate.
+  // IMPORTANTE: usar o Date local (construído com buildSafeDate) e NÃO a
+  // string em formatDate. Senão new Date("YYYY-MM-DD") parseia como UTC e
+  // no Brasil (UTC-3) volta um dia (ex: 31/05 vira 30/05).
   const adjustmentPreview = (() => {
     if (!watchedDueDate || !/^\d{4}-\d{2}-\d{2}$/.test(watchedDueDate)) return null
     const [y, m, d] = watchedDueDate.split("-").map(Number)
@@ -171,15 +174,14 @@ export function ServiceForm({ service, clients, open, onOpenChange, onSave }: Pr
       return {
         kind: "kept" as const,
         message: holiday
-          ? `${formatDate(watchedDueDate)} é ${holiday} — a data será mantida.`
-          : `${formatDate(watchedDueDate)} cai em fim de semana — a data será mantida.`,
+          ? `${formatDate(original)} é ${holiday} — a data será mantida.`
+          : `${formatDate(original)} cai em fim de semana — a data será mantida.`,
       }
     }
     const adjusted = adjustForWeekend(original, watchedRule)
-    const adjustedYmd = `${adjusted.getFullYear()}-${String(adjusted.getMonth() + 1).padStart(2, "0")}-${String(adjusted.getDate()).padStart(2, "0")}`
     return {
       kind: "shifted" as const,
-      message: `${formatDate(watchedDueDate)} ${watchedRule === "postpone" ? "será postergada para" : "será antecipada para"} ${formatDate(adjustedYmd)}.`,
+      message: `${formatDate(original)} ${watchedRule === "postpone" ? "será postergada para" : "será antecipada para"} ${formatDate(adjusted)}.`,
     }
   })()
 

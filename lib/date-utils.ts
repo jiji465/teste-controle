@@ -250,7 +250,10 @@ export const calculateDueDateInfoFromCompetency = (
 }
 
 export const formatDate = (date: string | Date): string => {
-  const d = typeof date === "string" ? new Date(date) : date
+  // Usa parseLocalDate pra evitar o bug clássico de UTC: `new Date("2026-05-31")`
+  // é meia-noite UTC, que no Brasil (UTC-3) vira 21h do dia 30. Resultado:
+  // o calendário do usuário diz 31/05 mas formatDate mostrava 30/05.
+  const d = parseLocalDate(date)
   return d.toLocaleDateString("pt-BR")
 }
 
