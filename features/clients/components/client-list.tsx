@@ -472,7 +472,100 @@ export function ClientList({ clients, onUpdate }: ClientListProps) {
         ]}
       />
 
-      <div className="border rounded-lg">
+      {/* Mobile: cartões (até md) — a tabela é larga demais pro celular */}
+      <div className="md:hidden space-y-2">
+        {filteredClients.length === 0 ? (
+          <div className="border rounded-lg py-12 text-center">
+            <Building2 className="size-10 text-muted-foreground/30 mx-auto mb-2" />
+            <p className="font-medium">Nenhuma empresa encontrada</p>
+            <p className="text-sm text-muted-foreground mt-1 max-w-sm mx-auto">
+              {search ? "Ajuste o termo de busca." : "Cadastre a primeira pelo botão acima."}
+            </p>
+          </div>
+        ) : (
+          filteredClients.map((client) => (
+            <div
+              key={client.id}
+              className={`border rounded-lg p-3 space-y-2 ${selectedIds.has(client.id) ? "bg-primary/5 border-primary/40" : "bg-card"}`}
+            >
+              <div className="flex items-start gap-2">
+                <Checkbox
+                  checked={selectedIds.has(client.id)}
+                  onCheckedChange={() => toggleSelect(client.id)}
+                  aria-label={`Selecionar ${client.name}`}
+                  className="mt-0.5"
+                />
+                <button
+                  type="button"
+                  onClick={() => handleOpenDetails(client)}
+                  className="flex-1 min-w-0 text-left"
+                >
+                  <p className="font-medium truncate">{client.name}</p>
+                  <p className="text-xs text-muted-foreground font-mono">{client.cnpj}</p>
+                </button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="icon" className="size-8 shrink-0">
+                      <MoreVertical className="size-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuLabel>Ações</DropdownMenuLabel>
+                    <DropdownMenuItem onClick={() => handleOpenDetails(client)}>
+                      <Eye className="mr-2 h-4 w-4" /> Ver detalhes
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => navigator.clipboard.writeText(client.cnpj)}>
+                      Copiar CNPJ
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={() => handleOpenForm(client)}>
+                      <Pencil className="mr-2 h-4 w-4" /> Editar
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => setTemplateClient(client)}>
+                      <Sparkles className="mr-2 h-4 w-4" /> Aplicar Template
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    {client.status === "inactive" ? (
+                      <DropdownMenuItem onClick={() => handleReactivate(client.id)}>
+                        <RotateCcw className="mr-2 h-4 w-4" /> Reativar
+                      </DropdownMenuItem>
+                    ) : (
+                      <DropdownMenuItem onClick={() => handleArchive(client.id)}>
+                        <Archive className="mr-2 h-4 w-4" /> Arquivar
+                      </DropdownMenuItem>
+                    )}
+                    <DropdownMenuItem
+                      onClick={() => handleDelete(client.id)}
+                      className="text-red-600 focus:text-red-600 focus:bg-red-50 dark:focus:bg-red-950/50"
+                    >
+                      <Trash2 className="mr-2 h-4 w-4" /> Excluir definitivamente
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+              <div className="flex items-center gap-2 flex-wrap ml-6">
+                {client.taxRegime && (
+                  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium ${TAX_REGIME_COLORS[client.taxRegime]}`}>
+                    {TAX_REGIME_LABELS[client.taxRegime]}
+                  </span>
+                )}
+                <Badge
+                  variant={client.status === "active" ? "default" : "secondary"}
+                  className={client.status === "active" ? "bg-success text-success-foreground" : ""}
+                >
+                  {client.status === "active" ? "Ativo" : "Inativo"}
+                </Badge>
+                {client.state && (
+                  <span className="text-xs text-muted-foreground">{client.state.toUpperCase()}</span>
+                )}
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+
+      {/* Desktop: tabela (md+) */}
+      <div className="border rounded-lg hidden md:block">
         <Table className="table-fixed w-full">
           <TableHeader>
             <TableRow>
