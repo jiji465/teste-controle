@@ -795,7 +795,7 @@ export const ObligationList = forwardRef<ObligationListHandle, ObligationListPro
                   <ArrowUpDown className="ml-2 size-3" />
                 </Button>
               </ResizableTableHead>
-              <ResizableTableHead defaultWidth={150} storageKey="obrigacoes-actions" className="max-xl:hidden">Ações Rápidas</ResizableTableHead>
+              <ResizableTableHead defaultWidth={200} storageKey="obrigacoes-actions" className="max-xl:hidden">Ações Rápidas</ResizableTableHead>
               <TableHead className="w-[50px] sticky right-0 z-20 bg-background shadow-[-6px_0_6px_-6px_rgba(0,0,0,0.12)]"></TableHead>
             </TableRow>
           </TableHeader>
