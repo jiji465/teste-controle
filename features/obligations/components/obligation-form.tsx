@@ -628,11 +628,12 @@ export function ObligationForm({ obligation, clients, open, onOpenChange, onSave
               />
             </div>
 
-            {/* 6. Observações e Tags */}
-            <div className="space-y-4 border-t pt-4">
-              <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
-                Observações e Tags
-              </h3>
+            {/* 6. Observações e Tags (opcional — recolhido por padrão p/ encurtar o form) */}
+            <details className="border-t pt-4">
+              <summary className="text-sm font-semibold text-muted-foreground uppercase tracking-wide cursor-pointer select-none">
+                Observações e Tags <span className="font-normal normal-case text-xs">(opcional)</span>
+              </summary>
+              <div className="space-y-4 pt-4">
 
               <FormField
                 control={form.control}
