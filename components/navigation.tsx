@@ -166,7 +166,7 @@ export function Navigation() {
                       )}
                     >
                       <Icon className="size-4" />
-                      <span className="text-sm font-medium">{item.label}</span>
+                      <span className="text-sm font-medium">{item.short ?? item.label}</span>
                     </Button>
                   </Link>
                 )
