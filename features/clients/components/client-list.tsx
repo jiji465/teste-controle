@@ -473,7 +473,7 @@ export function ClientList({ clients, onUpdate }: ClientListProps) {
       />
 
       <div className="border rounded-lg">
-        <Table>
+        <Table className="table-fixed w-full">
           <TableHeader>
             <TableRow>
               <TableHead className="w-10">
@@ -486,12 +486,12 @@ export function ClientList({ clients, onUpdate }: ClientListProps) {
                   aria-label="Selecionar todas"
                 />
               </TableHead>
-              <ResizableTableHead defaultWidth={280} storageKey="clientes-name">
+              <TableHead className="min-w-0">
                 <Button variant="ghost" size="sm" onClick={() => toggleSort("name")} className="-ml-3">
                   Nome / Razão Social
                   <ArrowUpDown className="ml-2 size-3" />
                 </Button>
-              </ResizableTableHead>
+              </TableHead>
               <ResizableTableHead defaultWidth={170} storageKey="clientes-cnpj">
                 <Button variant="ghost" size="sm" onClick={() => toggleSort("cnpj")} className="-ml-3">
                   CNPJ
@@ -504,19 +504,19 @@ export function ClientList({ clients, onUpdate }: ClientListProps) {
                   <ArrowUpDown className="ml-2 size-3" />
                 </Button>
               </ResizableTableHead>
-              <ResizableTableHead defaultWidth={170} storageKey="clientes-activity">
+              <ResizableTableHead defaultWidth={150} storageKey="clientes-activity" className="max-xl:hidden">
                 <Button variant="ghost" size="sm" onClick={() => toggleSort("activity")} className="-ml-3">
                   Atividade
                   <ArrowUpDown className="ml-2 size-3" />
                 </Button>
               </ResizableTableHead>
-              <ResizableTableHead defaultWidth={220} storageKey="clientes-contact">
+              <ResizableTableHead defaultWidth={200} storageKey="clientes-contact" className="max-lg:hidden">
                 <Button variant="ghost" size="sm" onClick={() => toggleSort("contact")} className="-ml-3">
                   E-mail / Telefone
                   <ArrowUpDown className="ml-2 size-3" />
                 </Button>
               </ResizableTableHead>
-              <ResizableTableHead defaultWidth={140} storageKey="clientes-estado">
+              <ResizableTableHead defaultWidth={130} storageKey="clientes-estado" className="max-lg:hidden">
                 <Button variant="ghost" size="sm" onClick={() => toggleSort("state")} className="-ml-3">
                   Estado
                   <ArrowUpDown className="ml-2 size-3" />
@@ -568,7 +568,7 @@ export function ClientList({ clients, onUpdate }: ClientListProps) {
                   </TableCell>
                   <TableCell>
                     <div>
-                      <p className="font-medium hover:underline">{client.name}</p>
+                      <p className="font-medium hover:underline truncate max-w-[260px]">{client.name}</p>
                       {(client.ie || client.im) && (
                         <p className="text-xs text-muted-foreground">
                           {client.ie && `IE: ${client.ie}`}
@@ -590,7 +590,7 @@ export function ClientList({ clients, onUpdate }: ClientListProps) {
                       <span className="text-xs text-muted-foreground">—</span>
                     )}
                   </TableCell>
-                  <TableCell>
+                  <TableCell className="max-xl:hidden">
                     {client.businessActivity ? (
                       <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
                         <Briefcase className="size-3" />
@@ -600,13 +600,13 @@ export function ClientList({ clients, onUpdate }: ClientListProps) {
                       <span className="text-xs text-muted-foreground">—</span>
                     )}
                   </TableCell>
-                  <TableCell>
+                  <TableCell className="max-lg:hidden">
                     <div className="text-sm">
-                      {client.email && <p>{client.email}</p>}
+                      {client.email && <p className="truncate">{client.email}</p>}
                       {client.phone && <p className="text-muted-foreground">{client.phone}</p>}
                     </div>
                   </TableCell>
-                  <TableCell>
+                  <TableCell className="max-lg:hidden">
                     {client.state ? (
                       <div className="text-sm">
                         <p className="font-medium">{client.state.toUpperCase()}</p>

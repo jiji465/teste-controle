@@ -773,7 +773,7 @@ export const ObligationList = forwardRef<ObligationListHandle, ObligationListPro
 
       {/* Desktop: tabela (md+) */}
       <div className="border rounded-lg hidden md:block">
-        <Table>
+        <Table className="table-fixed w-full">
           <TableHeader>
             <TableRow>
               <TableHead className="w-10">
@@ -792,32 +792,32 @@ export const ObligationList = forwardRef<ObligationListHandle, ObligationListPro
                   aria-label="Selecionar todas"
                 />
               </TableHead>
-              <ResizableTableHead defaultWidth={280} storageKey="obrigacoes-name">
+              <TableHead className="min-w-0">
                 <Button variant="ghost" size="sm" onClick={() => toggleSort("name")} className="-ml-3">
                   Obrigação
                   <ArrowUpDown className="ml-2 size-3" />
                 </Button>
-              </ResizableTableHead>
-              <ResizableTableHead defaultWidth={260} storageKey="obrigacoes-client">
+              </TableHead>
+              <ResizableTableHead defaultWidth={200} storageKey="obrigacoes-client">
                 <Button variant="ghost" size="sm" onClick={() => toggleSort("client")} className="-ml-3">
                   Cliente
                   <ArrowUpDown className="ml-2 size-3" />
                 </Button>
               </ResizableTableHead>
-              <ResizableTableHead defaultWidth={160} storageKey="obrigacoes-regimes">Regimes</ResizableTableHead>
-              <ResizableTableHead defaultWidth={180} storageKey="obrigacoes-due">
+              <ResizableTableHead defaultWidth={150} storageKey="obrigacoes-regimes" className="max-xl:hidden">Regimes</ResizableTableHead>
+              <ResizableTableHead defaultWidth={170} storageKey="obrigacoes-due">
                 <Button variant="ghost" size="sm" onClick={() => toggleSort("dueDate")} className="-ml-3">
                   Vencimento
                   <ArrowUpDown className="ml-2 size-3" />
                 </Button>
               </ResizableTableHead>
-              <ResizableTableHead defaultWidth={140} storageKey="obrigacoes-status">
+              <ResizableTableHead defaultWidth={130} storageKey="obrigacoes-status">
                 <Button variant="ghost" size="sm" onClick={() => toggleSort("status")} className="-ml-3">
                   Status
                   <ArrowUpDown className="ml-2 size-3" />
                 </Button>
               </ResizableTableHead>
-              <ResizableTableHead defaultWidth={180} storageKey="obrigacoes-actions">Ações Rápidas</ResizableTableHead>
+              <ResizableTableHead defaultWidth={150} storageKey="obrigacoes-actions" className="max-xl:hidden">Ações Rápidas</ResizableTableHead>
               <TableHead className="w-[50px] sticky right-0 z-20 bg-background shadow-[-6px_0_6px_-6px_rgba(0,0,0,0.12)]"></TableHead>
             </TableRow>
           </TableHeader>
@@ -867,7 +867,7 @@ export const ObligationList = forwardRef<ObligationListHandle, ObligationListPro
                   <TableCell>
                     <div className="space-y-1">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <div className="font-medium hover:underline">{obligation.name}</div>
+                        <div className="font-medium hover:underline truncate max-w-full">{obligation.name}</div>
                         {obligation.scope && (
                           <Badge
                             variant="outline"
@@ -911,9 +911,9 @@ export const ObligationList = forwardRef<ObligationListHandle, ObligationListPro
                     </div>
                   </TableCell>
                   <TableCell>
-                    <div className="font-medium">{obligation.client.name}</div>
+                    <div className="font-medium truncate">{obligation.client.name}</div>
                   </TableCell>
-                  <TableCell>
+                  <TableCell className="max-xl:hidden">
                     {obligation.applicableRegimes && obligation.applicableRegimes.length > 0 ? (
                       <div className="flex flex-wrap gap-1">
                         {obligation.applicableRegimes.map((r) => (
@@ -948,7 +948,7 @@ export const ObligationList = forwardRef<ObligationListHandle, ObligationListPro
                     </div>
                   </TableCell>
                   <TableCell>{getStatusBadge(obligation)}</TableCell>
-                  <TableCell onClick={(e) => e.stopPropagation()}>
+                  <TableCell onClick={(e) => e.stopPropagation()} className="max-xl:hidden">
                     <QuickActionButtons obligation={obligation} />
                   </TableCell>
                   <TableCell

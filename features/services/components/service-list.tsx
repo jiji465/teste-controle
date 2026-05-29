@@ -707,7 +707,7 @@ export const ServiceList = forwardRef<ServiceListHandle, ServiceListProps>(funct
 
       {/* Desktop: tabela (md+) */}
       <div className="border rounded-lg hidden md:block">
-        <Table>
+        <Table className="table-fixed w-full">
           <TableHeader>
             <TableRow>
               <TableHead className="w-10">
@@ -726,32 +726,32 @@ export const ServiceList = forwardRef<ServiceListHandle, ServiceListProps>(funct
                   aria-label="Selecionar todos"
                 />
               </TableHead>
-              <ResizableTableHead defaultWidth={280} storageKey="servicos-name">
+              <TableHead className="min-w-0">
                 <Button variant="ghost" size="sm" onClick={() => toggleSort("name")} className="-ml-3">
                   Serviço
                   <ArrowUpDown className="ml-2 size-3" />
                 </Button>
-              </ResizableTableHead>
-              <ResizableTableHead defaultWidth={240} storageKey="servicos-client">
+              </TableHead>
+              <ResizableTableHead defaultWidth={200} storageKey="servicos-client">
                 <Button variant="ghost" size="sm" onClick={() => toggleSort("client")} className="-ml-3">
                   Cliente
                   <ArrowUpDown className="ml-2 size-3" />
                 </Button>
               </ResizableTableHead>
-              <ResizableTableHead defaultWidth={140} storageKey="servicos-category">Categoria</ResizableTableHead>
-              <ResizableTableHead defaultWidth={170} storageKey="servicos-due">
+              <ResizableTableHead defaultWidth={130} storageKey="servicos-category" className="max-lg:hidden">Categoria</ResizableTableHead>
+              <ResizableTableHead defaultWidth={150} storageKey="servicos-due">
                 <Button variant="ghost" size="sm" onClick={() => toggleSort("dueDate")} className="-ml-3">
                   Data
                   <ArrowUpDown className="ml-2 size-3" />
                 </Button>
               </ResizableTableHead>
-              <ResizableTableHead defaultWidth={140} storageKey="servicos-status">
+              <ResizableTableHead defaultWidth={130} storageKey="servicos-status">
                 <Button variant="ghost" size="sm" onClick={() => toggleSort("status")} className="-ml-3">
                   Status
                   <ArrowUpDown className="ml-2 size-3" />
                 </Button>
               </ResizableTableHead>
-              <ResizableTableHead defaultWidth={180} storageKey="servicos-actions">Ações Rápidas</ResizableTableHead>
+              <ResizableTableHead defaultWidth={150} storageKey="servicos-actions" className="max-xl:hidden">Ações Rápidas</ResizableTableHead>
               <TableHead className="w-[50px] sticky right-0 z-20 bg-background shadow-[-6px_0_6px_-6px_rgba(0,0,0,0.12)]"></TableHead>
             </TableRow>
           </TableHeader>
@@ -803,7 +803,7 @@ export const ServiceList = forwardRef<ServiceListHandle, ServiceListProps>(funct
                     <TableCell>
                       <div className="space-y-1">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <div className="font-medium">{service.name}</div>
+                          <div className="font-medium truncate max-w-full">{service.name}</div>
                           {service.priority && service.priority !== "medium" && (
                             <Badge
                               variant="outline"
@@ -829,9 +829,9 @@ export const ServiceList = forwardRef<ServiceListHandle, ServiceListProps>(funct
                       </div>
                     </TableCell>
                     <TableCell>
-                      <div className="font-medium">{client?.name ?? "—"}</div>
+                      <div className="font-medium truncate">{client?.name ?? "—"}</div>
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="max-lg:hidden">
                       <span
                         className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium ${SERVICE_CATEGORY_COLORS[service.category]}`}
                       >
@@ -845,7 +845,7 @@ export const ServiceList = forwardRef<ServiceListHandle, ServiceListProps>(funct
                       </div>
                     </TableCell>
                     <TableCell>{getStatusBadge(service)}</TableCell>
-                    <TableCell>
+                    <TableCell className="max-xl:hidden">
                       <QuickActionButtons service={service} />
                     </TableCell>
                     <TableCell className="sticky right-0 z-10 bg-background group-hover:bg-muted/50 transition-colors shadow-[-6px_0_6px_-6px_rgba(0,0,0,0.12)]">

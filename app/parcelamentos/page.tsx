@@ -901,7 +901,7 @@ export default function ParcelamentosPage() {
 
             {/* Desktop: tabela (md+) */}
             <div className="border rounded-lg hidden md:block">
-              <Table>
+              <Table className="table-fixed w-full">
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-10">
@@ -918,29 +918,29 @@ export default function ParcelamentosPage() {
                         aria-label="Selecionar todos"
                       />
                     </TableHead>
-                    <ResizableTableHead defaultWidth={240} storageKey="parc-name">
+                    <TableHead className="min-w-0">
                       <Button variant="ghost" size="sm" onClick={() => toggleSort("name")} className="-ml-3">
                         Parcelamento <ArrowUpDown className="ml-2 size-3" />
                       </Button>
-                    </ResizableTableHead>
-                    <ResizableTableHead defaultWidth={240} storageKey="parc-client">
+                    </TableHead>
+                    <ResizableTableHead defaultWidth={190} storageKey="parc-client">
                       <Button variant="ghost" size="sm" onClick={() => toggleSort("client")} className="-ml-3">
                         Cliente <ArrowUpDown className="ml-2 size-3" />
                       </Button>
                     </ResizableTableHead>
-                    <ResizableTableHead defaultWidth={140} storageKey="parc-tax">Imposto</ResizableTableHead>
-                    <ResizableTableHead defaultWidth={100} storageKey="parc-num">Parcela</ResizableTableHead>
-                    <ResizableTableHead defaultWidth={180} storageKey="parc-due">
+                    <ResizableTableHead defaultWidth={130} storageKey="parc-tax" className="max-lg:hidden">Imposto</ResizableTableHead>
+                    <ResizableTableHead defaultWidth={90} storageKey="parc-num" className="max-lg:hidden">Parcela</ResizableTableHead>
+                    <ResizableTableHead defaultWidth={150} storageKey="parc-due">
                       <Button variant="ghost" size="sm" onClick={() => toggleSort("dueDate")} className="-ml-3">
                         Vencimento <ArrowUpDown className="ml-2 size-3" />
                       </Button>
                     </ResizableTableHead>
-                    <ResizableTableHead defaultWidth={140} storageKey="parc-status">
+                    <ResizableTableHead defaultWidth={130} storageKey="parc-status">
                       <Button variant="ghost" size="sm" onClick={() => toggleSort("status")} className="-ml-3">
                         Status <ArrowUpDown className="ml-2 size-3" />
                       </Button>
                     </ResizableTableHead>
-                    <ResizableTableHead defaultWidth={180} storageKey="parc-actions">Ações Rápidas</ResizableTableHead>
+                    <ResizableTableHead defaultWidth={150} storageKey="parc-actions" className="max-xl:hidden">Ações Rápidas</ResizableTableHead>
                     <TableHead className="w-[50px] sticky right-0 z-20 bg-background shadow-[-6px_0_6px_-6px_rgba(0,0,0,0.12)]"></TableHead>
                   </TableRow>
                 </TableHeader>
@@ -997,7 +997,7 @@ export default function ParcelamentosPage() {
                           </TableCell>
                           <TableCell>
                             <div className="flex items-center gap-2 flex-wrap">
-                              <div className="font-medium hover:underline">{i.name}</div>
+                              <div className="font-medium hover:underline truncate max-w-full">{i.name}</div>
                               {i.priority && i.priority !== "medium" && (
                                 <Badge
                                   variant="outline"
@@ -1014,16 +1014,16 @@ export default function ParcelamentosPage() {
                               )}
                             </div>
                           </TableCell>
-                          <TableCell>{getClientName(i.clientId)}</TableCell>
-                          <TableCell>{getTaxName(i.taxId)}</TableCell>
-                          <TableCell className="font-mono tabular-nums">
+                          <TableCell className="truncate">{getClientName(i.clientId)}</TableCell>
+                          <TableCell className="max-lg:hidden truncate">{getTaxName(i.taxId)}</TableCell>
+                          <TableCell className="font-mono tabular-nums max-lg:hidden">
                             {display.number}/{i.installmentCount}
                           </TableCell>
                           <TableCell>
                             <div className="font-mono text-sm font-medium">{formatDate(dueDate)}</div>
                           </TableCell>
                           <TableCell>{getStatusBadge(i)}</TableCell>
-                          <TableCell onClick={(e) => e.stopPropagation()}>
+                          <TableCell onClick={(e) => e.stopPropagation()} className="max-xl:hidden">
                             {status !== "completed" && (
                               <div className="flex gap-1">
                                 {status === "pending" && (

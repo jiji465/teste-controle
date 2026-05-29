@@ -815,7 +815,7 @@ export default function ImpostosPage() {
 
                 {/* Desktop: tabela (md+) */}
                 <div className="border rounded-lg hidden md:block">
-                  <Table>
+                  <Table className="table-fixed w-full">
                     <TableHeader>
                       <TableRow>
                         <TableHead className="w-10">
@@ -831,29 +831,29 @@ export default function ImpostosPage() {
                             aria-label="Selecionar todos"
                           />
                         </TableHead>
-                        <ResizableTableHead defaultWidth={280} storageKey="impostos-name">
+                        <TableHead className="min-w-0">
                           <Button variant="ghost" size="sm" onClick={() => toggleSort("name")} className="-ml-3">
                             Imposto <ArrowUpDown className="ml-2 size-3" />
                           </Button>
-                        </ResizableTableHead>
-                        <ResizableTableHead defaultWidth={260} storageKey="impostos-client">
+                        </TableHead>
+                        <ResizableTableHead defaultWidth={200} storageKey="impostos-client">
                           <Button variant="ghost" size="sm" onClick={() => toggleSort("client")} className="-ml-3">
                             Cliente <ArrowUpDown className="ml-2 size-3" />
                           </Button>
                         </ResizableTableHead>
-                        <ResizableTableHead defaultWidth={160} storageKey="impostos-regimes">Regimes</ResizableTableHead>
-                        <ResizableTableHead defaultWidth={180} storageKey="impostos-due">
+                        <ResizableTableHead defaultWidth={150} storageKey="impostos-regimes" className="max-xl:hidden">Regimes</ResizableTableHead>
+                        <ResizableTableHead defaultWidth={170} storageKey="impostos-due">
                           <Button variant="ghost" size="sm" onClick={() => toggleSort("dueDate")} className="-ml-3">
                             Vencimento <ArrowUpDown className="ml-2 size-3" />
                           </Button>
                         </ResizableTableHead>
-                        <ResizableTableHead defaultWidth={140} storageKey="impostos-status">
+                        <ResizableTableHead defaultWidth={130} storageKey="impostos-status">
                           <Button variant="ghost" size="sm" onClick={() => toggleSort("status")} className="-ml-3">
                             Status <ArrowUpDown className="ml-2 size-3" />
                           </Button>
                         </ResizableTableHead>
-                        <ResizableTableHead defaultWidth={180} storageKey="impostos-actions">Ações Rápidas</ResizableTableHead>
-                        <TableHead className="w-[50px]"></TableHead>
+                        <ResizableTableHead defaultWidth={150} storageKey="impostos-actions" className="max-xl:hidden">Ações Rápidas</ResizableTableHead>
+                        <TableHead className="w-[50px] sticky right-0 z-20 bg-background shadow-[-6px_0_6px_-6px_rgba(0,0,0,0.12)]"></TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -890,7 +890,7 @@ export default function ImpostosPage() {
                           <TableRow
                             key={tax.id}
                             data-state={selectedIds.has(tax.id) ? "selected" : undefined}
-                            className={`cursor-pointer ${
+                            className={`group cursor-pointer ${
                               selectedIds.has(tax.id)
                                 ? "bg-primary/5"
                                 : isTaxOverdue
@@ -906,7 +906,7 @@ export default function ImpostosPage() {
                                 aria-label={`Selecionar ${tax.name}`}
                               />
                             </TableCell>
-                            <TableCell className="max-w-[280px]">
+                            <TableCell>
                               <div className="space-y-1 min-w-0">
                                 <div className="flex items-center gap-2 flex-wrap">
                                   <div className="font-medium truncate hover:underline">{tax.name}</div>
@@ -939,12 +939,12 @@ export default function ImpostosPage() {
                                 )}
                               </div>
                             </TableCell>
-                            <TableCell className="text-sm">
+                            <TableCell className="text-sm truncate">
                               {clients.find((c) => c.id === tax.clientId)?.name || (
                                 <span className="text-muted-foreground">—</span>
                               )}
                             </TableCell>
-                            <TableCell>
+                            <TableCell className="max-xl:hidden">
                               {tax.applicableRegimes && tax.applicableRegimes.length > 0 ? (
                                 <div className="flex flex-wrap gap-1">
                                   {tax.applicableRegimes.map((r) => (
@@ -991,7 +991,7 @@ export default function ImpostosPage() {
                               </div>
                             </TableCell>
                             <TableCell>{getStatusBadge(tax.status, tax.completedAt, calculatedDueDate)}</TableCell>
-                            <TableCell onClick={(e) => e.stopPropagation()}>
+                            <TableCell onClick={(e) => e.stopPropagation()} className="max-xl:hidden">
                               {tax.status !== "completed" && (
                                 <div className="flex gap-1">
                                   {tax.status === "pending" && (
@@ -1012,7 +1012,10 @@ export default function ImpostosPage() {
                                 </div>
                               )}
                             </TableCell>
-                            <TableCell onClick={(e) => e.stopPropagation()}>
+                            <TableCell
+                              onClick={(e) => e.stopPropagation()}
+                              className="sticky right-0 z-10 bg-background group-hover:bg-muted/50 transition-colors shadow-[-6px_0_6px_-6px_rgba(0,0,0,0.12)]"
+                            >
                               <DropdownMenu>
                                 <DropdownMenuTrigger asChild>
                                   <Button variant="ghost" size="icon">
@@ -1020,6 +1023,20 @@ export default function ImpostosPage() {
                                   </Button>
                                 </DropdownMenuTrigger>
                                 <DropdownMenuContent align="end">
+                                  {tax.status !== "completed" && (
+                                    <>
+                                      {tax.status === "pending" && (
+                                        <DropdownMenuItem onClick={() => handleStartTax(tax)}>
+                                          <PlayCircle className="size-4 mr-2" />
+                                          Iniciar
+                                        </DropdownMenuItem>
+                                      )}
+                                      <DropdownMenuItem onClick={() => handleCompleteTax(tax)}>
+                                        <CheckCircle2 className="size-4 mr-2" />
+                                        Concluir
+                                      </DropdownMenuItem>
+                                    </>
+                                  )}
                                   <DropdownMenuItem onClick={() => handleView(tax)}>
                                     <Eye className="size-4 mr-2" />
                                     Ver detalhes
