@@ -125,11 +125,14 @@ export function Navigation() {
   // Padronizado: nenhum item da navegação mostra badge de contagem.
   // Alertas críticos (atrasados, vencendo na semana) ficam no popover do sino,
   // que já é destacado em vermelho. Contagens totais aparecem nas próprias páginas.
-  const navItems = [
+  // `label` = nome completo (usado no menu do celular, onde há espaço).
+  // `short` = nome curto pra barra horizontal do desktop caber os 9 itens
+  // numa linha em notebooks (1280-1366px). Sem `short`, usa o `label`.
+  const navItems: { href: string; label: string; short?: string; icon: typeof LayoutDashboard }[] = [
     { href: "/", label: "Dashboard", icon: LayoutDashboard },
     { href: "/clientes", label: "Empresas", icon: Building2 },
-    { href: "/impostos", label: "Guias de Imposto", icon: Receipt },
-    { href: "/obrigacoes", label: "Obrigações Acessórias", icon: FileText },
+    { href: "/impostos", label: "Guias de Imposto", short: "Guias", icon: Receipt },
+    { href: "/obrigacoes", label: "Obrigações Acessórias", short: "Obrigações", icon: FileText },
     { href: "/parcelamentos", label: "Parcelamentos", icon: CreditCard },
     { href: "/servicos", label: "Serviços", icon: Briefcase },
     { href: "/calendario", label: "Calendário", icon: Calendar },
