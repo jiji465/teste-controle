@@ -683,11 +683,13 @@ export function ClientList({ clients, onUpdate }: ClientListProps) {
                       <span className="text-xs text-muted-foreground">—</span>
                     )}
                   </TableCell>
-                  <TableCell className="max-xl:hidden">
+                  <TableCell className="max-xl:hidden overflow-hidden">
                     {client.businessActivity ? (
-                      <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                        <Briefcase className="size-3" />
-                        {BUSINESS_ACTIVITY_LABELS[client.businessActivity as BusinessActivity] ?? client.businessActivity}
+                      <span className="flex items-center gap-1 text-xs text-muted-foreground min-w-0">
+                        <Briefcase className="size-3 shrink-0" />
+                        <span className="truncate">
+                          {BUSINESS_ACTIVITY_LABELS[client.businessActivity as BusinessActivity] ?? client.businessActivity}
+                        </span>
                       </span>
                     ) : (
                       <span className="text-xs text-muted-foreground">—</span>
