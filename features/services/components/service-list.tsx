@@ -752,7 +752,7 @@ export const ServiceList = forwardRef<ServiceListHandle, ServiceListProps>(funct
                 </Button>
               </ResizableTableHead>
               <ResizableTableHead defaultWidth={180} storageKey="servicos-actions">Ações Rápidas</ResizableTableHead>
-              <TableHead className="w-[50px]"></TableHead>
+              <TableHead className="w-[50px] sticky right-0 z-20 bg-background shadow-[-6px_0_6px_-6px_rgba(0,0,0,0.12)]"></TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -785,13 +785,13 @@ export const ServiceList = forwardRef<ServiceListHandle, ServiceListProps>(funct
                   <TableRow
                     key={service.id}
                     data-state={selectedIds.has(service.id) ? "selected" : undefined}
-                    className={
+                    className={`group ${
                       selectedIds.has(service.id)
                         ? "bg-primary/5"
                         : overdue
                           ? "bg-red-50/50 dark:bg-red-950/10"
                           : ""
-                    }
+                    }`}
                   >
                     <TableCell>
                       <Checkbox
@@ -848,7 +848,7 @@ export const ServiceList = forwardRef<ServiceListHandle, ServiceListProps>(funct
                     <TableCell>
                       <QuickActionButtons service={service} />
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="sticky right-0 z-10 bg-background group-hover:bg-muted/50 transition-colors shadow-[-6px_0_6px_-6px_rgba(0,0,0,0.12)]">
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button variant="ghost" size="icon">
@@ -856,6 +856,20 @@ export const ServiceList = forwardRef<ServiceListHandle, ServiceListProps>(funct
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
+                          {service.status !== "completed" && (
+                            <>
+                              {service.status === "pending" && (
+                                <DropdownMenuItem onClick={() => handleInProgress(service)}>
+                                  <PlayCircle className="size-4 mr-2" />
+                                  Iniciar
+                                </DropdownMenuItem>
+                              )}
+                              <DropdownMenuItem onClick={() => handleComplete(service)}>
+                                <CheckCircle2 className="size-4 mr-2" />
+                                Concluir
+                              </DropdownMenuItem>
+                            </>
+                          )}
                           <DropdownMenuItem onClick={() => handleEdit(service)}>
                             <Pencil className="size-4 mr-2" />
                             Editar

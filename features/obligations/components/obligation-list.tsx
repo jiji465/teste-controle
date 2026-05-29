@@ -818,7 +818,7 @@ export const ObligationList = forwardRef<ObligationListHandle, ObligationListPro
                 </Button>
               </ResizableTableHead>
               <ResizableTableHead defaultWidth={180} storageKey="obrigacoes-actions">Ações Rápidas</ResizableTableHead>
-              <TableHead className="w-[50px]"></TableHead>
+              <TableHead className="w-[50px] sticky right-0 z-20 bg-background shadow-[-6px_0_6px_-6px_rgba(0,0,0,0.12)]"></TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -848,7 +848,7 @@ export const ObligationList = forwardRef<ObligationListHandle, ObligationListPro
                 <TableRow
                   key={obligation.id}
                   data-state={selectedIds.has(obligation.id) ? "selected" : undefined}
-                  className={`cursor-pointer ${
+                  className={`group cursor-pointer ${
                     selectedIds.has(obligation.id)
                       ? "bg-primary/5"
                       : isOverdue(obligation.calculatedDueDate) && obligation.status !== "completed"
@@ -951,7 +951,10 @@ export const ObligationList = forwardRef<ObligationListHandle, ObligationListPro
                   <TableCell onClick={(e) => e.stopPropagation()}>
                     <QuickActionButtons obligation={obligation} />
                   </TableCell>
-                  <TableCell onClick={(e) => e.stopPropagation()}>
+                  <TableCell
+                    onClick={(e) => e.stopPropagation()}
+                    className="sticky right-0 z-10 bg-background group-hover:bg-muted/50 transition-colors shadow-[-6px_0_6px_-6px_rgba(0,0,0,0.12)]"
+                  >
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <Button variant="ghost" size="icon">
@@ -959,6 +962,20 @@ export const ObligationList = forwardRef<ObligationListHandle, ObligationListPro
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
+                        {obligation.status !== "completed" && (
+                          <>
+                            {obligation.status === "pending" && (
+                              <DropdownMenuItem onClick={() => handleInProgress(obligation)}>
+                                <PlayCircle className="size-4 mr-2" />
+                                Iniciar
+                              </DropdownMenuItem>
+                            )}
+                            <DropdownMenuItem onClick={() => handleComplete(obligation)}>
+                              <CheckCircle2 className="size-4 mr-2" />
+                              Concluir
+                            </DropdownMenuItem>
+                          </>
+                        )}
                         <DropdownMenuItem onClick={() => handleView(obligation)}>
                           <Eye className="size-4 mr-2" />
                           Ver detalhes
@@ -966,6 +983,10 @@ export const ObligationList = forwardRef<ObligationListHandle, ObligationListPro
                         <DropdownMenuItem onClick={() => handleEdit(obligation)}>
                           <Pencil className="size-4 mr-2" />
                           Editar
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => handleDuplicate(obligation)}>
+                          <Copy className="size-4 mr-2" />
+                          Duplicar
                         </DropdownMenuItem>
                         <DropdownMenuItem onClick={() => handleDelete(obligation.id)} className="text-destructive">
                           <Trash2 className="size-4 mr-2" />

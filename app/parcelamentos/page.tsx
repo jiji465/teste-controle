@@ -941,7 +941,7 @@ export default function ParcelamentosPage() {
                       </Button>
                     </ResizableTableHead>
                     <ResizableTableHead defaultWidth={180} storageKey="parc-actions">Ações Rápidas</ResizableTableHead>
-                    <TableHead className="w-[50px]"></TableHead>
+                    <TableHead className="w-[50px] sticky right-0 z-20 bg-background shadow-[-6px_0_6px_-6px_rgba(0,0,0,0.12)]"></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -979,7 +979,7 @@ export default function ParcelamentosPage() {
                         <TableRow
                           key={i.id}
                           data-state={isSelected ? "selected" : undefined}
-                          className={`cursor-pointer ${
+                          className={`group cursor-pointer ${
                             isSelected
                               ? "bg-primary/5"
                               : status === "overdue"
@@ -1050,7 +1050,10 @@ export default function ParcelamentosPage() {
                               </div>
                             )}
                           </TableCell>
-                          <TableCell onClick={(e) => e.stopPropagation()}>
+                          <TableCell
+                            onClick={(e) => e.stopPropagation()}
+                            className="sticky right-0 z-10 bg-background group-hover:bg-muted/50 transition-colors shadow-[-6px_0_6px_-6px_rgba(0,0,0,0.12)]"
+                          >
                             <DropdownMenu>
                               <DropdownMenuTrigger asChild>
                                 <Button variant="ghost" size="icon">
@@ -1058,6 +1061,20 @@ export default function ParcelamentosPage() {
                                 </Button>
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end">
+                                {status !== "completed" && (
+                                  <>
+                                    {status === "pending" && (
+                                      <DropdownMenuItem onClick={() => handleStart(i)}>
+                                        <PlayCircle className="size-4 mr-2" />
+                                        Iniciar
+                                      </DropdownMenuItem>
+                                    )}
+                                    <DropdownMenuItem onClick={() => handleComplete(i)}>
+                                      <CheckCircle2 className="size-4 mr-2" />
+                                      Concluir
+                                    </DropdownMenuItem>
+                                  </>
+                                )}
                                 <DropdownMenuItem onClick={() => handleView(i)}>
                                   <Eye className="size-4 mr-2" />
                                   Ver detalhes

@@ -528,7 +528,7 @@ export function ClientList({ clients, onUpdate }: ClientListProps) {
                   <ArrowUpDown className="ml-2 size-3" />
                 </Button>
               </ResizableTableHead>
-              <TableHead className="w-[50px]"></TableHead>
+              <TableHead className="w-[50px] sticky right-0 z-20 bg-background shadow-[-6px_0_6px_-6px_rgba(0,0,0,0.12)]"></TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -556,7 +556,7 @@ export function ClientList({ clients, onUpdate }: ClientListProps) {
                 <TableRow
                   key={client.id}
                   data-state={selectedIds.has(client.id) ? "selected" : undefined}
-                  className={`${selectedIds.has(client.id) ? "bg-primary/5" : ""} cursor-pointer`}
+                  className={`group ${selectedIds.has(client.id) ? "bg-primary/5" : ""} cursor-pointer`}
                   onClick={() => handleOpenDetails(client)}
                 >
                   <TableCell onClick={(e) => e.stopPropagation()}>
@@ -626,7 +626,10 @@ export function ClientList({ clients, onUpdate }: ClientListProps) {
                       {client.status === "active" ? "Ativo" : "Inativo"}
                     </Badge>
                   </TableCell>
-                  <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
+                  <TableCell
+                    className="text-right sticky right-0 z-10 bg-background group-hover:bg-muted/50 transition-colors shadow-[-6px_0_6px_-6px_rgba(0,0,0,0.12)]"
+                    onClick={(e) => e.stopPropagation()}
+                  >
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <Button variant="ghost" className="h-8 w-8 p-0">
