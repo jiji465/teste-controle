@@ -679,6 +679,7 @@ export function ObligationForm({ obligation, clients, open, onOpenChange, onSave
                 )}
               </div>
             </div>
+            </details>
 
             <DialogFooter className="mt-4">
               <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={isSaving}>
