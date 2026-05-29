@@ -8,6 +8,7 @@ import { PeriodProvider } from "@/contexts/period-context"
 import { AutoRecurrenceInitializer } from "@/components/auto-recurrence-initializer"
 import { ErrorBoundary } from "@/components/error-boundary"
 import { AppShell } from "@/components/app-shell"
+import { ThemeProvider } from "@/components/theme-provider"
 import { Toaster } from "sonner"
 import "./globals.css"
 
@@ -33,21 +34,23 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="pt-BR" className={`${geistSans.variable} ${geistMono.variable}`}>
+    <html lang="pt-BR" className={`${geistSans.variable} ${geistMono.variable}`} suppressHydrationWarning>
       <body className="font-sans antialiased">
-        <AuthProvider>
-          <DataProvider>
-            <PeriodProvider>
-              <AutoRecurrenceInitializer />
-              <ErrorBoundary>
-                <Suspense fallback={null}>
-                  <AppShell>{children}</AppShell>
-                </Suspense>
-              </ErrorBoundary>
-            </PeriodProvider>
-          </DataProvider>
-        </AuthProvider>
-        <Toaster position="bottom-right" richColors />
+        <ThemeProvider attribute="class" defaultTheme="light" enableSystem disableTransitionOnChange>
+          <AuthProvider>
+            <DataProvider>
+              <PeriodProvider>
+                <AutoRecurrenceInitializer />
+                <ErrorBoundary>
+                  <Suspense fallback={null}>
+                    <AppShell>{children}</AppShell>
+                  </Suspense>
+                </ErrorBoundary>
+              </PeriodProvider>
+            </DataProvider>
+          </AuthProvider>
+          <Toaster position="bottom-right" richColors />
+        </ThemeProvider>
       </body>
     </html>
   )

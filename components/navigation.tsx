@@ -12,6 +12,7 @@ import { getObligationsWithDetails } from "@/lib/dashboard-utils"
 import { isOverdue, formatDate } from "@/lib/date-utils"
 import { useData } from "@/contexts/data-context"
 import { PeriodSwitcher } from "@/components/period-switcher"
+import { ThemeToggle } from "@/components/theme-toggle"
 import type { ObligationWithDetails } from "@/lib/types"
 
 export function Navigation() {
@@ -116,6 +117,7 @@ export function Navigation() {
               >
                 <RefreshCw className={`size-4 ${isRefreshing ? "animate-spin" : ""}`} />
               </Button>
+              <ThemeToggle />
               {totalAlerts > 0 && (
                 <Popover>
                   <PopoverTrigger asChild>
