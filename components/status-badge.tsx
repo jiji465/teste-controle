@@ -21,11 +21,16 @@ import { cn } from "@/lib/utils"
 
 export type TaskStatus = "completed" | "in_progress" | "overdue" | "pending"
 
+// success/info/destructive usam tokens semânticos (texto na própria cor, que
+// tem contraste OK em fundo /10). "pending" usa âmbar explícito: o token
+// --warning-foreground é quase-preto no tema claro (pensado p/ fundo warning
+// sólido), o que apagava a cor de "atenção" no badge. amber-700/400 garante
+// contraste E o tom âmbar consistente em ambos os temas.
 const STATUS_STYLE: Record<TaskStatus, string> = {
   completed: "bg-success/10 text-success border-success/25",
   in_progress: "bg-info/10 text-info border-info/25",
   overdue: "bg-destructive/10 text-destructive border-destructive/25",
-  pending: "bg-warning/15 text-warning-foreground border-warning/40 dark:text-warning",
+  pending: "bg-amber-500/10 text-amber-700 border-amber-500/30 dark:text-amber-400",
 }
 
 const STATUS_ICON: Record<TaskStatus, typeof CheckCircle2> = {
@@ -68,7 +73,7 @@ export type TaskPriority = "low" | "medium" | "high" | "urgent"
 
 const PRIORITY_STYLE: Record<TaskPriority, string> = {
   urgent: "bg-destructive/10 text-destructive border-destructive/30",
-  high: "bg-warning/15 text-warning-foreground border-warning/40 dark:text-warning",
+  high: "bg-amber-500/10 text-amber-700 border-amber-500/30 dark:text-amber-400",
   medium: "bg-muted text-muted-foreground border-border",
   low: "bg-info/10 text-info border-info/25",
 }
