@@ -38,6 +38,7 @@ import { TAX_REGIME_LABELS, TAX_REGIME_COLORS } from "@/lib/types"
 import { saveObligation, deleteObligation } from "@/features/obligations/services"
 import { formatDate, isOverdue } from "@/lib/date-utils"
 import { effectiveStatus } from "@/lib/obligation-status"
+import { StatusBadge, PriorityBadge, type TaskStatus } from "@/components/status-badge"
 import { getRecurrenceDescription } from "@/lib/recurrence-utils"
 import { checkAndGenerateRecurrences } from "@/lib/auto-recurrence"
 import { matchesText } from "@/lib/utils"
@@ -511,41 +512,18 @@ export const ObligationList = forwardRef<ObligationListHandle, ObligationListPro
   }
 
   const getStatusBadge = (obligation: ObligationWithDetails) => {
-    if (obligation.status === "completed") {
+    const eff = effectiveStatus(obligation) as TaskStatus
+    if (eff === "completed") {
       return (
         <div className="flex flex-col gap-1">
-          <Badge className="bg-green-600 hover:bg-green-700 text-white">
-            <CheckCircle2 className="size-3 mr-1" />
-            Concluída
-          </Badge>
+          <StatusBadge status="completed" />
           {obligation.completedAt && (
             <span className="text-xs text-muted-foreground">{formatDate(obligation.completedAt)}</span>
           )}
         </div>
       )
     }
-    if (obligation.status === "in_progress") {
-      return (
-        <Badge className="bg-blue-600 hover:bg-blue-700 text-white">
-          <PlayCircle className="size-3 mr-1" />
-          Em Andamento
-        </Badge>
-      )
-    }
-    if (obligation.status === "overdue" || isOverdue(obligation.calculatedDueDate)) {
-      return (
-        <Badge variant="destructive" className="bg-red-600 text-white">
-          <AlertTriangle className="size-3 mr-1" />
-          Atrasada
-        </Badge>
-      )
-    }
-    return (
-      <Badge variant="secondary" className="bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200">
-        <Clock className="size-3 mr-1" />
-        Pendente
-      </Badge>
-    )
+    return <StatusBadge status={eff} />
   }
 
   const toggleSort = (field: "dueDate" | "client" | "status" | "name") => {

@@ -34,6 +34,7 @@ import type { Service, Client, Priority, ServiceCategory, WeekendRule } from "@/
 import { SERVICE_CATEGORY_LABELS, SERVICE_CATEGORY_COLORS } from "@/lib/types"
 import { saveService, deleteService } from "@/features/services/services"
 import { adjustForWeekend, buildSafeDate, formatDate, isOverdue } from "@/lib/date-utils"
+import { StatusBadge, type TaskStatus } from "@/components/status-badge"
 import { matchesText } from "@/lib/utils"
 import { toast } from "sonner"
 
@@ -472,42 +473,20 @@ export const ServiceList = forwardRef<ServiceListHandle, ServiceListProps>(funct
   }
 
   const getStatusBadge = (service: Service) => {
-    const eff = effectiveServiceStatus(service)
+    const eff = effectiveServiceStatus(service) as TaskStatus
+    // Serviço usa gênero masculino ("Concluído/Atrasado")
+    const labels = { completed: "Concluído", overdue: "Atrasado" }
     if (eff === "completed") {
       return (
         <div className="flex flex-col gap-1">
-          <Badge className="bg-green-600 hover:bg-green-700 text-white">
-            <CheckCircle2 className="size-3 mr-1" />
-            Concluído
-          </Badge>
+          <StatusBadge status="completed" labels={labels} />
           {service.completedAt && (
             <span className="text-xs text-muted-foreground">{formatDate(service.completedAt)}</span>
           )}
         </div>
       )
     }
-    if (eff === "in_progress") {
-      return (
-        <Badge className="bg-blue-600 hover:bg-blue-700 text-white">
-          <PlayCircle className="size-3 mr-1" />
-          Em Andamento
-        </Badge>
-      )
-    }
-    if (eff === "overdue") {
-      return (
-        <Badge variant="destructive" className="bg-red-600 text-white">
-          <AlertTriangle className="size-3 mr-1" />
-          Atrasado
-        </Badge>
-      )
-    }
-    return (
-      <Badge variant="secondary" className="bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200">
-        <Clock className="size-3 mr-1" />
-        Pendente
-      </Badge>
-    )
+    return <StatusBadge status={eff} labels={labels} />
   }
 
   const toggleSort = (field: "dueDate" | "client" | "status" | "name") => {
