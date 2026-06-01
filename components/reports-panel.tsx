@@ -46,8 +46,13 @@ import {
   Legend,
   ComposedChart,
 } from "recharts"
-import { exportMultiSheetXlsx, timestampFilename } from "@/lib/export-utils"
+import { exportRelatorioExcel } from "@/lib/report-excel"
+import { exportRelatorioPdf } from "@/lib/report-pdf"
+import { periodoLabel, geradoEm } from "@/lib/report-config"
+import type { ReportData, ReportPendenciaRow } from "@/lib/report-types"
+import { calculateClientCompliance } from "@/lib/compliance-score"
 import { TAX_REGIME_LABELS } from "@/lib/types"
+import { toast } from "sonner"
 import type { ObligationWithDetails, Tax, Installment, Service, Client } from "@/lib/types"
 import { formatDate, buildSafeDate, adjustForWeekend, calculateDueDateFromCompetency } from "@/lib/date-utils"
 import { effectiveStatus } from "@/lib/obligation-status"
@@ -464,135 +469,190 @@ export function ReportsPanel({
       .sort((a, b) => a.dueDate.getTime() - b.dueDate.getTime())
   }, [filteredInstallments])
 
-  // ─── Excel export ───────────────────────────────────────────────────────
-  const handleExportExcel = () => {
-    type ResumoRow = { metrica: string; valor: string | number }
-    const resumoRows: ResumoRow[] = [
-      { metrica: "Período do filtro", valor: filters.range.from && filters.range.to
-          ? `${filters.range.from} → ${filters.range.to}`
-          : "Todos os períodos" },
-      { metrica: "Clientes filtrados", valor: filters.clientIds.length === 0 ? "Todos" : filters.clientIds.length },
-      { metrica: "Esfera filtrada", valor: filters.scope === "all" ? "Todas" : filters.scope },
-      { metrica: "Status filtrados", valor: filters.statuses.length === 0 ? "Todos" : filters.statuses.join(", ") },
-      { metrica: "Total de obrigações", valor: filteredObligations.length },
-      { metrica: "Concluídas", valor: stats.completed.length },
-      { metrica: "Em andamento", valor: stats.inProgress.length },
-      { metrica: "Pendentes", valor: stats.pending.length },
-      { metrica: "Atrasadas", valor: stats.overdue.length },
-      { metrica: "Taxa de conclusão (%)", valor: filteredObligations.length > 0
-          ? Math.round((stats.completed.length / filteredObligations.length) * 100)
-          : 0 },
-      { metrica: "Taxa no prazo (%)", valor: onTimeRate },
-      { metrica: "Total de guias de imposto", valor: filteredTaxes.length },
-      { metrica: "Guias concluídas", valor: taxesCompleted },
-      { metrica: "Total de parcelas no período", valor: totalParcelas },
-      { metrica: "Parcelas concluídas no período", valor: parcelasCompleted },
-      { metrica: "Taxa global combinada (%)", valor: overallRate },
-    ]
-
-    const formatDateBr = (d: string | Date | undefined) => {
+  // ─── Matéria-prima única dos relatórios (Excel + PDF leem o mesmo objeto) ──
+  const reportData = useMemo<ReportData>(() => {
+    const fmt = (d: string | Date | undefined): string => {
       if (!d) return ""
       const date = typeof d === "string" ? new Date(d) : d
+      if (Number.isNaN(date.getTime())) return ""
       return date.toLocaleDateString("pt-BR")
     }
+    const ms = (d: string | Date | undefined): number => {
+      if (!d) return 0
+      const date = typeof d === "string" ? new Date(d) : d
+      return Number.isNaN(date.getTime()) ? 0 : date.getTime()
+    }
+    const prioLabel = (p: string) =>
+      p === "urgent" ? "Urgente" : p === "high" ? "Alta" : p === "low" ? "Baixa" : "Média"
 
-    exportMultiSheetXlsx({
-      filename: timestampFilename("relatorio_fiscal"),
-      sheets: [
-        {
-          name: "Resumo",
-          columns: [
-            { header: "Métrica", width: 32, accessor: (r: ResumoRow) => r.metrica },
-            { header: "Valor", width: 30, accessor: (r: ResumoRow) => r.valor },
-          ],
-          rows: resumoRows,
-        },
-        {
-          name: "Por Cliente",
-          columns: [
-            { header: "Cliente", width: 32, accessor: (r: typeof byClient[number]) => r.clientName },
-            { header: "Total", width: 8, accessor: (r) => r.total },
-            { header: "Concluídas", width: 12, accessor: (r) => r.completed },
-            { header: "Em andamento", width: 14, accessor: (r) => r.inProgress },
-            { header: "Pendentes", width: 12, accessor: (r) => r.pending },
-            { header: "Atrasadas", width: 12, accessor: (r) => r.overdue },
-            {
-              header: "Taxa conclusão (%)",
-              width: 18,
-              accessor: (r) => (r.total > 0 ? Math.round((r.completed / r.total) * 100) : 0),
-            },
-          ],
-          rows: byClient,
-        },
-        {
-          name: "Por Imposto",
-          columns: [
-            { header: "Imposto", width: 32, accessor: ([name]: [string, { total: number; completed: number; overdue: number }]) => name },
-            { header: "Total", width: 10, accessor: ([, t]) => t.total },
-            { header: "Concluídas", width: 12, accessor: ([, t]) => t.completed },
-            { header: "Atrasadas", width: 12, accessor: ([, t]) => t.overdue },
-          ],
-          rows: Object.entries(byTax).sort(([, a], [, b]) => b.total - a.total),
-        },
-        {
-          name: "Por Recorrência",
-          columns: [
-            { header: "Recorrência", width: 28, accessor: ([name]: [string, number]) => name },
-            { header: "Quantidade", width: 14, accessor: ([, n]) => n },
-          ],
-          rows: Object.entries(byRecurrence).sort(([, a], [, b]) => b - a),
-        },
-        {
-          name: "Evolução 12 meses",
-          columns: [
-            { header: "Mês", width: 12, accessor: (r: typeof monthlyEvolution[number]) => r.label },
-            { header: "Concluídas", width: 12, accessor: (r) => r.concluidas },
-            { header: "Pendentes", width: 12, accessor: (r) => r.pendentes },
-            { header: "Atrasadas", width: 12, accessor: (r) => r.atrasadas },
-            { header: "Total", width: 10, accessor: (r) => r.concluidas + r.pendentes + r.atrasadas },
-            { header: "Taxa conclusão (%)", width: 18, accessor: (r) => r.completionRate },
-          ],
-          rows: monthlyEvolution,
-        },
-        {
-          name: "Concluídas",
-          columns: [
-            { header: "Obrigação", width: 32, accessor: (o: ObligationWithDetails) => o.name },
-            { header: "Cliente", width: 28, accessor: (o) => o.client.name },
-            { header: "CNPJ", width: 18, accessor: (o) => o.client.cnpj || "" },
-            {
-              header: "Regime",
-              width: 18,
-              accessor: (o) => (o.client.taxRegime ? TAX_REGIME_LABELS[o.client.taxRegime as keyof typeof TAX_REGIME_LABELS] : ""),
-            },
-            { header: "Esfera", width: 12, accessor: (o) => o.scope ?? "" },
-            { header: "Vencimento", width: 14, accessor: (o) => formatDateBr(o.calculatedDueDate) },
-            { header: "Concluída em", width: 14, accessor: (o) => (o.completedAt ? formatDateBr(o.completedAt) : "") },
-            { header: "Competência", width: 12, accessor: (o) => o.competencyMonth ?? "" },
-          ],
-          rows: stats.completed
-            .slice()
-            .sort((a, b) => {
-              const da = a.completedAt ? new Date(a.completedAt).getTime() : 0
-              const db = b.completedAt ? new Date(b.completedAt).getTime() : 0
-              return db - da
-            }),
-        },
-        {
-          name: "Atrasadas",
-          columns: [
-            { header: "Obrigação", width: 32, accessor: (o: ObligationWithDetails) => o.name },
-            { header: "Cliente", width: 28, accessor: (o) => o.client.name },
-            { header: "CNPJ", width: 18, accessor: (o) => o.client.cnpj || "" },
-            { header: "Esfera", width: 12, accessor: (o) => o.scope ?? "" },
-            { header: "Prioridade", width: 12, accessor: (o) => o.priority },
-            { header: "Vencimento", width: 14, accessor: (o) => formatDateBr(o.calculatedDueDate) },
-            { header: "Competência", width: 12, accessor: (o) => o.competencyMonth ?? "" },
-          ],
-          rows: stats.overdue,
-        },
-      ],
+    // KPIs por tipo
+    const obrig = {
+      total: filteredObligations.length,
+      concluidas: stats.completed.length,
+      emAndamento: stats.inProgress.length,
+      pendentes: stats.pending.length,
+      atrasadas: stats.overdue.length,
+    }
+    const guiaStatus = filteredTaxes.map((t) => {
+      const due = calculateDueDateFromCompetency(t.competencyMonth, t.dueDay, t.weekendRule, t.dueMonth)
+      return effectiveStatus({ status: t.status, calculatedDueDate: due ?? undefined })
     })
+    const guias = {
+      total: filteredTaxes.length,
+      concluidas: guiaStatus.filter((s) => s === "completed").length,
+      emAndamento: guiaStatus.filter((s) => s === "in_progress").length,
+      pendentes: guiaStatus.filter((s) => s === "pending").length,
+      atrasadas: guiaStatus.filter((s) => s === "overdue").length,
+    }
+    const parcelas = {
+      total: parcelasInRange.length,
+      concluidas: parcelasInRange.filter((p) => p.status === "completed").length,
+      emAndamento: 0,
+      pendentes: parcelasInRange.filter((p) => p.status === "pending").length,
+      atrasadas: parcelasInRange.filter((p) => p.status === "overdue").length,
+    }
+    const svcStatus = filteredServices.map((s) =>
+      effectiveStatus({ status: s.status, calculatedDueDate: s.dueDate }),
+    )
+    const servicos = {
+      total: filteredServices.length,
+      concluidas: svcStatus.filter((s) => s === "completed").length,
+      emAndamento: svcStatus.filter((s) => s === "in_progress").length,
+      pendentes: svcStatus.filter((s) => s === "pending").length,
+      atrasadas: svcStatus.filter((s) => s === "overdue").length,
+    }
+
+    // Compliance por cliente (nota A/B/C) — indexa por nome do cliente
+    const compliance = calculateClientCompliance(
+      clients,
+      filteredObligations,
+      filteredTaxes,
+      filteredInstallments,
+      filteredServices,
+    )
+    const notaPorCliente = new Map(compliance.map((c) => [c.client.id, c.grade]))
+    const clientIdByName = new Map(clients.map((c) => [c.name, c.id]))
+
+    const porCliente = byClient.map((c) => ({
+      cliente: c.clientName,
+      total: c.total,
+      concluidas: c.completed,
+      emAndamento: c.inProgress,
+      pendentes: c.pending,
+      atrasadas: c.overdue,
+      taxa: c.total > 0 ? Math.round((c.completed / c.total) * 100) : 0,
+      nota: notaPorCliente.get(clientIdByName.get(c.clientName) ?? "") ?? "",
+    }))
+
+    const porTipo = Object.entries(byTax)
+      .sort(([, a], [, b]) => b.total - a.total)
+      .map(([nome, t]) => ({ nome, total: t.total, concluidas: t.completed, atrasadas: t.overdue }))
+
+    const porRecorrencia = Object.entries(byRecurrence)
+      .sort(([, a], [, b]) => b - a)
+      .map(([nome, quantidade]) => ({ nome, quantidade }))
+
+    const evolucao = monthlyEvolution.map((m) => ({
+      mes: m.label,
+      concluidas: m.concluidas,
+      pendentes: m.pendentes,
+      atrasadas: m.atrasadas,
+      total: m.concluidas + m.pendentes + m.atrasadas,
+      taxa: m.completionRate,
+    }))
+
+    // ── Pendências (atrasadas + a vencer) dos 4 tipos ──
+    const atrasadas: ReportPendenciaRow[] = []
+    const aVencer: ReportPendenciaRow[] = []
+    const push = (
+      arr: ReportPendenciaRow[],
+      tipo: ReportPendenciaRow["tipo"],
+      nome: string,
+      cliente: string,
+      due: Date | string | undefined,
+      prioridade: string,
+      competencia: string,
+    ) => {
+      arr.push({ tipo, nome, cliente, vencimento: fmt(due), vencimentoMs: ms(due), prioridade, competencia })
+    }
+    const clientName = (id: string | undefined) => clients.find((c) => c.id === id)?.name ?? "—"
+
+    for (const o of filteredObligations) {
+      const eff = effectiveStatus(o)
+      if (eff === "overdue") push(atrasadas, "Obrigação", o.name, o.client.name, o.calculatedDueDate, prioLabel(o.priority), o.competencyMonth ?? "")
+      else if (eff !== "completed") push(aVencer, "Obrigação", o.name, o.client.name, o.calculatedDueDate, prioLabel(o.priority), o.competencyMonth ?? "")
+    }
+    for (const t of filteredTaxes) {
+      const due = calculateDueDateFromCompetency(t.competencyMonth, t.dueDay, t.weekendRule, t.dueMonth)
+      const eff = effectiveStatus({ status: t.status, calculatedDueDate: due ?? undefined })
+      if (eff === "overdue") push(atrasadas, "Guia", t.name, clientName(t.clientId), due ?? undefined, prioLabel(t.priority), t.competencyMonth ?? "")
+      else if (eff !== "completed") push(aVencer, "Guia", t.name, clientName(t.clientId), due ?? undefined, prioLabel(t.priority), t.competencyMonth ?? "")
+    }
+    for (const p of parcelasInRange) {
+      const nome = `${p.inst.name} — parcela ${p.parcelaNumber}/${p.inst.installmentCount}`
+      if (p.status === "overdue") push(atrasadas, "Parcela", nome, clientName(p.inst.clientId), p.dueDate, prioLabel(p.inst.priority), "")
+      else if (p.status === "pending") push(aVencer, "Parcela", nome, clientName(p.inst.clientId), p.dueDate, prioLabel(p.inst.priority), "")
+    }
+    for (const s of filteredServices) {
+      const eff = effectiveStatus({ status: s.status, calculatedDueDate: s.dueDate })
+      if (eff === "overdue") push(atrasadas, "Serviço", s.name, clientName(s.clientId), s.dueDate, prioLabel(s.priority), "")
+      else if (eff !== "completed") push(aVencer, "Serviço", s.name, clientName(s.clientId), s.dueDate, prioLabel(s.priority), "")
+    }
+    atrasadas.sort((a, b) => a.vencimentoMs - b.vencimentoMs)
+    aVencer.sort((a, b) => a.vencimentoMs - b.vencimentoMs)
+
+    const concluidas = unifiedCompleted.map((u) => ({
+      tipo: u.typeLabel,
+      nome: u.name,
+      cliente: u.clientName,
+      concluidaEm: fmt(u.completedAt),
+    }))
+
+    return {
+      periodoLabel: periodoLabel(filters.range.from, filters.range.to),
+      geradoEm: geradoEm(),
+      kpis: {
+        totalGeral: totalAll,
+        concluidasGeral: totalCompletedAll,
+        taxaConclusao: overallRate,
+        taxaNoPrazo: onTimeRate,
+        obrigacoes: obrig,
+        guias,
+        parcelas,
+        servicos,
+      },
+      porCliente,
+      porTipo,
+      porRecorrencia,
+      evolucao,
+      atrasadas,
+      aVencer,
+      concluidas,
+    }
+  }, [
+    filteredObligations, filteredTaxes, filteredInstallments, filteredServices,
+    parcelasInRange, byClient, byTax, byRecurrence, monthlyEvolution, unifiedCompleted,
+    stats, totalAll, totalCompletedAll, overallRate, onTimeRate, clients, filters.range,
+  ])
+
+  const handleExportExcel = async () => {
+    try {
+      await exportRelatorioExcel(reportData)
+      toast.success("Excel gerado")
+    } catch (e) {
+      console.error("[relatorios] erro ao gerar Excel:", e)
+      toast.error("Erro ao gerar Excel")
+    }
+  }
+
+  const handleExportPdf = () => {
+    try {
+      exportRelatorioPdf(reportData)
+      toast.success("PDF gerado")
+    } catch (e) {
+      console.error("[relatorios] erro ao gerar PDF:", e)
+      toast.error("Erro ao gerar PDF")
+    }
   }
 
   // ─── Empty state ────────────────────────────────────────────────────────
@@ -622,6 +682,9 @@ export function ReportsPanel({
       <div className="flex items-center justify-end gap-2 no-print">
         <Button variant="outline" size="sm" onClick={handleExportExcel} className="gap-2">
           <Download className="size-4" /> Exportar Excel
+        </Button>
+        <Button variant="outline" size="sm" onClick={handleExportPdf} className="gap-2">
+          <Download className="size-4" /> Exportar PDF
         </Button>
         <Button variant="outline" size="sm" onClick={() => window.print()} className="gap-2">
           <Printer className="size-4" /> Imprimir
