@@ -260,7 +260,7 @@ export default function DashboardPage() {
 
   return (
     <div className="mx-auto max-w-screen-2xl px-4 lg:px-6 py-5">
-        <div className="space-y-5">
+        <div className="stagger space-y-5">
           {/* Hero rico — saudação dinâmica por horário + tempo + saúde do mês */}
           {(() => {
             const meta = getGreetingMeta()

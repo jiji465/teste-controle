@@ -3,6 +3,7 @@
 import { Card } from "@/components/ui/card"
 import { Users, FileText, CheckCircle2, AlertCircle, Clock } from "lucide-react"
 import type { DashboardStats } from "@/lib/types"
+import { AnimatedNumber } from "@/components/animated-number"
 
 type DashboardStatsProps = {
   stats: DashboardStats
@@ -92,13 +93,13 @@ export function DashboardStatsCards({ stats, periodLabel }: DashboardStatsProps)
   ]
 
   return (
-    <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+    <div className="stagger grid gap-3 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
       {statsConfig.map((stat, index) => {
         const Icon = stat.icon
         return (
           <Card
             key={index}
-            className={`relative overflow-hidden p-4 ring-1 ${stat.ringColor} hover:shadow-md transition-shadow h-full ${
+            className={`hover-lift relative overflow-hidden p-4 ring-1 ${stat.ringColor} hover:shadow-md h-full ${
               stat.highlight ? "ring-2 ring-red-500/30" : ""
             }`}
           >
@@ -114,7 +115,7 @@ export function DashboardStatsCards({ stats, periodLabel }: DashboardStatsProps)
                   {stat.title}
                 </p>
                 <p className="text-2xl font-bold tracking-tight mt-1 leading-none">
-                  {stat.value}
+                  <AnimatedNumber value={stat.value} />
                 </p>
                 <p className="text-[11px] text-muted-foreground mt-1.5 truncate" title={stat.subtitle}>
                   {stat.subtitle}
