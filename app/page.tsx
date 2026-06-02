@@ -8,6 +8,7 @@ import { RecentActivity } from "@/components/recent-activity"
 import { UrgencyTrail } from "@/components/urgency-trail"
 import { UpcomingForecast } from "@/components/upcoming-forecast"
 import { DualClientRanking } from "@/components/dual-client-ranking"
+import { HeatmapEntregas } from "@/components/heatmap-entregas"
 
 const RegimeDistributionChart = dynamic(
   () => import("@/components/regime-distribution-chart").then((m) => m.RegimeDistributionChart),
@@ -23,7 +24,7 @@ import { calculateDueDateFromCompetency } from "@/lib/date-utils"
 import { getCurrentPeriod } from "@/lib/recurrence-engine"
 import { getGreetingMeta } from "@/lib/weather"
 import { WeatherGreeting } from "@/components/weather-greeting"
-import { TrendingUp, CalendarIcon, BarChart3, ListChecks, Activity } from "lucide-react"
+import { TrendingUp, CalendarIcon, BarChart3, ListChecks, Activity, CalendarCheck } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { adjustForWeekend, buildSafeDate } from "@/lib/date-utils"
 import { saveObligation } from "@/features/obligations/services"
@@ -423,6 +424,21 @@ export default function DashboardPage() {
               previousTaxes={previousTaxes}
               previousInstallments={previousInstallmentsForStats}
               periodLabel={periodLabel}
+            />
+          </div>
+
+          {/* Entregas por dia — calendário de produtividade (conclusões reais) */}
+          <div>
+            <h2 className="text-xl font-semibold mb-3 flex items-center gap-2">
+              <CalendarCheck className="size-5" />
+              Entregas por dia
+            </h2>
+            <HeatmapEntregas
+              obligations={obligationsWithDetails}
+              taxes={taxes}
+              installments={installments}
+              services={services}
+              monthKey={isFiltering && period !== "all" ? period : undefined}
             />
           </div>
 

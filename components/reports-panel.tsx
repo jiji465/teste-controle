@@ -69,6 +69,7 @@ import { RelatoriosFilters, loadStoredFilters, type RelatoriosFilterState } from
 import { ComplianceScoreList } from "./compliance-score-list"
 import { AvgCompletionTime } from "./avg-completion-time"
 import { HeatmapVencimentos } from "./heatmap-vencimentos"
+import { HeatmapEntregas } from "./heatmap-entregas"
 import { YoYComparison } from "./yoy-comparison"
 
 type Props = {
@@ -699,6 +700,7 @@ export function ReportsPanel({
           { href: "#evolucao", label: "Evolução" },
           { href: "#compliance", label: "Compliance" },
           { href: "#heatmap", label: "Picos do mês" },
+          { href: "#entregas", label: "Entregas/dia" },
           { href: "#cliente", label: "Por Cliente" },
           { href: "#imposto", label: "Por Imposto" },
           { href: "#parcelamentos", label: "Parcelamentos" },
@@ -913,6 +915,17 @@ export function ReportsPanel({
           services={services}
           monthKey={heatmapMonthKey}
           isAllPeriods={!filters.range.from && !filters.range.to}
+        />
+      </section>
+
+      {/* ─── ENTREGAS POR DIA (produtividade) ─── */}
+      <section id="entregas" className="scroll-mt-20">
+        <HeatmapEntregas
+          obligations={obligations}
+          taxes={taxes}
+          installments={installments}
+          services={services}
+          monthKey={heatmapMonthKey}
         />
       </section>
 

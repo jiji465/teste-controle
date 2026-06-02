@@ -497,3 +497,56 @@ export function heatmapByDay(
   for (let i = daysInMonth; i < 31; i++) counts[i] = 0
   return counts
 }
+
+// ─── Heatmap de ENTREGAS: conclusões por dia do mês ──────────────────────
+
+/** Conta itens CONCLUÍDOS em cada dia do mês indicado — usa a data real de
+ *  entrega (não a de vencimento):
+ *   - obrigações / guias / serviços: `completedAt`
+ *   - parcelamentos: cada parcela paga conta 1 (usa `paidAt`, senão `sentAt`)
+ *
+ *  Retorna array onde índice = dia-1 (0 = dia 1, 30 = dia 31). Dias
+ *  inexistentes (ex: 31 em fev) ficam 0.
+ *
+ *  Importante: NÃO usa `new Date("YYYY-MM-DD")` direto (shift de fuso UTC-3);
+ *  para `completedAt`/`paidAt` que são ISO completos (com hora), o
+ *  `new Date(iso)` é seguro pois representa o instante real. */
+export function completionsByDay(
+  obligations: ObligationWithDetails[],
+  taxes: Tax[],
+  installments: Installment[],
+  year: number,
+  month0: number, // 0-based (jan=0)
+  services: Service[] = [],
+): number[] {
+  const daysInMonth = new Date(year, month0 + 1, 0).getDate()
+  const counts: number[] = Array(31).fill(0)
+
+  const tally = (iso: string | undefined | null) => {
+    if (!iso) return
+    const d = new Date(iso)
+    if (Number.isNaN(d.getTime())) return
+    if (d.getFullYear() === year && d.getMonth() === month0) {
+      counts[d.getDate() - 1]++
+    }
+  }
+
+  for (const o of obligations) {
+    if (o.status === "completed") tally(o.completedAt)
+  }
+  for (const t of taxes) {
+    if (t.status === "completed") tally(t.completedAt)
+  }
+  for (const s of services) {
+    if (s.status === "completed") tally(s.completedAt)
+  }
+  // Parcelamentos: cada parcela paga é uma entrega no dia em que foi paga/enviada.
+  for (const i of installments) {
+    for (const p of i.paidInstallments ?? []) {
+      tally(p.paidAt ?? p.sentAt)
+    }
+  }
+
+  for (let i = daysInMonth; i < 31; i++) counts[i] = 0
+  return counts
+}
