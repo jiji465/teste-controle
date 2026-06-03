@@ -1,10 +1,11 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import {
   Select,
@@ -29,12 +30,14 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form"
-import { Loader2 } from "lucide-react"
+import { Loader2, Plus } from "lucide-react"
 import { toast } from "sonner"
 import type { Service, Client, RecurrenceType } from "@/lib/types"
 import { SERVICE_CATEGORY_LABELS } from "@/lib/types"
 import { serviceSchema, type ServiceFormData } from "@/features/services/schemas"
 import { saveService } from "@/features/services/services"
+import { saveClient, DuplicateClientError } from "@/features/clients/services"
+import { useData } from "@/contexts/data-context"
 import { adjustForWeekend, buildSafeDate, formatDate, isWeekendOrHoliday, getHolidayName } from "@/lib/date-utils"
 
 type Props = {
@@ -57,6 +60,26 @@ function applyWeekendRuleToYmd(ymd: string, rule: "postpone" | "anticipate" | "k
 
 export function ServiceForm({ service, clients, open, onOpenChange, onSave }: Props) {
   const [isSaving, setIsSaving] = useState(false)
+  const { refreshData } = useData()
+
+  // Cadastro rápido de cliente sem sair do formulário de serviço.
+  const [quickOpen, setQuickOpen] = useState(false)
+  const [quickName, setQuickName] = useState("")
+  const [quickSaving, setQuickSaving] = useState(false)
+  // Clientes criados aqui agora — mostrados no Select na hora, antes do
+  // refreshData (que vem por prop) chegar. Evita o Select ficar "vazio"
+  // logo após criar.
+  const [extraClients, setExtraClients] = useState<Client[]>([])
+
+  // Mescla a lista do contexto com os recém-criados (sem duplicar por id).
+  const clientOptions = useMemo(() => {
+    const ids = new Set(clients.map((c) => c.id))
+    return [...clients, ...extraClients.filter((c) => !ids.has(c.id))]
+  }, [clients, extraClients])
+
+  // Seleção à prova de corrida: ao criar um cliente, guardamos o id como
+  // "pendente" e só o selecionamos QUANDO ele já existe nas opções do Select.
+  const [pendingClientId, setPendingClientId] = useState<string | null>(null)
 
   const form = useForm<ServiceFormData>({
     resolver: zodResolver(serviceSchema),
@@ -74,6 +97,16 @@ export function ServiceForm({ service, clients, open, onOpenChange, onSave }: Pr
       tags: [],
     },
   })
+
+  // Seleciona o cliente recém-criado assim que ele entra nas opções (senão
+  // o Radix Select ignora um value sem <SelectItem> correspondente).
+  useEffect(() => {
+    if (!pendingClientId) return
+    if (clientOptions.some((c) => c.id === pendingClientId)) {
+      form.setValue("clientId", pendingClientId, { shouldValidate: true })
+      setPendingClientId(null)
+    }
+  }, [pendingClientId, clientOptions, form])
 
   useEffect(() => {
     if (!open) return
@@ -185,6 +218,48 @@ export function ServiceForm({ service, clients, open, onOpenChange, onSave }: Pr
     }
   })()
 
+  // Salva um cliente novo só com o nome (CNPJ/regime ficam pra depois) e já
+  // o seleciona no serviço. Atende "serviço pra quem ainda não é cliente".
+  const handleQuickCreateClient = async () => {
+    const nome = quickName.trim()
+    if (nome.length < 2) {
+      toast.error("Informe o nome (mínimo 2 letras).")
+      return
+    }
+    setQuickSaving(true)
+    try {
+      const novo: Client = {
+        id: crypto.randomUUID(),
+        name: nome,
+        cnpj: "",
+        email: "",
+        phone: "",
+        status: "active",
+        createdAt: new Date().toISOString(),
+      }
+      await saveClient(novo)
+      // Seleciona e fecha IMEDIATAMENTE — não esperamos o refreshData, que
+      // dispara o ciclo de dados do contexto (e pode demorar/pendurar por
+      // causa do auto-gerador de recorrências). O refresh roda em segundo
+      // plano só pra a lista de clientes ganhar o novo nome.
+      setExtraClients((prev) => [...prev, novo]) // Select mostra o nome já
+      setPendingClientId(novo.id) // o useEffect seleciona quando a opção existir
+      toast.success(`Cliente "${nome}" criado e selecionado`)
+      setQuickName("")
+      setQuickOpen(false)
+      refreshData().catch((e) => console.warn("[service-form] refresh pós-cliente:", e))
+    } catch (e) {
+      if (e instanceof DuplicateClientError) {
+        toast.error(`Já existe cliente com esse CNPJ: ${e.existingName}`)
+      } else {
+        console.error("[service-form] quick client error:", e)
+        toast.error("Erro ao criar cliente")
+      }
+    } finally {
+      setQuickSaving(false)
+    }
+  }
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[640px] max-h-[90vh] overflow-y-auto">
@@ -229,20 +304,66 @@ export function ServiceForm({ service, clients, open, onOpenChange, onSave }: Pr
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Cliente *</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value}>
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Selecione" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {clients.map((c) => (
-                          <SelectItem key={c.id} value={c.id}>
-                            {c.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <div className="flex gap-2">
+                      <Select onValueChange={field.onChange} value={field.value}>
+                        <FormControl>
+                          <SelectTrigger className="flex-1">
+                            <SelectValue placeholder="Selecione" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {clientOptions.map((c) => (
+                            <SelectItem key={c.id} value={c.id}>
+                              {c.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Button
+                        type="button"
+                        variant={quickOpen ? "secondary" : "outline"}
+                        size="icon"
+                        className="shrink-0"
+                        title="Cadastrar novo cliente"
+                        onClick={() => {
+                          setQuickName("")
+                          setQuickOpen((v) => !v)
+                        }}
+                      >
+                        <Plus className="size-4" />
+                      </Button>
+                    </div>
+
+                    {/* Cadastro rápido INLINE (não é Dialog aninhado — Radix
+                        não lida bem com Dialog dentro de Dialog). Aparece
+                        embaixo do Select quando o "+" é clicado. */}
+                    {quickOpen && (
+                      <div className="mt-2 rounded-lg border bg-muted/30 p-3 space-y-2">
+                        <Label htmlFor="quick-client-name" className="text-xs">
+                          Novo cliente — só o nome (CNPJ/regime depois em Empresas)
+                        </Label>
+                        <div className="flex gap-2">
+                          <Input
+                            id="quick-client-name"
+                            autoFocus
+                            value={quickName}
+                            onChange={(e) => setQuickName(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                e.preventDefault()
+                                handleQuickCreateClient()
+                              }
+                            }}
+                            placeholder="Ex: João da Silva ou Padaria do Zé"
+                            className="flex-1"
+                          />
+                          <Button type="button" onClick={handleQuickCreateClient} disabled={quickSaving} className="shrink-0">
+                            {quickSaving ? <Loader2 className="size-4 animate-spin" /> : "Criar"}
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+
                     <FormMessage />
                   </FormItem>
                 )}

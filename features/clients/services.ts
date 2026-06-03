@@ -53,7 +53,7 @@ export async function getClients(): Promise<Client[]> {
   return data.map(mapDbToClient)
 }
 
-const normalizeCnpj = (cnpj: string) => cnpj.replace(/\D/g, "")
+const normalizeCnpj = (cnpj: string | undefined | null) => (cnpj ?? "").replace(/\D/g, "")
 
 export class DuplicateClientError extends Error {
   constructor(public readonly existingName: string) {
@@ -64,26 +64,34 @@ export class DuplicateClientError extends Error {
 
 export async function saveClient(client: Client): Promise<void> {
   const incomingCnpj = normalizeCnpj(client.cnpj)
+  // Só checa duplicado quando HÁ CNPJ. Clientes sem CNPJ (pessoa física,
+  // serviço avulso) podem coexistir mesmo com nomes iguais — são entidades
+  // distintas e o CNPJ é a única chave de deduplicação.
+  const shouldDedup = incomingCnpj.length > 0
 
   if (!hasSupabaseConfig()) {
-    const existing = local.getClients().find(
-      (c) => normalizeCnpj(c.cnpj) === incomingCnpj && c.id !== client.id,
-    )
-    if (existing) throw new DuplicateClientError(existing.name)
+    if (shouldDedup) {
+      const existing = local.getClients().find(
+        (c) => normalizeCnpj(c.cnpj) === incomingCnpj && c.id !== client.id,
+      )
+      if (existing) throw new DuplicateClientError(existing.name)
+    }
     local.saveClient(client)
     return
   }
 
   const supabase = getSupabaseClient()
 
-  const { data: matches } = await supabase
-    .from("clients")
-    .select("id, name, cnpj")
-    .neq("id", client.id)
-  const duplicate = (matches as Array<{ id: string; name: string; cnpj: string }> | null)?.find(
-    (c) => normalizeCnpj(c.cnpj) === incomingCnpj,
-  )
-  if (duplicate) throw new DuplicateClientError(duplicate.name)
+  if (shouldDedup) {
+    const { data: matches } = await supabase
+      .from("clients")
+      .select("id, name, cnpj")
+      .neq("id", client.id)
+    const duplicate = (matches as Array<{ id: string; name: string; cnpj: string }> | null)?.find(
+      (c) => normalizeCnpj(c.cnpj) === incomingCnpj,
+    )
+    if (duplicate) throw new DuplicateClientError(duplicate.name)
+  }
 
   const { error } = await supabase.from("clients").upsert(mapClientToDb(client))
   if (error) { console.error("[db] Error saving client:", error); throw error }

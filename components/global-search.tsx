@@ -50,7 +50,7 @@ export function GlobalSearch({
     const matchedClients = clients.filter(
       (c) =>
         c.name.toLowerCase().includes(searchTerm) ||
-        c.cnpj.includes(searchTerm) ||
+        (c.cnpj ?? "").includes(searchTerm) ||
         c.email.toLowerCase().includes(searchTerm),
     )
 

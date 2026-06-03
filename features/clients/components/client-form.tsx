@@ -131,7 +131,7 @@ export function ClientForm({ client, open, onOpenChange, onSave, onObligationsCr
       id: data.id || crypto.randomUUID(),
       name: data.name,
       tradeName: data.tradeName || undefined,
-      cnpj: data.cnpj,
+      cnpj: data.cnpj || "",
       email: data.email || "",
       phone: data.phone || "",
       status: data.status,
@@ -224,25 +224,26 @@ export function ClientForm({ client, open, onOpenChange, onSave, onObligationsCr
                 name="cnpj"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>CNPJ *</FormLabel>
+                    <FormLabel>CNPJ <span className="text-muted-foreground font-normal">(opcional)</span></FormLabel>
                     <div className="flex gap-2">
                       <FormControl>
-                        <Input 
-                          placeholder="00.000.000/0000-00" 
-                          {...field} 
+                        <Input
+                          placeholder="00.000.000/0000-00 — deixe vazio p/ pessoa física"
+                          {...field}
+                          value={field.value ?? ""}
                           onChange={(e) => field.onChange(formatCNPJ(e.target.value))}
                         />
                       </FormControl>
-                      <Button 
-                        type="button" 
-                        variant="secondary" 
+                      <Button
+                        type="button"
+                        variant="secondary"
                         size="icon"
                         className="shrink-0"
-                        disabled={isSearching || field.value.replace(/\D/g, '').length !== 14}
+                        disabled={isSearching || (field.value ?? "").replace(/\D/g, '').length !== 14}
                         onClick={async () => {
                           setIsSearching(true)
                           try {
-                            const data = await lookupCNPJ(field.value)
+                            const data = await lookupCNPJ(field.value ?? "")
                             if (!data) {
                               toast.error("CNPJ não encontrado na base da Receita.")
                               return

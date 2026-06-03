@@ -27,7 +27,7 @@ export type Client = {
   id: string
   name: string              // Razão social
   tradeName?: string        // Nome fantasia
-  cnpj: string
+  cnpj?: string              // Opcional — pessoa física / serviço avulso pode não ter
   email: string
   phone: string
   status: "active" | "inactive"

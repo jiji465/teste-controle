@@ -514,7 +514,7 @@ export function ClientList({ clients, onUpdate }: ClientListProps) {
                     <DropdownMenuItem onClick={() => handleOpenDetails(client)}>
                       <Eye className="mr-2 h-4 w-4" /> Ver detalhes
                     </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => navigator.clipboard.writeText(client.cnpj)}>
+                    <DropdownMenuItem onClick={() => navigator.clipboard.writeText(client.cnpj ?? "")}>
                       Copiar CNPJ
                     </DropdownMenuItem>
                     <DropdownMenuSeparator />
@@ -737,7 +737,7 @@ export function ClientList({ clients, onUpdate }: ClientListProps) {
                         <DropdownMenuItem onClick={() => handleOpenDetails(client)}>
                           <Eye className="mr-2 h-4 w-4" /> Ver detalhes
                         </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => navigator.clipboard.writeText(client.cnpj)}>
+                        <DropdownMenuItem onClick={() => navigator.clipboard.writeText(client.cnpj ?? "")}>
                           Copiar CNPJ
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />

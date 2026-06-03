@@ -13,9 +13,13 @@ export const clientSchema = z.object({
   id: z.string().uuid().optional(),
   name: z.string().min(2, "O nome deve ter no mínimo 2 caracteres"),
   tradeName: z.string().optional(),
+  // CNPJ é OPCIONAL (permite pessoa física / serviço avulso). Mas se for
+  // preenchido, os dígitos precisam ser válidos. Vazio = sem CNPJ, ok.
   cnpj: z
     .string()
-    .refine((v) => isValidCNPJ(v), "CNPJ inválido (verifique os dígitos)"),
+    .optional()
+    .or(z.literal(""))
+    .refine((v) => !v || isValidCNPJ(v), "CNPJ inválido (verifique os dígitos)"),
   email: z.string().email("E-mail inválido").or(z.literal("")),
   phone: z.string().optional(),
   status: z.enum(["active", "inactive"]).default("active"),
