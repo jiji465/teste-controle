@@ -62,14 +62,19 @@ export async function lookupCNPJ(
 
   if (response.status === 404) return null
   if (response.status === 429) {
+    // Usa a mensagem amigável vinda da rota, com fallback claro pro leigo.
+    const msg = await response
+      .json()
+      .then((d: { error?: string }) => d?.error)
+      .catch(() => undefined)
     throw new CNPJLookupError(
-      "Limite de consultas atingido (3/min). Aguarde um minuto e tente novamente.",
+      msg || "Muitas consultas em sequência. Aguarde cerca de 1 minuto e tente de novo.",
       "rate_limit",
     )
   }
   if (!response.ok) {
     throw new CNPJLookupError(
-      `Falha na consulta (HTTP ${response.status}).`,
+      "Não foi possível consultar agora. Tente novamente em instantes.",
       "unknown",
     )
   }

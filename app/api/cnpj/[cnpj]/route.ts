@@ -72,6 +72,10 @@ export async function GET(
     return NextResponse.json({ error: "CNPJ inválido" }, { status: 400 })
   }
 
+  // Marca se a BrasilAPI bloqueou por excesso de consultas (rate limit).
+  // Usado lá embaixo pra dar a mensagem certa caso o fallback também falhe.
+  let brasilApiRateLimited = false
+
   // Tentativa 1: BrasilAPI
   try {
     const r = await fetch(`${BRASILAPI_URL}/${cleanCnpj}`, {
@@ -88,6 +92,12 @@ export async function GET(
       return NextResponse.json(data)
     }
 
+    // BrasilAPI estourou o limite (gratuita: ~3 consultas/min). Tentamos o
+    // fallback; mas marcamos que houve rate limit pra, se o fallback também
+    // não der, devolver a mensagem certa em vez de "não encontrado".
+    if (r.status === 429) {
+      brasilApiRateLimited = true
+    }
     console.warn(`[cnpj] BrasilAPI ${r.status} — tentando ReceitaWS`)
   } catch (e) {
     console.warn("[cnpj] BrasilAPI fetch falhou:", e)
@@ -102,7 +112,7 @@ export async function GET(
 
     if (r.status === 429) {
       return NextResponse.json(
-        { error: "Limite de consultas atingido. Aguarde um minuto." },
+        { error: "Muitas consultas em sequência. Aguarde cerca de 1 minuto e tente de novo." },
         { status: 429 },
       )
     }
@@ -118,12 +128,27 @@ export async function GET(
       return NextResponse.json(fromReceitaWs(data))
     }
 
+    // Se a BrasilAPI tinha bloqueado por limite E o fallback também não veio,
+    // a causa mais provável é excesso de consultas — avisa isso, não "indisponível".
+    if (brasilApiRateLimited) {
+      return NextResponse.json(
+        { error: "Muitas consultas em sequência. Aguarde cerca de 1 minuto e tente de novo." },
+        { status: 429 },
+      )
+    }
+
     return NextResponse.json(
       { error: `Serviços de consulta indisponíveis (HTTP ${r.status}).` },
       { status: 502 },
     )
   } catch (e) {
     console.error("[cnpj] Todos os serviços falharam:", e)
+    if (brasilApiRateLimited) {
+      return NextResponse.json(
+        { error: "Muitas consultas em sequência. Aguarde cerca de 1 minuto e tente de novo." },
+        { status: 429 },
+      )
+    }
     return NextResponse.json(
       { error: "Não foi possível consultar o CNPJ. Tente novamente em instantes." },
       { status: 502 },
