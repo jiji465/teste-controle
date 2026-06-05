@@ -13,6 +13,7 @@ import {
   calculateDueDate,
   calculateDueDateFromCompetency,
   isUpcomingThisWeek,
+  parseLocalDate,
 } from "./date-utils"
 import { effectiveStatus } from "./obligation-status"
 import { dateInRange, type DateRange } from "./date-range"
@@ -59,7 +60,9 @@ export const getObligationsWithDetails = (
 function inPeriod(date: Date | string | null | undefined, period: string): boolean {
   if (period === "all") return true
   if (!date) return true
-  const d = typeof date === "string" ? new Date(date) : date
+  // parseLocalDate evita o bug de fuso UTC-3: new Date("2026-05-31") seria
+  // 21h do dia 30 no Brasil, jogando a data pro mês errado na virada.
+  const d = parseLocalDate(date)
   if (Number.isNaN(d.getTime())) return true
   const yearMonth = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`
   return yearMonth === period

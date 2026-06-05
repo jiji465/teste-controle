@@ -184,7 +184,8 @@ export default function ImpostosPage() {
       await saveTax(updatedTax)
       await updateData()
     } catch (error) {
-      console.error("[v0] Error starting tax:", error)
+      console.error("[impostos] Error starting tax:", error)
+      toast.error("Erro ao iniciar a guia. Tente novamente.")
     }
   }
 
@@ -203,7 +204,8 @@ export default function ImpostosPage() {
       )
       await updateData()
     } catch (error) {
-      console.error("[v0] Error completing tax:", error)
+      console.error("[impostos] Error completing tax:", error)
+      toast.error("Erro ao concluir a guia. Tente novamente.")
     }
   }
 

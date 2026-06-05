@@ -282,7 +282,7 @@ export const formatCurrency = (value: number): string => {
  * shiftar o dia em fuso UTC-3 (Brasil), onde `new Date("2026-04-25")` é
  * 21h do dia 24 no horário local.
  */
-const parseLocalDate = (input: string | Date): Date => {
+export const parseLocalDate = (input: string | Date): Date => {
   if (input instanceof Date) return input
   const m = input.match(/^(\d{4})-(\d{2})-(\d{2})/)
   if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]))
