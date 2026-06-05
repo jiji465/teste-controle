@@ -248,14 +248,19 @@ export function ClientForm({ client, open, onOpenChange, onSave, onObligationsCr
                               toast.error("CNPJ não encontrado na base da Receita.")
                               return
                             }
+                            // A lupa traz os dados OFICIAIS da Receita e
+                            // SOBRESCREVE o que estiver no form — a intenção de
+                            // buscar o CNPJ é justamente atualizar com a fonte
+                            // oficial (ex: cliente mudou de endereço/contato).
+                            // O usuário ainda pode editar à mão antes de salvar.
                             if (data.nome) form.setValue("name", data.nome)
-                            if (data.fantasia && !form.getValues("tradeName")) form.setValue("tradeName", data.fantasia)
-                            if (data.email && !form.getValues("email")) form.setValue("email", data.email)
-                            if (data.telefone && !form.getValues("phone")) form.setValue("phone", data.telefone)
+                            if (data.fantasia) form.setValue("tradeName", data.fantasia)
+                            if (data.email) form.setValue("email", data.email)
+                            if (data.telefone) form.setValue("phone", data.telefone)
                             if (data.cnaeCode) form.setValue("cnaeCode", data.cnaeCode)
                             if (data.cnaeDescription) form.setValue("cnaeDescription", data.cnaeDescription)
-                            if (data.municipio && !form.getValues("city")) form.setValue("city", data.municipio)
-                            if (data.uf && !form.getValues("state")) form.setValue("state", data.uf)
+                            if (data.municipio) form.setValue("city", data.municipio)
+                            if (data.uf) form.setValue("state", data.uf)
                             if (!form.getValues("businessActivity")) {
                               const inferred = inferBusinessActivityFromCNAE(data.cnaeCode)
                               if (inferred) form.setValue("businessActivity", inferred)
