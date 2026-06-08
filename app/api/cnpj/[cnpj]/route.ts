@@ -83,18 +83,15 @@ export async function GET(
       cache: "no-store",
     })
 
-    if (r.status === 404) {
-      return NextResponse.json({ error: "CNPJ não encontrado" }, { status: 404 })
-    }
-
     if (r.ok) {
       const data = (await r.json()) as BrasilApiResponse
       return NextResponse.json(data)
     }
 
-    // BrasilAPI estourou o limite (gratuita: ~3 consultas/min). Tentamos o
-    // fallback; mas marcamos que houve rate limit pra, se o fallback também
-    // não der, devolver a mensagem certa em vez de "não encontrado".
+    // IMPORTANTE: 404 aqui NÃO encerra a busca. A base da BrasilAPI às vezes
+    // não tem CNPJs recentes que JÁ EXISTEM na ReceitaWS (ex: C3 EDUCA LTDA).
+    // Então caímos no fallback; só devolvemos "não encontrado" se a ReceitaWS
+    // também não achar.
     if (r.status === 429) {
       brasilApiRateLimited = true
     }

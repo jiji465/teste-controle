@@ -12,6 +12,7 @@ import {
   getCurrentPeriod,
   generateObligationForPeriod,
   generateTaxForPeriod,
+  deterministicAutoId,
 } from "./recurrence-engine"
 import { buildSafeDate, toLocalDateString } from "./date-utils"
 
@@ -61,8 +62,7 @@ async function checkAndGenerateRecurrencesInner(force: boolean): Promise<void> {
     const obligationsToGenerate = obligations.filter(
       (o) =>
         o.autoGenerate &&
-        !o.parentObligationId && // Apenas obrigações originais (não clones)
-        !o.id.startsWith("auto-"), // Backstop: id determinístico marca clones
+        !o.parentObligationId, // Apenas obrigações originais (clones têm parentObligationId)
     )
 
     // Cap de segurança: nunca gera mais que 12 meses adiante do mês atual,
@@ -141,9 +141,9 @@ async function checkAndGenerateRecurrencesInner(force: boolean): Promise<void> {
       // Guias anuais têm regra própria (dueMonth fixo) — geração mensal não se aplica.
       if (!t.recurrence || t.recurrence === "annual") return false
       if (t.recurrenceEndDate && new Date(t.recurrenceEndDate) < currentPeriodStart) return false
-      // Cópias já geradas pelo motor têm prefixo "auto-" no id; nunca devem
-      // virar candidatas (senão geram clones em cascata).
-      if (t.id.startsWith("auto-")) return false
+      // Cópias geradas pelo motor recebem autoGenerate=false (vide
+      // generateTaxForPeriod), então o filtro `!t.autoGenerate` acima já as
+      // exclui — não geram clones em cascata. Sem necessidade de marcador no id.
       return true
     })
 
@@ -151,7 +151,7 @@ async function checkAndGenerateRecurrencesInner(force: boolean): Promise<void> {
       // Dedup duplo: por (clientId + name + competencyMonth=período) ou
       // pelo id determinístico que generateTaxForPeriod usa. Qualquer um
       // que case → já existe.
-      const expectedId = `auto-${tax.id}-${currentPeriod}`
+      const expectedId = deterministicAutoId(tax.id, currentPeriod)
       const alreadyGenerated = taxes.some(
         (t) =>
           t.id === expectedId ||
