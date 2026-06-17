@@ -18,7 +18,6 @@ type StatConfig = {
   icon: typeof Users
   iconBg: string
   iconColor: string
-  ringColor: string
   highlight?: boolean
 }
 
@@ -45,7 +44,6 @@ export function DashboardStatsCards({ stats, periodLabel }: DashboardStatsProps)
       icon: Users,
       iconBg: "bg-blue-500/10 dark:bg-blue-500/20",
       iconColor: "text-blue-600 dark:text-blue-400",
-      ringColor: "ring-blue-500/10",
     },
     {
       title: "Total de itens",
@@ -57,7 +55,6 @@ export function DashboardStatsCards({ stats, periodLabel }: DashboardStatsProps)
       icon: FileText,
       iconBg: "bg-purple-500/10 dark:bg-purple-500/20",
       iconColor: "text-purple-600 dark:text-purple-400",
-      ringColor: "ring-purple-500/10",
     },
     {
       title: "Concluídos",
@@ -66,7 +63,6 @@ export function DashboardStatsCards({ stats, periodLabel }: DashboardStatsProps)
       icon: CheckCircle2,
       iconBg: "bg-emerald-500/10 dark:bg-emerald-500/20",
       iconColor: "text-emerald-600 dark:text-emerald-400",
-      ringColor: "ring-emerald-500/10",
     },
     {
       title: "Atrasados",
@@ -78,7 +74,6 @@ export function DashboardStatsCards({ stats, periodLabel }: DashboardStatsProps)
       icon: AlertCircle,
       iconBg: "bg-red-500/10 dark:bg-red-500/20",
       iconColor: "text-red-600 dark:text-red-400",
-      ringColor: "ring-red-500/10",
       highlight: stats.overdueItems > 0,
     },
     {
@@ -88,7 +83,6 @@ export function DashboardStatsCards({ stats, periodLabel }: DashboardStatsProps)
       icon: Clock,
       iconBg: "bg-amber-500/10 dark:bg-amber-500/20",
       iconColor: "text-amber-600 dark:text-amber-400",
-      ringColor: "ring-amber-500/10",
     },
   ]
 
@@ -99,16 +93,10 @@ export function DashboardStatsCards({ stats, periodLabel }: DashboardStatsProps)
         return (
           <Card
             key={index}
-            className={`hover-lift relative overflow-hidden p-4 ring-1 ${stat.ringColor} hover:shadow-md h-full ${
-              stat.highlight ? "ring-2 ring-red-500/30" : ""
+            className={`relative h-full overflow-hidden p-4 transition-colors hover:border-primary/30 ${
+              stat.highlight ? "border-destructive/40" : ""
             }`}
           >
-            {/* Gradient sutil de fundo */}
-            <div
-              className={`absolute -right-3 -top-3 size-20 rounded-full ${stat.iconBg} opacity-50 blur-2xl pointer-events-none`}
-              aria-hidden
-            />
-
             <div className="relative flex items-start justify-between gap-2">
               <div className="flex-1 min-w-0">
                 <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">

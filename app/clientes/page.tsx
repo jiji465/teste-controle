@@ -1,7 +1,9 @@
 "use client"
 
 import { useState } from "react"
+import { Building2 } from "lucide-react"
 import { ClientList } from "@/features/clients/components/client-list"
+import { PageHeader } from "@/components/page-header"
 import { useData } from "@/contexts/data-context"
 
 export default function ClientesPage() {
@@ -12,14 +14,13 @@ export default function ClientesPage() {
   }
 
   return (
-    <div className="mx-auto max-w-screen-2xl px-4 lg:px-6 py-5">
+    <div className="px-4 lg:px-6 xl:px-8 py-5">
       <div className="space-y-5">
-        <div className="space-y-1">
-          <h1 className="text-2xl font-bold tracking-tight">Empresas</h1>
-          <p className="text-sm text-muted-foreground">
-            Gerencie as empresas, regimes tributários e informações cadastrais
-          </p>
-        </div>
+        <PageHeader
+          icon={Building2}
+          title="Empresas"
+          description="Gerencie as empresas, regimes tributários e informações cadastrais"
+        />
 
         <ClientList clients={clients} onUpdate={handleUpdate} />
       </div>

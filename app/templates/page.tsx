@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo } from "react"
 import { ConfirmDialog, type ConfirmState } from "@/components/ui/confirm-dialog"
 import { Button } from "@/components/ui/button"
+import { PageHeader } from "@/components/page-header"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -237,20 +238,16 @@ export default function TemplatesPage() {
   }
 
   return (
-    <div className="mx-auto max-w-screen-2xl px-4 lg:px-6 py-5">
+    <div className="px-4 lg:px-6 xl:px-8 py-5">
       <ConfirmDialog state={confirmState} onClose={() => setConfirmState(null)} />
       <div className="space-y-5">
         {/* Header */}
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-          <div className="space-y-1">
-            <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
-              <Sparkles className="size-6 text-primary" />
-              Meus Templates
-            </h1>
-            <p className="text-sm text-muted-foreground">
-              Crie pacotes personalizados de obrigações para aplicar em lote nas suas empresas
-            </p>
-          </div>
+          <PageHeader
+            icon={Sparkles}
+            title="Meus Templates"
+            description="Crie pacotes personalizados de obrigações para aplicar em lote nas suas empresas"
+          />
           <div className="flex gap-2">
             <Button variant="outline" onClick={handleRestoreDefaults} className="gap-2">
               <RotateCcw className="size-4" />

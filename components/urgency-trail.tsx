@@ -80,58 +80,58 @@ const TIERS: TierConfig[] = [
     label: "Atrasado",
     description: "Já passou da data",
     icon: AlertTriangle,
-    color: "text-red-700 dark:text-red-300",
-    bg: "bg-red-50 dark:bg-red-950/30",
-    border: "border-red-200 dark:border-red-900",
-    ring: "ring-red-500/40",
+    color: "text-destructive",
+    bg: "bg-destructive/10",
+    border: "border-destructive/30",
+    ring: "ring-destructive/40",
   },
   {
     key: "today",
     label: "Hoje",
     description: "Vence hoje",
     icon: AlertTriangle,
-    color: "text-orange-700 dark:text-orange-300",
-    bg: "bg-orange-50 dark:bg-orange-950/30",
-    border: "border-orange-200 dark:border-orange-900",
-    ring: "ring-orange-500/40",
+    color: "text-warning",
+    bg: "bg-warning/10",
+    border: "border-warning/30",
+    ring: "ring-warning/40",
   },
   {
     key: "soon",
     label: "1-3 dias",
     description: "Próximos 3 dias",
     icon: Clock,
-    color: "text-amber-700 dark:text-amber-300",
-    bg: "bg-amber-50 dark:bg-amber-950/30",
-    border: "border-amber-200 dark:border-amber-900",
-    ring: "ring-amber-500/40",
+    color: "text-highlight",
+    bg: "bg-highlight/10",
+    border: "border-highlight/30",
+    ring: "ring-highlight/40",
   },
   {
     key: "week",
     label: "4-7 dias",
     description: "Próxima semana",
     icon: Hourglass,
-    color: "text-blue-700 dark:text-blue-300",
-    bg: "bg-blue-50 dark:bg-blue-950/30",
-    border: "border-blue-200 dark:border-blue-900",
-    ring: "ring-blue-500/40",
+    color: "text-info",
+    bg: "bg-info/10",
+    border: "border-info/30",
+    ring: "ring-info/40",
   },
   {
     key: "month",
     label: "8-30 dias",
     description: "No mês",
     icon: CalendarDays,
-    color: "text-slate-700 dark:text-slate-300",
-    bg: "bg-slate-100 dark:bg-slate-900/50",
-    border: "border-slate-200 dark:border-slate-700",
-    ring: "ring-slate-400/30",
+    color: "text-muted-foreground",
+    bg: "bg-muted",
+    border: "border-border",
+    ring: "ring-border",
   },
 ]
 
 const TYPE_META = {
-  obrigacao: { label: "Obrigação", icon: FileText, color: "text-purple-600 dark:text-purple-400" },
-  guia: { label: "Guia", icon: Receipt, color: "text-blue-600 dark:text-blue-400" },
-  parcela: { label: "Parcela", icon: CreditCard, color: "text-amber-600 dark:text-amber-400" },
-  servico: { label: "Serviço", icon: Briefcase, color: "text-emerald-600 dark:text-emerald-400" },
+  obrigacao: { label: "Obrigação", icon: FileText, color: "text-primary" },
+  guia: { label: "Guia", icon: Receipt, color: "text-info" },
+  parcela: { label: "Parcela", icon: CreditCard, color: "text-highlight" },
+  servico: { label: "Serviço", icon: Briefcase, color: "text-success" },
 }
 
 export function UrgencyTrail({
@@ -250,11 +250,11 @@ export function UrgencyTrail({
   const total = items.length
   if (total === 0) {
     return (
-      <Card className="border-emerald-500/40 bg-emerald-50/40 dark:bg-emerald-950/10">
+      <Card className="border-success/30 bg-success/10">
         <CardContent className="py-6 flex items-center justify-center gap-3">
-          <CheckCircle2 className="size-6 text-emerald-600" />
+          <CheckCircle2 className="size-6 text-success" />
           <div>
-            <p className="font-medium text-emerald-700 dark:text-emerald-300">
+            <p className="font-medium text-success">
               Tudo em dia 🎉
             </p>
             <p className="text-xs text-muted-foreground">
@@ -288,10 +288,10 @@ export function UrgencyTrail({
                 type="button"
                 onClick={() => setOpenTier(isOpen ? null : tier.key)}
                 disabled={count === 0}
-                className={`relative rounded-lg border ${tier.border} ${tier.bg} px-3 py-2.5 text-left transition-all ${
+                className={`relative rounded-lg border ${tier.border} ${tier.bg} px-3 py-2.5 text-left transition-colors ${
                   count === 0
                     ? "opacity-40 cursor-not-allowed"
-                    : `hover:shadow-md hover:scale-[1.02] active:scale-[0.99] ${isOpen ? `ring-2 ${tier.ring}` : ""}`
+                    : `hover:border-primary/30 ${isOpen ? `ring-2 ${tier.ring}` : ""}`
                 }`}
                 aria-expanded={isOpen}
                 aria-label={`${tier.label}: ${count} item(s)`}
@@ -375,7 +375,7 @@ function ExpandedTierPanel({
           return (
             <div
               key={`${it.type}-${it.id}`}
-              className="flex items-center justify-between gap-2 px-2.5 py-2 rounded-md bg-background/60 hover:bg-background transition-colors"
+              className="flex items-center justify-between gap-2 px-2.5 py-2 rounded-md border border-border bg-card hover:bg-accent transition-colors"
             >
               <Link href={it.href} className="flex-1 min-w-0 flex items-center gap-2">
                 <TypeIcon className={`size-3.5 shrink-0 ${TYPE_META[it.type].color}`} />
@@ -395,7 +395,7 @@ function ExpandedTierPanel({
                   <Button
                     size="icon"
                     variant="ghost"
-                    className="size-7 text-green-600 hover:text-green-700 hover:bg-green-100 dark:hover:bg-green-950/40"
+                    className="size-7 text-success hover:text-success hover:bg-success/10"
                     onClick={(e) => {
                       e.preventDefault()
                       onCompleteObligation(it.obligation!)

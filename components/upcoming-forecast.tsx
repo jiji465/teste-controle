@@ -112,10 +112,10 @@ export function UpcomingForecast({ obligations, taxes, installments, services = 
   const total = counts.obs + counts.txs + counts.parcs + counts.svcs
 
   return (
-    <Card className="overflow-hidden ring-1 ring-blue-500/10 hover:ring-blue-500/30 transition-all">
+    <Card className="overflow-hidden border hover:border-primary/30 transition-colors">
       <CardHeader className="pb-2">
         <CardTitle className="text-sm flex items-center gap-2">
-          <TrendingUp className="size-4 text-blue-600" />
+          <TrendingUp className="size-4 text-info" />
           {headerLabel}
         </CardTitle>
         <CardDescription className="text-xs">
@@ -125,7 +125,7 @@ export function UpcomingForecast({ obligations, taxes, installments, services = 
       </CardHeader>
       <CardContent>
         <div className="flex items-baseline gap-2 mb-3">
-          <span className="text-3xl font-bold tabular-nums text-blue-700 dark:text-blue-300">
+          <span className="text-3xl font-bold tabular-nums text-info">
             {total}
           </span>
           <span className="text-xs text-muted-foreground">item{total !== 1 ? "s" : ""}</span>
@@ -162,7 +162,7 @@ export function UpcomingForecast({ obligations, taxes, installments, services = 
         {total > 0 && (
           <Link
             href={`/relatorios${link}`}
-            className="block mt-3 text-[11px] text-blue-600 hover:underline"
+            className="block mt-3 text-[11px] text-info hover:underline"
           >
             Ver detalhes em Relatórios →
           </Link>

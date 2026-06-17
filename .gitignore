@@ -30,3 +30,6 @@ next-env.d.ts
 # Mantém .claude/agents/ versionado pra todo mundo do time usar
 .claude/*
 !.claude/agents/
+
+# Pasta duplicada acidental (cópia aninhada do projeto) — não versionar
+/teste-controle-main/

@@ -75,23 +75,23 @@ const ACTION_META = {
   completed: {
     label: "Concluído",
     icon: CheckCircle2,
-    color: "text-emerald-600 dark:text-emerald-400",
-    bg: "bg-emerald-500/10",
-    ring: "ring-emerald-500/20",
+    color: "text-success",
+    bg: "bg-success/10",
+    ring: "ring-success/20",
   },
   overdue: {
     label: "Atrasou",
     icon: AlertTriangle,
-    color: "text-red-600 dark:text-red-400",
-    bg: "bg-red-500/10",
-    ring: "ring-red-500/20",
+    color: "text-destructive",
+    bg: "bg-destructive/10",
+    ring: "ring-destructive/20",
   },
   created: {
     label: "Criado",
     icon: FilePlus,
-    color: "text-purple-600 dark:text-purple-400",
-    bg: "bg-purple-500/10",
-    ring: "ring-purple-500/20",
+    color: "text-info",
+    bg: "bg-info/10",
+    ring: "ring-info/20",
   },
 } as const
 
@@ -297,14 +297,14 @@ export function RecentActivity({
               <li key={item.id} className="relative pl-10">
                 {/* Bolinha da timeline */}
                 <div
-                  className={`absolute left-0 top-0 size-8 rounded-full flex items-center justify-center ring-2 ring-background ${meta.bg}`}
+                  className={`absolute left-0 top-0 size-8 rounded-full flex items-center justify-center border border-border ring-2 ring-background ${meta.bg}`}
                 >
                   <ActionIcon className={`size-4 ${meta.color}`} />
                 </div>
 
                 <Link
                   href={item.href}
-                  className="block rounded-md hover:bg-muted/50 transition-colors px-2 py-1.5 -mx-2 -my-1.5"
+                  className="block rounded-md border border-transparent hover:border-primary/30 hover:bg-accent transition-colors px-2 py-1.5 -mx-2 -my-1.5"
                 >
                   <div className="flex items-start justify-between gap-2 flex-wrap">
                     <div className="flex-1 min-w-0">
@@ -327,7 +327,7 @@ export function RecentActivity({
                   </div>
                   {initials && item.action === "completed" && (
                     <div className="mt-1.5 flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                      <span className="inline-flex items-center justify-center size-4 rounded-full bg-muted text-[9px] font-semibold">
+                      <span className="inline-flex items-center justify-center size-4 rounded-full border border-border bg-primary/10 text-primary text-[9px] font-semibold">
                         {initials}
                       </span>
                       <span>{item.actor}</span>

@@ -1,7 +1,9 @@
 "use client"
 
 import { useMemo } from "react"
+import { Calendar } from "lucide-react"
 import { FiscalCalendar } from "@/components/fiscal-calendar"
+import { PageHeader } from "@/components/page-header"
 import { useData } from "@/contexts/data-context"
 import { adjustForWeekend, buildSafeDate } from "@/lib/date-utils"
 import type { InstallmentWithDetails } from "@/lib/types"
@@ -32,14 +34,13 @@ export default function CalendarioPage() {
   }, [rawInstallments, clients, taxes, isLoading])
 
   return (
-    <div className="mx-auto max-w-screen-2xl px-4 lg:px-6 py-5">
+    <div className="px-4 lg:px-6 xl:px-8 py-5">
       <div className="space-y-5">
-        <div className="space-y-1">
-          <h1 className="text-2xl font-bold tracking-tight">Calendário</h1>
-          <p className="text-sm text-muted-foreground">
-            Vencimentos de obrigações, impostos e parcelamentos em um só lugar
-          </p>
-        </div>
+        <PageHeader
+          icon={Calendar}
+          title="Calendário"
+          description="Vencimentos de obrigações, impostos e parcelamentos em um só lugar"
+        />
 
         <FiscalCalendar
           obligations={obligations}

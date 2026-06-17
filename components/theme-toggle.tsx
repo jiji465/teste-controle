@@ -18,7 +18,9 @@ export function ThemeToggle() {
 
   useEffect(() => setMounted(true), [])
 
-  const isDark = resolvedTheme === "dark"
+  // Só conhece o tema depois de montar — antes disso, servidor e cliente
+  // renderizam IDÊNTICOS (Moon + "Tema escuro"), evitando hydration mismatch.
+  const isDark = mounted && resolvedTheme === "dark"
 
   return (
     <Button
@@ -29,7 +31,7 @@ export function ThemeToggle() {
       aria-label={isDark ? "Mudar para tema claro" : "Mudar para tema escuro"}
       title={isDark ? "Tema claro" : "Tema escuro"}
     >
-      {mounted && isDark ? <Sun className="size-4" /> : <Moon className="size-4" />}
+      {isDark ? <Sun className="size-4" /> : <Moon className="size-4" />}
     </Button>
   )
 }

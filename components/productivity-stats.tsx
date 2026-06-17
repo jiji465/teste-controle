@@ -122,9 +122,7 @@ function DeltaBadge({
     <Badge
       variant="outline"
       className={`text-[10px] gap-0.5 px-1.5 py-0 h-4 ${
-        isGood
-          ? "border-emerald-500/40 text-emerald-700 dark:text-emerald-300"
-          : "border-red-500/40 text-red-700 dark:text-red-300"
+        isGood ? "border-success/40 text-success" : "border-destructive/40 text-destructive"
       }`}
     >
       {isUp ? <TrendingUp className="size-2.5" /> : <TrendingDown className="size-2.5" />}
@@ -162,8 +160,8 @@ export function ProductivityStats({
       delta: previous ? deltaPct(current.completed, previous.completed) : null,
       inverted: false,
       icon: CheckCircle2,
-      color: "text-emerald-600",
-      ring: "ring-emerald-500/10",
+      color: "text-success",
+      highlight: false,
       sub: "Obrigações + guias + parcelas",
     },
     {
@@ -172,8 +170,8 @@ export function ProductivityStats({
       delta: previous ? deltaPct(current.inProgress, previous.inProgress) : null,
       inverted: false,
       icon: Clock,
-      color: "text-blue-600",
-      ring: "ring-blue-500/10",
+      color: "text-info",
+      highlight: false,
       sub: "Sendo processadas",
     },
     {
@@ -182,8 +180,8 @@ export function ProductivityStats({
       delta: previous ? deltaPct(current.overdue, previous.overdue) : null,
       inverted: true,
       icon: AlertCircle,
-      color: "text-red-600",
-      ring: current.overdue > 0 ? "ring-red-500/30" : "ring-red-500/10",
+      color: "text-destructive",
+      highlight: current.overdue > 0,
       sub: current.overdue > 0 ? "Requerem atenção" : "Tudo em dia",
     },
     {
@@ -194,7 +192,7 @@ export function ProductivityStats({
       inverted: false,
       icon: TrendingUp,
       color: "text-primary",
-      ring: "ring-primary/10",
+      highlight: false,
       sub: previous ? "vs período anterior" : "Geral",
     },
   ]
@@ -204,7 +202,10 @@ export function ProductivityStats({
       {cards.map((c, idx) => {
         const Icon = c.icon
         return (
-          <Card key={idx} className={`ring-1 ${c.ring} hover:shadow-md transition-shadow`}>
+          <Card
+            key={idx}
+            className={`transition-colors hover:border-primary/30 ${c.highlight ? "border-destructive/40" : ""}`}
+          >
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">{c.title}</CardTitle>
               <Icon className={`size-4 ${c.color}`} />

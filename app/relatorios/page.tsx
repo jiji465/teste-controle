@@ -1,7 +1,9 @@
 "use client"
 
 import { useMemo } from "react"
+import { BarChart3 } from "lucide-react"
 import { ReportsPanel } from "@/components/reports-panel"
+import { PageHeader } from "@/components/page-header"
 import { useData } from "@/contexts/data-context"
 
 export default function RelatoriosPage() {
@@ -13,12 +15,13 @@ export default function RelatoriosPage() {
   )
 
   return (
-    <div className="mx-auto max-w-screen-2xl px-4 lg:px-6 py-5">
+    <div className="px-4 lg:px-6 xl:px-8 py-5">
       <div className="space-y-5">
-        <div className="space-y-1">
-          <h1 className="text-2xl font-bold tracking-tight">Relatórios</h1>
-          <p className="text-sm text-muted-foreground">Análise detalhada de obrigações fiscais e produtividade</p>
-        </div>
+        <PageHeader
+          icon={BarChart3}
+          title="Relatórios"
+          description="Análise detalhada de obrigações fiscais e produtividade"
+        />
 
         <ReportsPanel
           obligations={obligations}

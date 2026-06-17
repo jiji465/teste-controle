@@ -34,19 +34,19 @@ type Props = {
 
 const GRADE_STYLE: Record<ComplianceGrade, { bg: string; text: string; border: string }> = {
   A: {
-    bg: "bg-emerald-100 dark:bg-emerald-950/30",
-    text: "text-emerald-700 dark:text-emerald-300",
-    border: "border-emerald-500/40",
+    bg: "bg-success/10",
+    text: "text-success",
+    border: "border-success/30",
   },
   B: {
-    bg: "bg-amber-100 dark:bg-amber-950/30",
-    text: "text-amber-700 dark:text-amber-300",
-    border: "border-amber-500/40",
+    bg: "bg-warning/10",
+    text: "text-warning",
+    border: "border-warning/30",
   },
   C: {
-    bg: "bg-red-100 dark:bg-red-950/30",
-    text: "text-red-700 dark:text-red-300",
-    border: "border-red-500/40",
+    bg: "bg-destructive/10",
+    text: "text-destructive",
+    border: "border-destructive/30",
   },
 }
 
@@ -55,7 +55,7 @@ function ClientRow({ entry, side }: { entry: ClientCompliance; side: "best" | "w
   return (
     <Link
       href={`/obrigacoes?clientId=${entry.client.id}`}
-      className="flex items-center gap-3 p-2.5 rounded-lg border hover:border-primary/40 hover:bg-muted/50 transition-colors group"
+      className="flex items-center gap-3 p-2.5 rounded-lg border hover:border-primary/30 hover:bg-accent transition-colors group"
     >
       <div
         className={`shrink-0 size-9 rounded-md flex items-center justify-center text-sm font-bold ${grade.bg} ${grade.text} ${grade.border} border`}
@@ -64,10 +64,10 @@ function ClientRow({ entry, side }: { entry: ClientCompliance; side: "best" | "w
       </div>
       <div className="flex-1 min-w-0">
         <p className="font-medium text-sm truncate">{entry.client.name}</p>
-        <div className="flex items-center gap-2 text-[11px] text-muted-foreground mt-0.5">
+        <div className="flex items-center gap-2 text-[11px] text-muted-foreground mt-0.5 tabular-nums">
           <span>{entry.onTimeRate}% no prazo</span>
           {entry.currentlyOverdue > 0 && (
-            <span className="text-red-600">· {entry.currentlyOverdue} atrasado{entry.currentlyOverdue !== 1 ? "s" : ""}</span>
+            <span className="text-destructive">· {entry.currentlyOverdue} atrasado{entry.currentlyOverdue !== 1 ? "s" : ""}</span>
           )}
           <span>· {entry.totalItems} item{entry.totalItems !== 1 ? "s" : ""}</span>
         </div>
@@ -93,10 +93,10 @@ export function DualClientRanking({ clients, obligations, taxes, installments, s
   return (
     <div className="grid gap-4 sm:grid-cols-2">
       {/* Esquerda — Top Compliance */}
-      <Card className="ring-1 ring-emerald-500/10">
+      <Card className="border">
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-base">
-            <Trophy className="size-4 text-emerald-600" />
+            <Trophy className="size-4 text-success" />
             Top Compliance
           </CardTitle>
           <CardDescription className="text-xs">
@@ -112,7 +112,7 @@ export function DualClientRanking({ clients, obligations, taxes, installments, s
             </div>
           ) : (
             <div className="flex flex-col items-center justify-center py-6 text-center text-muted-foreground">
-              <Shield className="size-8 opacity-30 mb-2" />
+              <Shield className="size-8 opacity-40 mb-2" />
               <p className="text-xs">Ainda nenhum cliente atingiu nota A</p>
             </div>
           )}
@@ -120,10 +120,10 @@ export function DualClientRanking({ clients, obligations, taxes, installments, s
       </Card>
 
       {/* Direita — Precisam Atenção */}
-      <Card className={`ring-1 ${hasWorst ? "ring-red-500/20" : "ring-emerald-500/10"}`}>
+      <Card className="border">
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-base">
-            <AlertTriangle className={`size-4 ${hasWorst ? "text-red-600" : "text-emerald-600"}`} />
+            <AlertTriangle className={`size-4 ${hasWorst ? "text-destructive" : "text-success"}`} />
             Precisam Atenção
           </CardTitle>
           <CardDescription className="text-xs">
@@ -139,8 +139,8 @@ export function DualClientRanking({ clients, obligations, taxes, installments, s
             </div>
           ) : (
             <div className="flex flex-col items-center justify-center py-6 text-center text-muted-foreground">
-              <Trophy className="size-8 text-emerald-600 opacity-50 mb-2" />
-              <p className="text-xs font-medium text-emerald-700 dark:text-emerald-300">
+              <Trophy className="size-8 text-success opacity-60 mb-2" />
+              <p className="text-xs font-medium text-success">
                 Tudo em dia 🎉
               </p>
               <p className="text-[11px] text-muted-foreground mt-0.5">

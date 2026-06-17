@@ -24,8 +24,14 @@ import { calculateDueDateFromCompetency } from "@/lib/date-utils"
 import { getCurrentPeriod } from "@/lib/recurrence-engine"
 import { getGreetingMeta } from "@/lib/weather"
 import { WeatherGreeting } from "@/components/weather-greeting"
-import { TrendingUp, CalendarIcon, BarChart3, ListChecks, Activity, CalendarCheck } from "lucide-react"
+import { TrendingUp, CalendarIcon, BarChart3, ListChecks, Activity, CalendarCheck, Sparkles, ArrowRight } from "lucide-react"
+import Link from "next/link"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import { AnimatedHero } from "@/components/ui/animated-hero"
+import { QuickAccessTabs } from "@/components/quick-access-tabs"
+import { QuickShortcuts } from "@/components/quick-shortcuts"
+import { SectionHeader } from "@/components/section-header"
 import { adjustForWeekend, buildSafeDate } from "@/lib/date-utils"
 import { saveObligation } from "@/features/obligations/services"
 import { checkAndGenerateRecurrences } from "@/lib/auto-recurrence"
@@ -260,48 +266,83 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="mx-auto max-w-screen-2xl px-4 lg:px-6 py-5">
+    <div className="px-4 lg:px-6 xl:px-8 py-5">
         <div className="stagger space-y-5">
-          {/* Hero rico — saudação dinâmica por horário + tempo + saúde do mês */}
+          {/* Hero unificado — saudação + frase animada (framer-motion) + clima +
+              saúde do mês, tudo num único card com a paleta da marca
+              (primary → chart-2). Antes eram dois banners soltos com paletas
+              diferentes (verde-azulado vs. roxo do horário). */}
           {(() => {
             const meta = getGreetingMeta()
+            const dateLabel = new Date().toLocaleDateString("pt-BR", {
+              weekday: "long",
+              day: "numeric",
+              month: "long",
+              year: "numeric",
+            })
+            const message = isFiltering
+              ? `Mostrando dados de ${periodLabel}.`
+              : urgentCount > 0
+                ? `Você tem ${urgentCount} ${urgentCount === 1 ? "item crítico" : "itens críticos"} pra resolver hoje.`
+                : "Nenhuma pendência crítica. Bom trabalho! 🎉"
+            // Palavras do typewriter COERENTES com a situação real (não uma
+            // lista fixa): se há atrasos, fala de atraso; se há vencimentos na
+            // semana, fala disso; só diz "em dia" quando realmente está.
+            const overdue = stats?.overdueItems ?? 0
+            const upcoming = stats?.upcomingThisWeek ?? 0
+            const heroWords =
+              overdue > 0
+                ? [`com ${overdue} em atraso`, "pedindo atenção", "com pendências"]
+                : upcoming > 0
+                  ? ["quase em dia", "sob controle", `com ${upcoming} vencendo na semana`]
+                  : ["em dia", "organizado", "sob controle", "sem atrasos"]
             return (
-              <div
-                className={`relative overflow-hidden rounded-xl border bg-gradient-to-br ${meta.gradient} p-5`}
-              >
-                <div
-                  className={`absolute -top-20 -right-20 size-48 rounded-full ${meta.accent.replace("text-", "bg-").replace("dark:text-", "dark:bg-").replace("-600", "-500/20").replace("-400", "-400/20")} blur-3xl pointer-events-none`}
-                  aria-hidden
-                />
-                <div className="relative flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-                  <div className="space-y-0.5 flex-1 min-w-0">
-                    <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
-                      {new Date().toLocaleDateString("pt-BR", {
-                        weekday: "long",
-                        day: "numeric",
-                        month: "long",
-                        year: "numeric",
-                      })}
-                    </p>
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <h1 className={`text-2xl font-bold tracking-tight ${meta.accent}`}>
-                        {meta.greeting}
-                      </h1>
-                      {isFiltering && periodLabel && (
-                        <Badge variant="outline" className="gap-1 border-primary/30 text-primary">
-                          <CalendarIcon className="size-3" />
-                          Filtrando: {periodLabel}
+              <div className="relative overflow-hidden rounded-2xl border bg-gradient-to-br from-primary/[0.08] via-card to-chart-2/[0.08] p-6 lg:p-8">
+                <div aria-hidden className="pointer-events-none absolute -top-24 -right-16 size-56 rounded-full bg-primary/10 blur-3xl" />
+                <div aria-hidden className="pointer-events-none absolute -bottom-28 -left-10 size-56 rounded-full bg-chart-2/10 blur-3xl" />
+
+                <div className="relative flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+                  <AnimatedHero
+                    size="inline"
+                    align="left"
+                    typewriter
+                    className="min-w-0 flex-1"
+                    staticText={`${meta.greeting}! Seu controle fiscal está`}
+                    rotatingWords={heroWords}
+                    description={message}
+                    badge={
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Badge variant="outline" className="gap-1.5 border-primary/30 bg-background/60 text-primary">
+                          <Sparkles className="size-3" />
+                          Painel de Controle Fiscal
                         </Badge>
-                      )}
-                    </div>
-                    <p className="text-sm text-muted-foreground max-w-xl">
-                      {isFiltering
-                        ? `Mostrando dados de ${periodLabel}.`
-                        : urgentCount > 0
-                          ? `Você tem ${urgentCount} ${urgentCount === 1 ? "item crítico" : "itens críticos"} pra resolver hoje.`
-                          : "Nenhuma pendência crítica. Bom trabalho! 🎉"}
-                    </p>
-                  </div>
+                        <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                          {dateLabel}
+                        </span>
+                        {isFiltering && periodLabel && (
+                          <Badge variant="outline" className="gap-1 border-primary/30 text-primary">
+                            <CalendarIcon className="size-3" />
+                            Filtrando: {periodLabel}
+                          </Badge>
+                        )}
+                      </div>
+                    }
+                    actions={
+                      <>
+                        <Link href="/obrigacoes?tab=overdue">
+                          <Button className="gap-2">
+                            {urgentCount > 0
+                              ? `Resolver ${urgentCount} ${urgentCount === 1 ? "pendência" : "pendências"}`
+                              : "Ver pendências"}
+                            <ArrowRight className="size-4" />
+                          </Button>
+                        </Link>
+                        <Link href="/clientes">
+                          <Button variant="outline">Empresas</Button>
+                        </Link>
+                      </>
+                    }
+                  />
 
                   {/* Lado direito: clima + saúde do mês */}
                   <div className="flex flex-wrap items-stretch gap-3">
@@ -350,26 +391,30 @@ export default function DashboardPage() {
             )
           })()}
 
+          {/* Ações rápidas — criar (atalhos) + navegar (acesso rápido) */}
+          <QuickShortcuts />
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+              Acesso rápido
+            </span>
+            <QuickAccessTabs />
+          </div>
+
           {/* Resumo Geral */}
           {stats && (
             <div>
-              <h2 className="text-xl font-semibold mb-3 flex items-center gap-2">
-                <BarChart3 className="size-5" />
-                Resumo Geral
-                {isFiltering && periodLabel && (
-                  <span className="text-sm font-normal text-muted-foreground">· {periodLabel}</span>
-                )}
-              </h2>
+              <SectionHeader
+                icon={BarChart3}
+                title="Resumo Geral"
+                suffix={isFiltering && periodLabel ? `· ${periodLabel}` : undefined}
+              />
               <DashboardStatsCards stats={stats} periodLabel={periodLabel} />
             </div>
           )}
 
           {/* Distribuição (4 gráficos) — logo após Resumo Geral */}
           <div>
-            <h2 className="text-xl font-semibold mb-3 flex items-center gap-2">
-              <BarChart3 className="size-5" />
-              Distribuição
-            </h2>
+            <SectionHeader icon={BarChart3} title="Distribuição" />
             <RegimeDistributionChart
               obligations={obligations}
               clients={clients}
@@ -381,13 +426,11 @@ export default function DashboardPage() {
 
           {/* Trilha de Urgência + Forecast Próximo Mês (lado a lado) */}
           <div>
-            <h2 className="text-xl font-semibold mb-3 flex items-center gap-2">
-              <ListChecks className="size-5" />
-              Pendências
-              {isFiltering && periodLabel && (
-                <span className="text-sm font-normal text-muted-foreground">· {periodLabel}</span>
-              )}
-            </h2>
+            <SectionHeader
+              icon={ListChecks}
+              title="Pendências"
+              suffix={isFiltering && periodLabel ? `· ${periodLabel}` : undefined}
+            />
             <div className="grid gap-4 lg:grid-cols-[1fr_280px]">
               <UrgencyTrail
                 obligations={obligations}
@@ -409,13 +452,11 @@ export default function DashboardPage() {
 
           {/* Indicadores de Produtividade — com comparativo vs mês anterior */}
           <div>
-            <h2 className="text-xl font-semibold mb-3 flex items-center gap-2">
-              <TrendingUp className="size-5" />
-              Indicadores de Produtividade
-              {isFiltering && periodLabel && (
-                <span className="text-sm font-normal text-muted-foreground">· {periodLabel}</span>
-              )}
-            </h2>
+            <SectionHeader
+              icon={TrendingUp}
+              title="Indicadores de Produtividade"
+              suffix={isFiltering && periodLabel ? `· ${periodLabel}` : undefined}
+            />
             <ProductivityStats
               obligations={obligations}
               taxes={filteredTaxes}
@@ -429,10 +470,7 @@ export default function DashboardPage() {
 
           {/* Entregas por dia — calendário de produtividade (conclusões reais) */}
           <div>
-            <h2 className="text-xl font-semibold mb-3 flex items-center gap-2">
-              <CalendarCheck className="size-5" />
-              Entregas por dia
-            </h2>
+            <SectionHeader icon={CalendarCheck} title="Entregas por dia" />
             <HeatmapEntregas
               obligations={obligationsWithDetails}
               taxes={taxes}
@@ -444,10 +482,7 @@ export default function DashboardPage() {
 
           {/* Ranking de Clientes — duo: bons vs problemáticos */}
           <div>
-            <h2 className="text-xl font-semibold mb-3 flex items-center gap-2">
-              <Activity className="size-5" />
-              Clientes
-            </h2>
+            <SectionHeader icon={Activity} title="Clientes" />
             <DualClientRanking
               clients={clients}
               obligations={obligationsWithDetails}
@@ -459,10 +494,7 @@ export default function DashboardPage() {
 
           {/* Atividade Recente — timeline com obrigações + guias + parcelas */}
           <div>
-            <h2 className="text-xl font-semibold mb-3 flex items-center gap-2">
-              <Activity className="size-5" />
-              Atividade Recente
-            </h2>
+            <SectionHeader icon={Activity} title="Atividade Recente" />
             <RecentActivity
               obligations={obligationsWithDetails}
               taxes={taxes}

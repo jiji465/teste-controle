@@ -29,13 +29,13 @@ type RegimeDistributionChartProps = {
   services?: Service[]
 }
 
-// === Cores base (cada uma vira um gradient via <defs>) ===
+// === Cores base — paleta da marca (cor sólida da paleta de charts) ===
 const REGIME_HEX_COLORS: Record<string, string> = {
-  simples_nacional: "#10b981",
-  lucro_presumido: "#3b82f6",
-  lucro_real: "#8b5cf6",
-  mei: "#f59e0b",
-  imune_isento: "#6b7280",
+  simples_nacional: "#001d3d", // chart-1 navy
+  lucro_presumido: "#3f6ea5", // chart-4 azul
+  lucro_real: "#d4a657", // chart-3 dourado
+  mei: "#f79c04", // chart-2 âmbar
+  imune_isento: "#1f9254", // chart-5 verde
   sem_regime: "#94a3b8",
 }
 
@@ -43,15 +43,15 @@ const STATUS_META: Record<
   string,
   { label: string; color: string; lightBg: string; icon: typeof CheckCircle2 }
 > = {
-  pending: { label: "Pendentes", color: "#f59e0b", lightBg: "bg-amber-50 dark:bg-amber-950/30", icon: Clock },
-  in_progress: { label: "Em Andamento", color: "#3b82f6", lightBg: "bg-blue-50 dark:bg-blue-950/30", icon: Loader2 },
-  completed: { label: "Concluídas", color: "#10b981", lightBg: "bg-emerald-50 dark:bg-emerald-950/30", icon: CheckCircle2 },
-  overdue: { label: "Atrasadas", color: "#ef4444", lightBg: "bg-red-50 dark:bg-red-950/30", icon: AlertTriangle },
+  pending: { label: "Pendentes", color: "#f79c04", lightBg: "bg-muted/50", icon: Clock },
+  in_progress: { label: "Em Andamento", color: "#3f6ea5", lightBg: "bg-muted/50", icon: Loader2 },
+  completed: { label: "Concluídas", color: "#1f9254", lightBg: "bg-muted/50", icon: CheckCircle2 },
+  overdue: { label: "Atrasadas", color: "#d92d20", lightBg: "bg-muted/50", icon: AlertTriangle },
 }
 
+// Paleta da marca distribuída de forma consistente (chart-1..5)
 const STATE_COLORS = [
-  "#3b82f6", "#10b981", "#8b5cf6", "#f59e0b", "#ec4899",
-  "#06b6d4", "#f97316", "#84cc16", "#ef4444", "#6366f1",
+  "#001d3d", "#f79c04", "#d4a657", "#3f6ea5", "#1f9254",
 ]
 
 // ============================================================
@@ -111,7 +111,7 @@ function ObligationsHealthCard({
   const total = obligations.length + taxes.length + installments.length + services.length
   const completedPct = total > 0 ? Math.round((counts.completed / total) * 100) : 0
   const gaugeColor =
-    completedPct >= 80 ? "#10b981" : completedPct >= 50 ? "#3b82f6" : completedPct >= 30 ? "#f59e0b" : "#ef4444"
+    completedPct >= 80 ? "#1f9254" : completedPct >= 50 ? "#3f6ea5" : completedPct >= 30 ? "#f79c04" : "#d92d20"
 
   const gaugeData = [{ name: "completed", value: completedPct }]
 
@@ -127,11 +127,11 @@ function ObligationsHealthCard({
       : `${total} ${total === 1 ? "item" : "itens"} no total`
 
   return (
-    <Card className="overflow-hidden transition-shadow hover:shadow-lg h-full flex flex-col">
+    <Card className="overflow-hidden border h-full flex flex-col">
       <CardHeader className="pb-1">
-        <CardTitle className="text-base flex items-center justify-between">
+        <CardTitle className="text-base flex items-center justify-between text-foreground">
           <span>Saúde das Tarefas</span>
-          <CheckCircle2 className="size-4 text-emerald-600" />
+          <CheckCircle2 className="size-4 text-highlight" />
         </CardTitle>
         <CardDescription>{description}</CardDescription>
       </CardHeader>
@@ -148,18 +148,12 @@ function ObligationsHealthCard({
               startAngle={210}
               endAngle={-30}
             >
-              <defs>
-                <linearGradient id="gauge-grad" x1="0" y1="0" x2="1" y2="0">
-                  <stop offset="0%" stopColor={gaugeColor} stopOpacity={0.7} />
-                  <stop offset="100%" stopColor={gaugeColor} stopOpacity={1} />
-                </linearGradient>
-              </defs>
               <PolarAngleAxis type="number" domain={[0, 100]} angleAxisId={0} tick={false} />
               <RadialBar
                 background={{ fill: "hsl(var(--muted))" }}
                 dataKey="value"
                 cornerRadius={12}
-                fill="url(#gauge-grad)"
+                fill={gaugeColor}
               />
             </RadialBarChart>
           </ResponsiveContainer>
@@ -233,11 +227,11 @@ function RegimeCard({ clients }: { clients: Client[] }) {
   if (data.length === 0) return null
 
   return (
-    <Card className="overflow-hidden transition-shadow hover:shadow-lg h-full flex flex-col">
+    <Card className="overflow-hidden border h-full flex flex-col">
       <CardHeader className="pb-1">
-        <CardTitle className="text-base flex items-center justify-between">
+        <CardTitle className="text-base flex items-center justify-between text-foreground">
           <span>Regime Tributário</span>
-          <Building2 className="size-4 text-blue-600" />
+          <Building2 className="size-4 text-primary" />
         </CardTitle>
         <CardDescription>{clients.length} cliente{clients.length !== 1 ? "s" : ""}</CardDescription>
       </CardHeader>
@@ -245,14 +239,6 @@ function RegimeCard({ clients }: { clients: Client[] }) {
         <div className="relative">
           <ResponsiveContainer width="100%" height={180}>
             <PieChart>
-              <defs>
-                {data.map((d) => (
-                  <radialGradient key={`grad-${d.key}`} id={`regime-grad-${d.key}`} cx="50%" cy="50%" r="50%">
-                    <stop offset="0%" stopColor={d.color} stopOpacity={1} />
-                    <stop offset="100%" stopColor={d.color} stopOpacity={0.65} />
-                  </radialGradient>
-                ))}
-              </defs>
               <Pie
                 data={data}
                 cx="50%"
@@ -269,7 +255,7 @@ function RegimeCard({ clients }: { clients: Client[] }) {
                 onMouseLeave={() => setActiveIdx(null)}
               >
                 {data.map((d) => (
-                  <Cell key={d.key} fill={`url(#regime-grad-${d.key})`} />
+                  <Cell key={d.key} fill={d.color} />
                 ))}
               </Pie>
               {/* Tooltip removido — o centro + a legenda já mostram a mesma info,
@@ -331,10 +317,10 @@ const ACTIVITY_META: Record<
   BusinessActivity | "sem_atividade",
   { label: string; color: string; icon: typeof Briefcase }
 > = {
-  servicos: { label: "Serviços", color: "#3b82f6", icon: Briefcase },
-  comercio: { label: "Comércio", color: "#f59e0b", icon: ShoppingBag },
-  industria: { label: "Indústria", color: "#8b5cf6", icon: Factory },
-  misto: { label: "Misto", color: "#10b981", icon: Layers },
+  servicos: { label: "Serviços", color: "#001d3d", icon: Briefcase },
+  comercio: { label: "Comércio", color: "#f79c04", icon: ShoppingBag },
+  industria: { label: "Indústria", color: "#3f6ea5", icon: Factory },
+  misto: { label: "Misto", color: "#1f9254", icon: Layers },
   sem_atividade: { label: "—", color: "#94a3b8", icon: Briefcase },
 }
 
@@ -360,11 +346,11 @@ function ActivityCard({ clients }: { clients: Client[] }) {
   const max = Math.max(...data.map((d) => d.value), 1)
 
   return (
-    <Card className="overflow-hidden transition-shadow hover:shadow-lg h-full flex flex-col">
+    <Card className="overflow-hidden border h-full flex flex-col">
       <CardHeader className="pb-1">
-        <CardTitle className="text-base flex items-center justify-between">
+        <CardTitle className="text-base flex items-center justify-between text-foreground">
           <span>Atividade Empresarial</span>
-          <Briefcase className="size-4 text-amber-600" />
+          <Briefcase className="size-4 text-highlight" />
         </CardTitle>
         <CardDescription>
           {total} cliente{total !== 1 ? "s" : ""} classificado{total !== 1 ? "s" : ""}
@@ -390,9 +376,7 @@ function ActivityCard({ clients }: { clients: Client[] }) {
                     className="w-full rounded-md transition-all duration-500 group-hover:opacity-90"
                     style={{
                       height: isEmpty ? "4px" : `${Math.max(heightPct, 6)}%`,
-                      background: isEmpty
-                        ? "hsl(var(--muted))"
-                        : `linear-gradient(180deg, ${d.color}, ${d.color}cc)`,
+                      background: isEmpty ? "hsl(var(--muted))" : d.color,
                     }}
                   />
                 </div>
@@ -447,11 +431,11 @@ function StatesCard({ clients }: { clients: Client[] }) {
   if (data.length === 0) return null
 
   return (
-    <Card className="overflow-hidden transition-shadow hover:shadow-lg h-full flex flex-col">
+    <Card className="overflow-hidden border h-full flex flex-col">
       <CardHeader className="pb-1">
-        <CardTitle className="text-base flex items-center justify-between">
+        <CardTitle className="text-base flex items-center justify-between text-foreground">
           <span>Empresas por Estado</span>
-          <MapPin className="size-4 text-purple-600" />
+          <MapPin className="size-4 text-primary" />
         </CardTitle>
         <CardDescription>
           {data.length} UF{data.length !== 1 ? "s" : ""} · {total} empresa{total !== 1 ? "s" : ""}
@@ -466,8 +450,8 @@ function StatesCard({ clients }: { clients: Client[] }) {
               <li key={d.key} className="group">
                 <div className="flex items-center gap-3 mb-1">
                   <div
-                    className="shrink-0 size-7 rounded-md flex items-center justify-center text-[11px] font-bold text-white shadow-sm"
-                    style={{ background: `linear-gradient(135deg, ${d.color}, ${d.color}dd)` }}
+                    className="shrink-0 size-7 rounded-md flex items-center justify-center text-[11px] font-bold text-white"
+                    style={{ background: d.color }}
                   >
                     {idx + 1}
                   </div>
@@ -481,7 +465,7 @@ function StatesCard({ clients }: { clients: Client[] }) {
                     className="h-full rounded-full transition-all duration-500 group-hover:opacity-90"
                     style={{
                       width: `${widthPct}%`,
-                      background: `linear-gradient(90deg, ${d.color}aa, ${d.color})`,
+                      background: d.color,
                     }}
                   />
                 </div>

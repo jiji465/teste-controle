@@ -10,6 +10,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { PageHeader } from "@/components/page-header"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { ResizableTableHead } from "@/components/ui/resizable-table-head"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -47,6 +48,7 @@ import {
   Scale,
   AlertCircle as PriorityIcon,
   Eye,
+  Receipt,
 } from "lucide-react"
 import { FilterBar, FilterPill, FilterPillMonth } from "@/components/filter-panel"
 import type { Tax, TaxRegime } from "@/lib/types"
@@ -510,22 +512,23 @@ export default function ImpostosPage() {
   }
 
   return (
-    <div className="mx-auto max-w-screen-2xl px-4 lg:px-6 py-5">
+    <div className="px-4 lg:px-6 xl:px-8 py-5">
       <ConfirmDialog state={confirmState} onClose={() => setConfirmState(null)} />
       <div className="space-y-5">
-        <div className="flex items-start justify-between gap-4">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2 flex-wrap">
-              <h1 className="text-2xl font-bold tracking-tight">Guias de Imposto</h1>
-              {isFiltering && periodLabel && (
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <PageHeader
+            icon={Receipt}
+            title="Guias de Imposto"
+            description="Guias de pagamento (DARF, GPS, GARE, DAS, GNRE…) por cliente"
+            badge={
+              isFiltering && periodLabel ? (
                 <Badge variant="outline" className="gap-1 border-primary/30 text-primary">
                   <CalendarIcon className="size-3" />
                   {periodLabel}
                 </Badge>
-              )}
-            </div>
-            <p className="text-sm text-muted-foreground">Guias de pagamento (DARF, GPS, GARE, DAS, GNRE…) por cliente</p>
-          </div>
+              ) : null
+            }
+          />
             <div className="flex gap-2">
               <Button variant="outline" onClick={() => setSearchOpen(true)} className="gap-2">
                 <Search className="size-4" />
@@ -549,7 +552,7 @@ export default function ImpostosPage() {
           </div>
 
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <TabsList className="grid w-full grid-cols-5 h-auto">
+            <TabsList className="flex w-full overflow-x-auto h-auto [&>button]:shrink-0 sm:grid sm:grid-cols-5">
               <TabsTrigger value="all" className="flex flex-col gap-1 py-3">
                 <span className="text-sm font-medium">Todos</span>
                 <Badge variant="secondary" className="text-xs">

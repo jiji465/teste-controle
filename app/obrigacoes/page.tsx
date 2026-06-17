@@ -8,9 +8,10 @@ import { ExportDialog } from "@/components/export-dialog"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { PageHeader } from "@/components/page-header"
 import { buildSafeDate } from "@/lib/date-utils"
 import { effectiveStatus } from "@/lib/obligation-status"
-import { CheckCircle2, Clock, PlayCircle, AlertTriangle, Search, Plus, Download, CalendarDays } from "lucide-react"
+import { CheckCircle2, Clock, PlayCircle, AlertTriangle, Search, Plus, Download, CalendarDays, FileText } from "lucide-react"
 import { useData } from "@/contexts/data-context"
 import { useSelectedPeriod } from "@/hooks/use-selected-period"
 
@@ -66,21 +67,22 @@ export default function ObligacoesPage() {
   }
 
   return (
-    <div className="mx-auto max-w-screen-2xl px-4 lg:px-6 py-5">
+    <div className="px-4 lg:px-6 xl:px-8 py-5">
         <div className="space-y-5">
-          <div className="flex items-start justify-between gap-4">
-            <div className="space-y-1">
-              <div className="flex items-center gap-2 flex-wrap">
-                <h1 className="text-2xl font-bold tracking-tight">Obrigações Acessórias</h1>
-                {isFiltering && periodLabel && (
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <PageHeader
+              icon={FileText}
+              title="Obrigações Acessórias"
+              description="Declarações e escriturações ao Fisco (SPED, EFD, ECD, ECF, DCTF, DIRF…)"
+              badge={
+                isFiltering && periodLabel ? (
                   <Badge variant="outline" className="gap-1 border-primary/30 text-primary">
                     <CalendarDays className="size-3" />
                     {periodLabel}
                   </Badge>
-                )}
-              </div>
-              <p className="text-sm text-muted-foreground">Declarações e escriturações ao Fisco (SPED, EFD, ECD, ECF, DCTF, DIRF…)</p>
-            </div>
+                ) : null
+              }
+            />
             <div className="flex gap-2">
               <Button variant="outline" onClick={() => setSearchOpen(true)} className="gap-2">
                 <Search className="size-4" />
@@ -106,7 +108,7 @@ export default function ObligacoesPage() {
               bloqueava o clique nos triggers (bug reportado pelo usuário).
               Trocar pra renderização fora do <Tabs> elimina o problema. */}
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <TabsList className="grid w-full grid-cols-5 h-auto">
+            <TabsList className="flex w-full overflow-x-auto h-auto [&>button]:shrink-0 sm:grid sm:grid-cols-5">
               <TabsTrigger value="all" className="flex flex-col gap-1 py-3">
                 <span className="text-sm font-medium">Todas</span>
                 <Badge variant="secondary" className="text-xs">

@@ -15,6 +15,7 @@ import { ServiceList, type ServiceListHandle } from "@/features/services/compone
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { PageHeader } from "@/components/page-header"
 import {
   Briefcase,
   CheckCircle2,
@@ -71,26 +72,22 @@ export default function ServicosPage() {
   }
 
   return (
-    <div className="mx-auto max-w-screen-2xl px-4 lg:px-6 py-5">
+    <div className="px-4 lg:px-6 xl:px-8 py-5">
       <div className="space-y-5">
-        <div className="flex items-start justify-between gap-4">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2 flex-wrap">
-              <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
-                <Briefcase className="size-6 text-primary" />
-                Serviços Avulsos
-              </h1>
-              {isFiltering && periodLabel && (
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <PageHeader
+            icon={Briefcase}
+            title="Serviços Avulsos"
+            description="NF-e, consultoria e outros serviços prestados aos clientes"
+            badge={
+              isFiltering && periodLabel ? (
                 <Badge variant="outline" className="gap-1 border-primary/30 text-primary">
                   <CalendarDays className="size-3" />
                   {periodLabel}
                 </Badge>
-              )}
-            </div>
-            <p className="text-sm text-muted-foreground">
-              NF-e, consultoria e outros serviços prestados aos clientes
-            </p>
-          </div>
+              ) : null
+            }
+          />
           <div className="flex gap-2">
             <Button onClick={() => listRef.current?.openNewForm()}>
               <Plus className="size-4 mr-2" />
@@ -100,7 +97,7 @@ export default function ServicosPage() {
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="grid w-full grid-cols-5 h-auto">
+          <TabsList className="flex w-full overflow-x-auto h-auto [&>button]:shrink-0 sm:grid sm:grid-cols-5">
             <TabsTrigger value="all" className="flex flex-col gap-1 py-3">
               <span className="text-sm font-medium">Todos</span>
               <Badge variant="secondary" className="text-xs">
