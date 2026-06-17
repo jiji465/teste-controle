@@ -29,29 +29,30 @@ type RegimeDistributionChartProps = {
   services?: Service[]
 }
 
-// === Cores base — paleta da marca (cor sólida da paleta de charts) ===
+// === Cores via TOKENS de chart (var --chart-N) — adaptam ao tema claro/escuro.
+// (Antes eram hex fixos como #001d3d, que sumiam no fundo escuro.) ===
 const REGIME_HEX_COLORS: Record<string, string> = {
-  simples_nacional: "#001d3d", // chart-1 navy
-  lucro_presumido: "#3f6ea5", // chart-4 azul
-  lucro_real: "#d4a657", // chart-3 dourado
-  mei: "#f79c04", // chart-2 âmbar
-  imune_isento: "#1f9254", // chart-5 verde
-  sem_regime: "#94a3b8",
+  simples_nacional: "var(--chart-1)",
+  lucro_presumido: "var(--chart-4)",
+  lucro_real: "var(--chart-3)",
+  mei: "var(--chart-2)",
+  imune_isento: "var(--chart-5)",
+  sem_regime: "var(--muted-foreground)",
 }
 
 const STATUS_META: Record<
   string,
   { label: string; color: string; lightBg: string; icon: typeof CheckCircle2 }
 > = {
-  pending: { label: "Pendentes", color: "#f79c04", lightBg: "bg-muted/50", icon: Clock },
-  in_progress: { label: "Em Andamento", color: "#3f6ea5", lightBg: "bg-muted/50", icon: Loader2 },
-  completed: { label: "Concluídas", color: "#1f9254", lightBg: "bg-muted/50", icon: CheckCircle2 },
-  overdue: { label: "Atrasadas", color: "#d92d20", lightBg: "bg-muted/50", icon: AlertTriangle },
+  pending: { label: "Pendentes", color: "var(--warning)", lightBg: "bg-muted/50", icon: Clock },
+  in_progress: { label: "Em Andamento", color: "var(--info)", lightBg: "bg-muted/50", icon: Loader2 },
+  completed: { label: "Concluídas", color: "var(--success)", lightBg: "bg-muted/50", icon: CheckCircle2 },
+  overdue: { label: "Atrasadas", color: "var(--destructive)", lightBg: "bg-muted/50", icon: AlertTriangle },
 }
 
-// Paleta da marca distribuída de forma consistente (chart-1..5)
+// Paleta de chart (tokens) distribuída de forma consistente
 const STATE_COLORS = [
-  "#001d3d", "#f79c04", "#d4a657", "#3f6ea5", "#1f9254",
+  "var(--chart-1)", "var(--chart-2)", "var(--chart-3)", "var(--chart-4)", "var(--chart-5)",
 ]
 
 // ============================================================
@@ -111,7 +112,13 @@ function ObligationsHealthCard({
   const total = obligations.length + taxes.length + installments.length + services.length
   const completedPct = total > 0 ? Math.round((counts.completed / total) * 100) : 0
   const gaugeColor =
-    completedPct >= 80 ? "#1f9254" : completedPct >= 50 ? "#3f6ea5" : completedPct >= 30 ? "#f79c04" : "#d92d20"
+    completedPct >= 80
+      ? "var(--success)"
+      : completedPct >= 50
+        ? "var(--info)"
+        : completedPct >= 30
+          ? "var(--warning)"
+          : "var(--destructive)"
 
   const gaugeData = [{ name: "completed", value: completedPct }]
 
@@ -150,7 +157,7 @@ function ObligationsHealthCard({
             >
               <PolarAngleAxis type="number" domain={[0, 100]} angleAxisId={0} tick={false} />
               <RadialBar
-                background={{ fill: "hsl(var(--muted))" }}
+                background={{ fill: "var(--muted)" }}
                 dataKey="value"
                 cornerRadius={12}
                 fill={gaugeColor}
@@ -247,7 +254,7 @@ function RegimeCard({ clients }: { clients: Client[] }) {
                 outerRadius={82}
                 paddingAngle={data.length > 1 ? 3 : 0}
                 dataKey="value"
-                stroke="hsl(var(--background))"
+                stroke="var(--card)"
                 strokeWidth={2}
                 cornerRadius={6}
                 isAnimationActive={false}
@@ -317,11 +324,11 @@ const ACTIVITY_META: Record<
   BusinessActivity | "sem_atividade",
   { label: string; color: string; icon: typeof Briefcase }
 > = {
-  servicos: { label: "Serviços", color: "#001d3d", icon: Briefcase },
-  comercio: { label: "Comércio", color: "#f79c04", icon: ShoppingBag },
-  industria: { label: "Indústria", color: "#3f6ea5", icon: Factory },
-  misto: { label: "Misto", color: "#1f9254", icon: Layers },
-  sem_atividade: { label: "—", color: "#94a3b8", icon: Briefcase },
+  servicos: { label: "Serviços", color: "var(--chart-1)", icon: Briefcase },
+  comercio: { label: "Comércio", color: "var(--chart-2)", icon: ShoppingBag },
+  industria: { label: "Indústria", color: "var(--chart-4)", icon: Factory },
+  misto: { label: "Misto", color: "var(--chart-5)", icon: Layers },
+  sem_atividade: { label: "—", color: "var(--muted-foreground)", icon: Briefcase },
 }
 
 function ActivityCard({ clients }: { clients: Client[] }) {
@@ -376,7 +383,7 @@ function ActivityCard({ clients }: { clients: Client[] }) {
                     className="w-full rounded-md transition-all duration-500 group-hover:opacity-90"
                     style={{
                       height: isEmpty ? "4px" : `${Math.max(heightPct, 6)}%`,
-                      background: isEmpty ? "hsl(var(--muted))" : d.color,
+                      background: isEmpty ? "var(--muted)" : d.color,
                     }}
                   />
                 </div>

@@ -869,8 +869,8 @@ export function ReportsPanel({
                   contentStyle={{
                     borderRadius: "8px",
                     fontSize: "12px",
-                    backgroundColor: "hsl(var(--popover))",
-                    border: "1px solid hsl(var(--border))",
+                    backgroundColor: "var(--popover)",
+                    border: "1px solid var(--border)",
                   }}
                 />
                 <Legend wrapperStyle={{ fontSize: "12px" }} iconType="circle" />
