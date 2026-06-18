@@ -29,7 +29,7 @@ import {
 } from "@/components/ui/table"
 import { ResizableTableHead } from "@/components/ui/resizable-table-head"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { StatFilterBar } from "@/components/stat-filter-bar"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -629,52 +629,18 @@ export default function ParcelamentosPage() {
           </div>
         </div>
 
-        <Tabs value={statusFilter} onValueChange={setStatusFilter} className="w-full">
-          <TabsList className="flex w-full overflow-x-auto h-auto [&>button]:shrink-0 sm:grid sm:grid-cols-5">
-            <TabsTrigger value="all" className="flex flex-col gap-1 py-3">
-              <span className="text-sm font-medium">Todos</span>
-              <Badge variant="secondary" className="text-xs">
-                {statusCounts.all}
-              </Badge>
-            </TabsTrigger>
-            <TabsTrigger value="pending" className="flex flex-col gap-1 py-3">
-              <div className="flex items-center gap-1.5">
-                <Clock className="size-3.5" />
-                <span className="text-sm font-medium">Pendentes</span>
-              </div>
-              <Badge variant="secondary" className="text-xs">
-                {statusCounts.pending}
-              </Badge>
-            </TabsTrigger>
-            <TabsTrigger value="in_progress" className="flex flex-col gap-1 py-3">
-              <div className="flex items-center gap-1.5">
-                <PlayCircle className="size-3.5" />
-                <span className="text-sm font-medium">Em Andamento</span>
-              </div>
-              <Badge variant="secondary" className="text-xs bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300">
-                {statusCounts.in_progress}
-              </Badge>
-            </TabsTrigger>
-            <TabsTrigger value="completed" className="flex flex-col gap-1 py-3">
-              <div className="flex items-center gap-1.5">
-                <CheckCircle2 className="size-3.5" />
-                <span className="text-sm font-medium">Concluídos</span>
-              </div>
-              <Badge variant="secondary" className="text-xs bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-300">
-                {statusCounts.completed}
-              </Badge>
-            </TabsTrigger>
-            <TabsTrigger value="overdue" className="flex flex-col gap-1 py-3">
-              <div className="flex items-center gap-1.5">
-                <AlertTriangle className="size-3.5" />
-                <span className="text-sm font-medium">Atrasados</span>
-              </div>
-              <Badge variant="secondary" className="text-xs bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300">
-                {statusCounts.overdue}
-              </Badge>
-            </TabsTrigger>
-          </TabsList>
-        </Tabs>
+        {/* Cartões de status = resumo + filtro (estilo Dashboard). */}
+        <StatFilterBar
+          value={statusFilter || "all"}
+          onChange={setStatusFilter}
+          items={[
+            { value: "all", label: "Todos", count: statusCounts.all, icon: CreditCard, tone: "neutral" },
+            { value: "pending", label: "Pendentes", count: statusCounts.pending, icon: Clock, tone: "warning" },
+            { value: "in_progress", label: "Em Andamento", count: statusCounts.in_progress, icon: PlayCircle, tone: "info" },
+            { value: "completed", label: "Concluídos", count: statusCounts.completed, icon: CheckCircle2, tone: "success" },
+            { value: "overdue", label: "Atrasados", count: statusCounts.overdue, icon: AlertTriangle, tone: "danger" },
+          ]}
+        />
 
         {/* Conteúdo fora de <TabsContent value={dinâmico}> — esse padrão
             travava o clique dos triggers em alguns navegadores (Edge no caso

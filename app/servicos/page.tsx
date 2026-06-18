@@ -12,7 +12,7 @@
 import { useMemo, useRef, useState } from "react"
 import { useUrlState } from "@/hooks/use-url-state"
 import { ServiceList, type ServiceListHandle } from "@/features/services/components/service-list"
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { StatFilterBar } from "@/components/stat-filter-bar"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { PageHeader } from "@/components/page-header"
@@ -96,61 +96,18 @@ export default function ServicosPage() {
           </div>
         </div>
 
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="flex w-full overflow-x-auto h-auto [&>button]:shrink-0 sm:grid sm:grid-cols-5">
-            <TabsTrigger value="all" className="flex flex-col gap-1 py-3">
-              <span className="text-sm font-medium">Todos</span>
-              <Badge variant="secondary" className="text-xs">
-                {services.length}
-              </Badge>
-            </TabsTrigger>
-            <TabsTrigger value="pending" className="flex flex-col gap-1 py-3">
-              <div className="flex items-center gap-1.5">
-                <Clock className="size-3.5" />
-                <span className="text-sm font-medium">Pendentes</span>
-              </div>
-              <Badge variant="secondary" className="text-xs">
-                {pendingServices.length}
-              </Badge>
-            </TabsTrigger>
-            <TabsTrigger value="in_progress" className="flex flex-col gap-1 py-3">
-              <div className="flex items-center gap-1.5">
-                <PlayCircle className="size-3.5" />
-                <span className="text-sm font-medium">Em Andamento</span>
-              </div>
-              <Badge
-                variant="secondary"
-                className="text-xs bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300"
-              >
-                {inProgressServices.length}
-              </Badge>
-            </TabsTrigger>
-            <TabsTrigger value="completed" className="flex flex-col gap-1 py-3">
-              <div className="flex items-center gap-1.5">
-                <CheckCircle2 className="size-3.5" />
-                <span className="text-sm font-medium">Concluídos</span>
-              </div>
-              <Badge
-                variant="secondary"
-                className="text-xs bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-300"
-              >
-                {completedServices.length}
-              </Badge>
-            </TabsTrigger>
-            <TabsTrigger value="overdue" className="flex flex-col gap-1 py-3">
-              <div className="flex items-center gap-1.5">
-                <AlertTriangle className="size-3.5" />
-                <span className="text-sm font-medium">Atrasados</span>
-              </div>
-              <Badge
-                variant="secondary"
-                className="text-xs bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300"
-              >
-                {overdueServices.length}
-              </Badge>
-            </TabsTrigger>
-          </TabsList>
-        </Tabs>
+        {/* Cartões de status = resumo + filtro (estilo Dashboard). */}
+        <StatFilterBar
+          value={activeTab || "all"}
+          onChange={setActiveTab}
+          items={[
+            { value: "all", label: "Todos", count: services.length, icon: Briefcase, tone: "neutral" },
+            { value: "pending", label: "Pendentes", count: pendingServices.length, icon: Clock, tone: "warning" },
+            { value: "in_progress", label: "Em Andamento", count: inProgressServices.length, icon: PlayCircle, tone: "info" },
+            { value: "completed", label: "Concluídos", count: completedServices.length, icon: CheckCircle2, tone: "success" },
+            { value: "overdue", label: "Atrasados", count: overdueServices.length, icon: AlertTriangle, tone: "danger" },
+          ]}
+        />
 
         <div className="mt-6">
           <ServiceList

@@ -5,7 +5,7 @@ import { useUrlState } from "@/hooks/use-url-state"
 import { ObligationList, type ObligationListHandle } from "@/features/obligations/components/obligation-list"
 import { GlobalSearch } from "@/components/global-search"
 import { ExportDialog } from "@/components/export-dialog"
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { StatFilterBar } from "@/components/stat-filter-bar"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { PageHeader } from "@/components/page-header"
@@ -102,68 +102,21 @@ export default function ObligacoesPage() {
             </div>
           </div>
 
-          {/* Tabs renderizam SÓ os triggers — o conteúdo abaixo reage direto
-              ao activeTab. Antes havia um único <TabsContent value={activeTab}>
-              dinâmico, que confundia o Radix Tabs em alguns navegadores e
-              bloqueava o clique nos triggers (bug reportado pelo usuário).
-              Trocar pra renderização fora do <Tabs> elimina o problema. */}
-          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <TabsList className="flex w-full overflow-x-auto h-auto [&>button]:shrink-0 sm:grid sm:grid-cols-5">
-              <TabsTrigger value="all" className="flex flex-col gap-1 py-3">
-                <span className="text-sm font-medium">Todas</span>
-                <Badge variant="secondary" className="text-xs">
-                  {obligations.length}
-                </Badge>
-              </TabsTrigger>
-              <TabsTrigger value="pending" className="flex flex-col gap-1 py-3">
-                <div className="flex items-center gap-1.5">
-                  <Clock className="size-3.5" />
-                  <span className="text-sm font-medium">Pendentes</span>
-                </div>
-                <Badge variant="secondary" className="text-xs">
-                  {pendingObligations.length}
-                </Badge>
-              </TabsTrigger>
-              <TabsTrigger value="in_progress" className="flex flex-col gap-1 py-3">
-                <div className="flex items-center gap-1.5">
-                  <PlayCircle className="size-3.5" />
-                  <span className="text-sm font-medium">Em Andamento</span>
-                </div>
-                <Badge
-                  variant="secondary"
-                  className="text-xs bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300"
-                >
-                  {inProgressObligations.length}
-                </Badge>
-              </TabsTrigger>
-              <TabsTrigger value="completed" className="flex flex-col gap-1 py-3">
-                <div className="flex items-center gap-1.5">
-                  <CheckCircle2 className="size-3.5" />
-                  <span className="text-sm font-medium">Concluídas</span>
-                </div>
-                <Badge
-                  variant="secondary"
-                  className="text-xs bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-300"
-                >
-                  {completedObligations.length}
-                </Badge>
-              </TabsTrigger>
-              <TabsTrigger value="overdue" className="flex flex-col gap-1 py-3">
-                <div className="flex items-center gap-1.5">
-                  <AlertTriangle className="size-3.5" />
-                  <span className="text-sm font-medium">Atrasadas</span>
-                </div>
-                <Badge
-                  variant="secondary"
-                  className="text-xs bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300"
-                >
-                  {overdueObligations.length}
-                </Badge>
-              </TabsTrigger>
-            </TabsList>
-          </Tabs>
+          {/* Cartões de status = resumo + filtro (estilo Dashboard). Clicar
+              filtra a lista; o cartão ativo ganha o accent âmbar da marca. */}
+          <StatFilterBar
+            value={activeTab || "all"}
+            onChange={setActiveTab}
+            items={[
+              { value: "all", label: "Todas", count: obligations.length, icon: FileText, tone: "neutral" },
+              { value: "pending", label: "Pendentes", count: pendingObligations.length, icon: Clock, tone: "warning" },
+              { value: "in_progress", label: "Em Andamento", count: inProgressObligations.length, icon: PlayCircle, tone: "info" },
+              { value: "completed", label: "Concluídas", count: completedObligations.length, icon: CheckCircle2, tone: "success" },
+              { value: "overdue", label: "Atrasadas", count: overdueObligations.length, icon: AlertTriangle, tone: "danger" },
+            ]}
+          />
 
-          <div className="mt-6">
+          <div>
             <ObligationList
               ref={listRef}
               obligations={getFilteredObligations()}
