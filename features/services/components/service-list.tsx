@@ -705,12 +705,12 @@ export const ServiceList = forwardRef<ServiceListHandle, ServiceListProps>(funct
                   aria-label="Selecionar todos"
                 />
               </TableHead>
-              <TableHead className="min-w-0">
+              <ResizableTableHead defaultWidth={240} storageKey="servicos-name">
                 <Button variant="ghost" size="sm" onClick={() => toggleSort("name")} className="-ml-3">
                   Serviço
                   <ArrowUpDown className="ml-2 size-3" />
                 </Button>
-              </TableHead>
+              </ResizableTableHead>
               <ResizableTableHead defaultWidth={200} storageKey="servicos-client">
                 <Button variant="ghost" size="sm" onClick={() => toggleSort("client")} className="-ml-3">
                   Cliente

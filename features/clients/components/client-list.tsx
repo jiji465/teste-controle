@@ -579,12 +579,12 @@ export function ClientList({ clients, onUpdate }: ClientListProps) {
                   aria-label="Selecionar todas"
                 />
               </TableHead>
-              <TableHead className="min-w-0">
+              <ResizableTableHead defaultWidth={260} storageKey="clientes-name">
                 <Button variant="ghost" size="sm" onClick={() => toggleSort("name")} className="-ml-3">
                   Nome / Razão Social
                   <ArrowUpDown className="ml-2 size-3" />
                 </Button>
-              </TableHead>
+              </ResizableTableHead>
               <ResizableTableHead defaultWidth={170} storageKey="clientes-cnpj">
                 <Button variant="ghost" size="sm" onClick={() => toggleSort("cnpj")} className="-ml-3">
                   CNPJ

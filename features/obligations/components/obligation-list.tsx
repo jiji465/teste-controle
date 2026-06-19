@@ -770,12 +770,12 @@ export const ObligationList = forwardRef<ObligationListHandle, ObligationListPro
                   aria-label="Selecionar todas"
                 />
               </TableHead>
-              <TableHead className="min-w-0">
+              <ResizableTableHead defaultWidth={240} storageKey="obrigacoes-name">
                 <Button variant="ghost" size="sm" onClick={() => toggleSort("name")} className="-ml-3">
                   Obrigação
                   <ArrowUpDown className="ml-2 size-3" />
                 </Button>
-              </TableHead>
+              </ResizableTableHead>
               <ResizableTableHead defaultWidth={200} storageKey="obrigacoes-client">
                 <Button variant="ghost" size="sm" onClick={() => toggleSort("client")} className="-ml-3">
                   Cliente

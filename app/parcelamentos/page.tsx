@@ -884,11 +884,11 @@ export default function ParcelamentosPage() {
                         aria-label="Selecionar todos"
                       />
                     </TableHead>
-                    <TableHead className="min-w-0">
+                    <ResizableTableHead defaultWidth={240} storageKey="parc-name">
                       <Button variant="ghost" size="sm" onClick={() => toggleSort("name")} className="-ml-3">
                         Parcelamento <ArrowUpDown className="ml-2 size-3" />
                       </Button>
-                    </TableHead>
+                    </ResizableTableHead>
                     <ResizableTableHead defaultWidth={190} storageKey="parc-client">
                       <Button variant="ghost" size="sm" onClick={() => toggleSort("client")} className="-ml-3">
                         Cliente <ArrowUpDown className="ml-2 size-3" />

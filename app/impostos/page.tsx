@@ -790,11 +790,11 @@ export default function ImpostosPage() {
                             aria-label="Selecionar todos"
                           />
                         </TableHead>
-                        <TableHead className="min-w-0">
+                        <ResizableTableHead defaultWidth={220} storageKey="impostos-name">
                           <Button variant="ghost" size="sm" onClick={() => toggleSort("name")} className="-ml-3">
                             Imposto <ArrowUpDown className="ml-2 size-3" />
                           </Button>
-                        </TableHead>
+                        </ResizableTableHead>
                         <ResizableTableHead defaultWidth={200} storageKey="impostos-client">
                           <Button variant="ghost" size="sm" onClick={() => toggleSort("client")} className="-ml-3">
                             Cliente <ArrowUpDown className="ml-2 size-3" />
