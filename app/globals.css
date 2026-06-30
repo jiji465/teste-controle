@@ -308,16 +308,20 @@
     padding: 0 !important;
     max-width: 100% !important;
   }
-  /* Cards sem sombra/gradient na impressão */
-  .glass-card, [class*="bg-gradient"], [class*="shadow"] {
+  /* Cards sem sombra/gradient na impressão — EXCETO o Relatório Executivo
+     (#sete-report), que replica o gerador original e tem estilo próprio. */
+  .glass-card:not(#sete-report *),
+  [class*="bg-gradient"]:not(#sete-report *),
+  [class*="shadow"]:not(#sete-report *) {
     box-shadow: none !important;
     background: white !important;
   }
-  /* Tabelas: força borda visível */
-  table {
+  /* Tabelas: força borda visível — EXCETO no Relatório Executivo (#sete-report),
+     que replica o gerador original (template-sete) e tem estilo próprio. */
+  table:not(#sete-report table) {
     border-collapse: collapse !important;
   }
-  table th, table td {
+  table:not(#sete-report table) th, table:not(#sete-report table) td {
     border: 1px solid #ddd !important;
   }
   /* Quebra de página entre cards grandes */
