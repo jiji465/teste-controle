@@ -147,13 +147,16 @@ const FatorRDashboard = ({ clientData, isPrint = false }) => {
     );
 };
 
-const Section = ({ title, icon: Icon, defaultOpen = true, children }) => {
+const Section = ({ title, icon: Icon, defaultOpen = true, summary, children }) => {
     const [open, setOpen] = React.useState(defaultOpen);
     return (
         <div className="col-span-2 border border-slate-200 rounded-xl overflow-hidden">
-            <button type="button" onClick={() => setOpen(o => !o)} className="w-full flex items-center justify-between px-4 py-2.5 bg-slate-50 hover:bg-slate-100 transition-colors">
-                <span className="text-xs font-bold text-navy flex items-center gap-2">{Icon ? <Icon className="w-4 h-4" /> : null}{title}</span>
-                <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform ${open ? 'rotate-180' : ''}`} />
+            <button type="button" onClick={() => setOpen(o => !o)} className="w-full flex items-center justify-between gap-3 px-4 py-2.5 bg-slate-50 hover:bg-slate-100 transition-colors text-left">
+                <span className="text-xs font-bold text-navy flex items-center gap-2 shrink-0">{Icon ? <Icon className="w-4 h-4" /> : null}{title}</span>
+                <span className="flex items-center gap-2 min-w-0">
+                    {!open && summary ? <span className="text-[11px] text-slate-500 truncate max-w-[300px]">{summary}</span> : null}
+                    <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform shrink-0 ${open ? 'rotate-180' : ''}`} />
+                </span>
             </button>
             {open ? <div className="p-4">{children}</div> : null}
         </div>
@@ -194,9 +197,14 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
                 competence: d.compMonth ? (MONTHS[parseInt(d.compMonth) - 1] + '/' + d.compYear) : clientData.competence,
                 revenue: d.rpa || clientData.revenue,
                 rbt12: d.rbt12 || clientData.rbt12,
+                rbt12p: d.rbt12p || '',
                 folha12m: d.folha12m || clientData.folha12m,
                 municipio: d.municipio || clientData.municipio,
                 evolucao: d.evolucao || clientData.evolucao || null,
+                // PGDAS-D é a fonte da verdade: DAS declarado e a segregação por tributo
+                dasOfficial: d.das || '',
+                repartManual: d.repart || null,
+                fatorRInfo: d.fatorR || '',
             };
             delete newData.revenueRetained; delete newData.revenueNonRetained;
             const dueDate = getDueDate(d.compMonth, d.compYear, 'DAS');
@@ -437,6 +445,9 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
                     </div>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
+                    {/* T1 — Identificação & competência */}
+                    <Section title="Identificação & competência" icon={Building2} defaultOpen={true} summary={`${clientData.clientName || 'empresa'} · ${clientData.competenceShort || '—'} · ${clientData.regime}`}>
+                        <div className="grid grid-cols-2 gap-4">
                     <div>
                         <label className="field-label">Nome / Razão Social <span className="text-red-400">*</span></label>
                         <input className={`field-input ${validationErrors.clientName ? 'field-error' : ''}`} value={clientData.clientName}
@@ -485,7 +496,7 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
                             onChange={e => {
                                 const nr = e.target.value;
                                 const atv = clientData.atividade || 'Serviços';
-                                
+
                                 let updatedData = { ...clientData, regime: nr, atividade: atv };
                                 let newTaxes = [];
 
@@ -515,7 +526,7 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
                             <option value="MEI">MEI</option>
                         </select>
                     </div>
-                    
+
                     {(clientData.regime === 'Simples Nacional' || clientData.regime === 'MEI' || clientData.regime === 'Lucro Presumido' || clientData.regime === 'Lucro Real') && (
                         <div>
                             <label className="field-label">Atividade</label>
@@ -545,98 +556,102 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
                             </select>
                         </div>
                     )}
-                    
-                    {clientData.regime === 'Simples Nacional' && (
-                        <>
-                            <div>
-                                <label className="field-label">Anexo do Simples</label>
-                                <select className="field-input" value={clientData.anexo || ''} onChange={e => updateClient('anexo', e.target.value)}>
-                                    <option value="">Selecione o Anexo</option>
-                                    <option value="Anexo I">Anexo I — Comércio</option>
-                                    <option value="Anexo II">Anexo II — Indústria</option>
-                                    <option value="Anexo III">Anexo III — Serviços (geral)</option>
-                                    <option value="Anexo IV">Anexo IV — Serviços (c/ CPP à parte)</option>
-                                    <option value="Anexo V">Anexo V — Serviços (fator R)</option>
-                                </select>
-                            </div>
-                            <div>
-                                <label className="field-label">Receita Bruta 12 meses — RBT12 (R$)</label>
-                                <input className="field-input" type="text" value={clientData.rbt12 || ''}
-                                    onChange={e => updateClient('rbt12', parseBRL(e.target.value))} placeholder="0,00" />
-                            </div>
-                            
-                            {(clientData.anexo === 'Anexo V' || clientData.anexo === 'Anexo III') && (
+
+                            {clientData.regime === 'Simples Nacional' && (
                                 <div>
-                                    <label className="field-label">Folha + Pró-labore (12 meses) — p/ Fator R</label>
-                                    <input className="field-input" type="text" value={clientData.folha12m !== undefined ? clientData.folha12m : (clientData.folha || '')}
-                                        onChange={e => { updateClient('folha12m', parseBRL(e.target.value)); updateClient('folha', undefined); }} placeholder="0,00" />
+                                    <label className="field-label">Anexo do Simples</label>
+                                    <select className="field-input" value={clientData.anexo || ''} onChange={e => updateClient('anexo', e.target.value)}>
+                                        <option value="">Selecione o Anexo</option>
+                                        <option value="Anexo I">Anexo I — Comércio</option>
+                                        <option value="Anexo II">Anexo II — Indústria</option>
+                                        <option value="Anexo III">Anexo III — Serviços (geral)</option>
+                                        <option value="Anexo IV">Anexo IV — Serviços (c/ CPP à parte)</option>
+                                        <option value="Anexo V">Anexo V — Serviços (fator R)</option>
+                                    </select>
                                 </div>
                             )}
+                        </div>
+                    </Section>
 
-                            {(clientData.anexo === 'Anexo V' || clientData.anexo === 'Anexo III') && (
-                                <label className="col-span-2 flex items-start gap-2 cursor-pointer select-none bg-white p-3 rounded-lg border border-blue-200">
-                                    <input type="checkbox" className="w-4 h-4 mt-0.5 accent-blue-700"
-                                        checked={isSujeitoFatorR(clientData, parseNumBR(clientData.folha12m !== undefined ? clientData.folha12m : clientData.folha))}
-                                        onChange={e => updateClient('sujeitoFatorR', e.target.checked)} />
-                                    <span className="text-xs font-bold text-navy leading-relaxed">Atividade sujeita ao Fator R
-                                        <span className="font-medium text-slate-500"> — aplica a migração Anexo III ↔ V conforme a folha atinja ou não 28% do RBT12 (LC 123, §5º-I/J: fisioterapia, medicina, engenharia etc.). Desmarque para atividades que são Anexo III por natureza (ex.: contabilidade, escolas), que não migram para o Anexo V.</span>
-                                    </span>
-                                </label>
-                            )}
-
-                            {clientData.anexo === 'Anexo IV' && (
+                    {/* T2 — Receita — Simples/MEI */}
+                    {(clientData.regime === 'Simples Nacional' || clientData.regime === 'MEI') && (
+                        <Section title="Receita — Simples/MEI" icon={DollarSign} defaultOpen={true} summary={`${formatCurrency(clientData.revenue)}`}>
+                            <div className="grid grid-cols-2 gap-4">
                                 <div>
-                                    <label className="field-label">Folha de Salários Mensal (R$)</label>
-                                    <input className="field-input" type="text" value={clientData.folhaMensal !== undefined ? clientData.folhaMensal : (clientData.folha || '')}
-                                        onChange={e => { updateClient('folhaMensal', parseBRL(e.target.value)); updateClient('folha', undefined); }} placeholder="0,00" />
+                                    <label className="field-label">Faturamento Bruto (R$) <span className="text-red-400">*</span></label>
+                                    <input className={`field-input ${validationErrors.revenue ? 'field-error' : ''}`} type="text" value={clientData.revenue || ''}
+                                        onChange={e => { updateClient('revenue', parseBRL(e.target.value)); setValidationErrors(prev => ({ ...prev, revenue: undefined })); }}
+                                        placeholder="0,00" />
+                                    {validationErrors.revenue && <p className="field-error-msg">{validationErrors.revenue}</p>}
                                 </div>
-                            )}
-                            
-                            <div>
-                                <label className="field-label">Faturamento Bruto (R$) <span className="text-red-400">*</span></label>
-                                <input className={`field-input ${validationErrors.revenue ? 'field-error' : ''}`} type="text" value={clientData.revenue || ''}
-                                    onChange={e => { updateClient('revenue', parseBRL(e.target.value)); setValidationErrors(prev => ({ ...prev, revenue: undefined })); }}
-                                    placeholder="0,00" />
-                                {validationErrors.revenue && <p className="field-error-msg">{validationErrors.revenue}</p>}
+                                <div>
+                                    <label className="field-label">Receita Bruta 12 meses — RBT12 (R$)</label>
+                                    <input className="field-input" type="text" value={clientData.rbt12 || ''}
+                                        onChange={e => updateClient('rbt12', parseBRL(e.target.value))} placeholder="0,00" />
+                                </div>
+                                <div>
+                                    <label className="field-label">RBT12 proporcional — RBT12p (R$) <span className="text-slate-400">(opcional)</span></label>
+                                    <input className="field-input" type="text" value={clientData.rbt12p || ''}
+                                        onChange={e => updateClient('rbt12p', parseBRL(e.target.value))} placeholder="0,00" />
+                                </div>
                             </div>
-                        </>
-                    )}
-                    
-                    {(clientData.regime === 'Lucro Presumido' || clientData.regime === 'Lucro Real') && (
-                        <div>
-                            <label className="field-label">Folha de Salários Mensal (R$)</label>
-                            <input className="field-input" type="text" value={clientData.folhaMensal !== undefined ? clientData.folhaMensal : (clientData.folha || '')}
-                                onChange={e => { updateClient('folhaMensal', parseBRL(e.target.value)); updateClient('folha', undefined); }} placeholder="0,00" />
-                        </div>
+
+                            {clientData.repartManual && (() => {
+                                const r = clientData.repartManual;
+                                const items = [['IRPJ', r.IRPJ], ['CSLL', r.CSLL], ['COFINS', r.COFINS], ['PIS', r.PIS], ['INSS/CPP', r.CPP], ['ICMS', r.ICMS], ['ISS', r.ISS]].filter(([, v]) => v > 0);
+                                return (
+                                    <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50/50 p-4">
+                                        <p className="text-xs font-bold text-navy mb-2 flex items-center gap-2"><Receipt className="w-4 h-4" /> Segregação do DAS — importada do PGDAS-D</p>
+                                        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-[11px]">
+                                            {items.map(([k, v]) => (<span key={k} className="flex justify-between gap-2 bg-white rounded px-2 py-1 border border-slate-100"><span className="text-slate-500">{k}</span><b className="text-slate-800 tabular-nums">{formatCurrency(v)}</b></span>))}
+                                            <span className="flex justify-between gap-2 bg-navy text-white rounded px-2 py-1"><span>Total DAS</span><b className="tabular-nums">{formatCurrency(r.total)}</b></span>
+                                        </div>
+                                        <p className="text-[10px] text-slate-400 mt-1.5">Repartição exata declarada no PGDAS-D. O DAS a pagar usa este valor total (não recalculado).</p>
+                                    </div>
+                                );
+                            })()}
+
+                            {parseNumBR(clientData.rbt12) > 0 && clientData.anexo && !showFatorR && clientData.regime === 'Simples Nacional' && (
+                                (() => {
+                                    const rbt12 = parseNumBR(clientData.rbt12);
+                                    const folha12m = parseNumBR(clientData.folha12m !== undefined ? clientData.folha12m : clientData.folha);
+                                    const fR = calcFatorR(folha12m, rbt12);
+                                    const anexoEf = getAnexoEfetivo(clientData.anexo, fR, isSujeitoFatorR(clientData, folha12m));
+                                    const res = calcAliquotaEfetivaSN(rbt12, anexoEf);
+                                    return (
+                                        <div className="mt-3 bg-blue-50 border border-blue-200 rounded-xl p-4">
+                                            <p className="text-xs font-bold text-navy mb-2 flex items-center gap-2">
+                                                <TrendingUp className="w-4 h-4" /> Alíquota Efetiva Calculada
+                                            </p>
+                                            <div className="grid grid-cols-4 gap-3 text-center">
+                                                <div>
+                                                    <p className="text-[10px] text-slate-500 font-bold uppercase">Anexo Efetivo</p>
+                                                    <p className="text-sm font-bold text-navy">{anexoEf}</p>
+                                                </div>
+                                                <div>
+                                                    <p className="text-[10px] text-slate-500 font-bold uppercase">Faixa</p>
+                                                    <p className="text-sm font-bold text-navy">{res.faixa}ª</p>
+                                                </div>
+                                                <div>
+                                                    <p className="text-[10px] text-slate-500 font-bold uppercase">Alíq. Nominal</p>
+                                                    <p className="text-sm font-bold text-slate-700">{res.nominal.toFixed(2).replace('.', ',')}%</p>
+                                                </div>
+                                                <div>
+                                                    <p className="text-[10px] text-slate-500 font-bold uppercase">Alíq. Efetiva</p>
+                                                    <p className="text-lg font-extrabold text-emerald-700">{res.rate.toFixed(2).replace('.', ',')}%</p>
+                                                </div>
+                                            </div>
+                                            <p className="text-[10px] text-slate-400 mt-2 text-center">Dedução da faixa: {formatCurrency(res.deduction)} • RBT12: {formatCurrency(rbt12)}</p>
+                                        </div>
+                                    );
+                                })()
+                            )}
+                        </Section>
                     )}
 
-                    {((clientData.regime === 'Lucro Presumido' || clientData.regime === 'Lucro Real') || (clientData.regime === 'Simples Nacional' && clientData.anexo === 'Anexo IV')) && (
-                        <div>
-                            <label className="field-label">FAP (multiplicador do RAT)</label>
-                            <input className="field-input" type="text" inputMode="decimal" value={clientData.fap ?? ''}
-                                onChange={e => updateClient('fap', e.target.value.replace(/[^\d,]/g, ''))} placeholder="1,0000 (deixe vazio = 1)" />
-                        </div>
-                    )}
-                    
-                    <div className="col-span-2">
-                        <div className="flex items-center justify-between mb-1.5">
-                            <label className="field-label !mb-0">Pró-labore dos sócios (R$)</label>
-                            <button type="button" onClick={addSocio} className="text-[11px] font-bold text-navy hover:underline flex items-center gap-1"><Plus className="w-3 h-3" /> Adicionar sócio</button>
-                        </div>
-                        <div className="space-y-2">
-                            {socios.map((s, i) => (
-                                <div key={i} className="flex items-center gap-2">
-                                    <input className="field-input flex-1" type="text" value={s.nome || ''} onChange={e => updSocio(i, 'nome', e.target.value)} placeholder={`Sócio ${i + 1} — nome (opcional)`} />
-                                    <input className="field-input w-36" type="text" inputMode="decimal" value={s.valor || ''} onChange={e => updSocio(i, 'valor', parseBRL(e.target.value))} placeholder="0,00" />
-                                    {socios.length > 1 && <button type="button" onClick={() => rmSocio(i)} aria-label="Remover sócio" className="text-slate-300 hover:text-red-500 transition-colors p-1"><Trash2 className="w-4 h-4" /></button>}
-                                </div>
-                            ))}
-                        </div>
-                        <p className="text-[10px] text-slate-400 mt-1.5">INSS 11% e IRRF calculados por sócio (teto e tabela progressiva individuais).</p>
-                    </div>
-                    
+                    {/* T3 — Receita — Serviços */}
                     {(clientData.regime === 'Lucro Presumido' || clientData.regime === 'Lucro Real') && (clientData.atividade || 'Serviços') === 'Serviços' && (
-                        <Section title="Faturamento & retenções" icon={DollarSign}>
+                        <Section title="Receita — Serviços" icon={DollarSign} defaultOpen={true} summary={`${formatCurrency(totalRevenue)}`}>
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
                                     <label className="field-label">Faturamento COM Retenção de Impostos (R$)</label>
@@ -674,8 +689,9 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
                         </Section>
                     )}
 
+                    {/* T4 — Receita & ICMS — Comércio */}
                     {(clientData.regime === 'Lucro Presumido' || clientData.regime === 'Lucro Real') && (clientData.atividade === 'Comércio' || clientData.atividade === 'Indústria') && (
-                        <Section title="ICMS — comércio (entradas × saídas, ST, SPED, interestadual)" icon={DollarSign}>
+                        <Section title="Receita & ICMS — Comércio" icon={DollarSign} defaultOpen={false} summary={`Vendas ${formatCurrency(totalRevenue)}`}>
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
                                     <label className="field-label">Total de Saídas — Vendas (R$) <span className="text-red-400">*</span></label>
@@ -792,24 +808,87 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
                         </Section>
                     )}
 
-                    {clientData.regime === 'Lucro Real' && (
-                        <Section title="PIS / COFINS — Lucro Real (não-cumulativo)" icon={BadgePercent}>
+                    {/* T5 — Folha, encargos & sócios */}
+                    {clientData.regime !== 'MEI' && (
+                        <Section title="Folha, encargos & sócios" icon={Scale} defaultOpen={false} summary={`PL ${formatCurrency(clientData.proLabore)}`}>
                             <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label className="field-label">PIS apurado (R$) — líquido de créditos</label>
-                                    <input className="field-input" type="text" value={clientData.pisApurado || ''} onChange={e => updateClient('pisApurado', parseBRL(e.target.value))} placeholder="débito 1,65% − créditos" />
-                                </div>
-                                <div>
-                                    <label className="field-label">COFINS apurado (R$) — líquido de créditos</label>
-                                    <input className="field-input" type="text" value={clientData.cofinsApurado || ''} onChange={e => updateClient('cofinsApurado', parseBRL(e.target.value))} placeholder="débito 7,6% − créditos" />
+                                {(clientData.regime === 'Lucro Presumido' || clientData.regime === 'Lucro Real') && (
+                                    <div>
+                                        <label className="field-label">Folha de Salários Mensal (R$)</label>
+                                        <input className="field-input" type="text" value={clientData.folhaMensal !== undefined ? clientData.folhaMensal : (clientData.folha || '')}
+                                            onChange={e => { updateClient('folhaMensal', parseBRL(e.target.value)); updateClient('folha', undefined); }} placeholder="0,00" />
+                                    </div>
+                                )}
+
+                                {clientData.regime === 'Simples Nacional' && clientData.anexo === 'Anexo IV' && (
+                                    <div>
+                                        <label className="field-label">Folha de Salários Mensal (R$)</label>
+                                        <input className="field-input" type="text" value={clientData.folhaMensal !== undefined ? clientData.folhaMensal : (clientData.folha || '')}
+                                            onChange={e => { updateClient('folhaMensal', parseBRL(e.target.value)); updateClient('folha', undefined); }} placeholder="0,00" />
+                                    </div>
+                                )}
+
+                                {clientData.regime === 'Simples Nacional' && (clientData.anexo === 'Anexo V' || clientData.anexo === 'Anexo III') && (
+                                    <div>
+                                        <label className="field-label">Folha + Pró-labore (12 meses) — p/ Fator R</label>
+                                        <input className="field-input" type="text" value={clientData.folha12m !== undefined ? clientData.folha12m : (clientData.folha || '')}
+                                            onChange={e => { updateClient('folha12m', parseBRL(e.target.value)); updateClient('folha', undefined); }} placeholder="0,00" />
+                                    </div>
+                                )}
+
+                                {clientData.regime === 'Simples Nacional' && (clientData.anexo === 'Anexo V' || clientData.anexo === 'Anexo III') && (
+                                    <label className="col-span-2 flex items-start gap-2 cursor-pointer select-none bg-white p-3 rounded-lg border border-blue-200">
+                                        <input type="checkbox" className="w-4 h-4 mt-0.5 accent-blue-700"
+                                            checked={isSujeitoFatorR(clientData, parseNumBR(clientData.folha12m !== undefined ? clientData.folha12m : clientData.folha))}
+                                            onChange={e => updateClient('sujeitoFatorR', e.target.checked)} />
+                                        <span className="text-xs font-bold text-navy leading-relaxed">Atividade sujeita ao Fator R
+                                            <span className="font-medium text-slate-500"> — aplica a migração Anexo III ↔ V conforme a folha atinja ou não 28% do RBT12 (LC 123, §5º-I/J: fisioterapia, medicina, engenharia etc.). Desmarque para atividades que são Anexo III por natureza (ex.: contabilidade, escolas), que não migram para o Anexo V.</span>
+                                        </span>
+                                    </label>
+                                )}
+
+                                {((clientData.regime === 'Lucro Presumido' || clientData.regime === 'Lucro Real') || (clientData.regime === 'Simples Nacional' && clientData.anexo === 'Anexo IV')) && (
+                                    <div>
+                                        <label className="field-label">FAP (multiplicador do RAT)</label>
+                                        <input className="field-input" type="text" inputMode="decimal" value={clientData.fap ?? ''}
+                                            onChange={e => updateClient('fap', e.target.value.replace(/[^\d,]/g, ''))} placeholder="1,0000 (deixe vazio = 1)" />
+                                    </div>
+                                )}
+
+                                <div className="col-span-2">
+                                    <div className="flex items-center justify-between mb-1.5">
+                                        <label className="field-label !mb-0">Pró-labore dos sócios (R$)</label>
+                                        <button type="button" onClick={addSocio} className="text-[11px] font-bold text-navy hover:underline flex items-center gap-1"><Plus className="w-3 h-3" /> Adicionar sócio</button>
+                                    </div>
+                                    <div className="space-y-2">
+                                        {socios.map((s, i) => (
+                                            <div key={i} className="flex items-center gap-2">
+                                                <input className="field-input flex-1" type="text" value={s.nome || ''} onChange={e => updSocio(i, 'nome', e.target.value)} placeholder={`Sócio ${i + 1} — nome (opcional)`} />
+                                                <input className="field-input w-36" type="text" inputMode="decimal" value={s.valor || ''} onChange={e => updSocio(i, 'valor', parseBRL(e.target.value))} placeholder="0,00" />
+                                                {socios.length > 1 && <button type="button" onClick={() => rmSocio(i)} aria-label="Remover sócio" className="text-slate-300 hover:text-red-500 transition-colors p-1"><Trash2 className="w-4 h-4" /></button>}
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <p className="text-[10px] text-slate-400 mt-1.5">INSS 11% e IRRF calculados por sócio (teto e tabela progressiva individuais).</p>
                                 </div>
                             </div>
-                            <p className="text-[10px] text-slate-400 mt-1.5">No Lucro Real, PIS/COFINS é não-cumulativo (1,65% / 7,6%) com créditos. Informe o valor apurado — prevalece sobre as linhas PIS e COFINS.</p>
                         </Section>
                     )}
 
+                    {/* T6 — Fator R */}
+                    {showFatorR && (<Section title="Fator R" icon={Scale} defaultOpen={false}><div className="col-span-2"><FatorRDashboard clientData={clientData} isPrint={false} /></div>
+                        <label className="col-span-2 flex items-start gap-2 cursor-pointer select-none bg-white p-3 rounded-lg border border-emerald-200 mt-3">
+                            <input type="checkbox" className="w-4 h-4 mt-0.5 accent-emerald-600" checked={!!clientData.mostrarEconomiaFatorR}
+                                onChange={e => updateClient('mostrarEconomiaFatorR', e.target.checked)} />
+                            <span className="text-xs font-bold text-navy leading-relaxed">Mostrar economia do Fator R no relatório
+                                <span className="font-medium text-slate-500"> — exibe o comparativo Anexo III × Anexo V como "economia gerada". Marque só quando a atividade realmente depende do Fator R, e não para atividades que já são Anexo III por natureza (ex.: certos serviços de saúde).</span>
+                            </span>
+                        </label>
+                    </Section>)}
+
+                    {/* T7 — IRPJ / CSLL & equiparação */}
                     {(clientData.regime === 'Lucro Presumido' || clientData.regime === 'Lucro Real') && (
-                        <Section title="IRPJ / CSLL & equiparação" icon={Landmark}>
+                        <Section title="IRPJ / CSLL & equiparação" icon={Landmark} defaultOpen={false}>
                             <div className="grid grid-cols-2 gap-4 bg-slate-50 p-4 rounded-xl border border-slate-200">
                                 <div>
                                     <label className="field-label">Forma de Apuração</label>
@@ -870,54 +949,24 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
                         </Section>
                     )}
 
-                    {showFatorR && (<Section title="Análise Fator R" icon={Scale} defaultOpen={false}><div className="col-span-2"><FatorRDashboard clientData={clientData} isPrint={false} /></div></Section>)}
-
-                    {showFatorR && (
-                        <label className="col-span-2 flex items-start gap-2 cursor-pointer select-none bg-white p-3 rounded-lg border border-emerald-200">
-                            <input type="checkbox" className="w-4 h-4 mt-0.5 accent-emerald-600" checked={!!clientData.mostrarEconomiaFatorR}
-                                onChange={e => updateClient('mostrarEconomiaFatorR', e.target.checked)} />
-                            <span className="text-xs font-bold text-navy leading-relaxed">Mostrar economia do Fator R no relatório
-                                <span className="font-medium text-slate-500"> — exibe o comparativo Anexo III × Anexo V como "economia gerada". Marque só quando a atividade realmente depende do Fator R, e não para atividades que já são Anexo III por natureza (ex.: certos serviços de saúde).</span>
-                            </span>
-                        </label>
-                    )}
-
-                    {parseNumBR(clientData.rbt12) > 0 && clientData.anexo && !showFatorR && clientData.regime === 'Simples Nacional' && (
-                        (() => {
-                            const rbt12 = parseNumBR(clientData.rbt12);
-                            const folha12m = parseNumBR(clientData.folha12m !== undefined ? clientData.folha12m : clientData.folha);
-                            const fR = calcFatorR(folha12m, rbt12);
-                            const anexoEf = getAnexoEfetivo(clientData.anexo, fR, isSujeitoFatorR(clientData, folha12m));
-                            const res = calcAliquotaEfetivaSN(rbt12, anexoEf);
-                            return (
-                                <div className="col-span-2 bg-blue-50 border border-blue-200 rounded-xl p-4 mt-2">
-                                    <p className="text-xs font-bold text-navy mb-2 flex items-center gap-2">
-                                        <TrendingUp className="w-4 h-4" /> Alíquota Efetiva Calculada
-                                    </p>
-                                    <div className="grid grid-cols-4 gap-3 text-center">
-                                        <div>
-                                            <p className="text-[10px] text-slate-500 font-bold uppercase">Anexo Efetivo</p>
-                                            <p className="text-sm font-bold text-navy">{anexoEf}</p>
-                                        </div>
-                                        <div>
-                                            <p className="text-[10px] text-slate-500 font-bold uppercase">Faixa</p>
-                                            <p className="text-sm font-bold text-navy">{res.faixa}ª</p>
-                                        </div>
-                                        <div>
-                                            <p className="text-[10px] text-slate-500 font-bold uppercase">Alíq. Nominal</p>
-                                            <p className="text-sm font-bold text-slate-700">{res.nominal.toFixed(2).replace('.', ',')}%</p>
-                                        </div>
-                                        <div>
-                                            <p className="text-[10px] text-slate-500 font-bold uppercase">Alíq. Efetiva</p>
-                                            <p className="text-lg font-extrabold text-emerald-700">{res.rate.toFixed(2).replace('.', ',')}%</p>
-                                        </div>
-                                    </div>
-                                    <p className="text-[10px] text-slate-400 mt-2 text-center">Dedução da faixa: {formatCurrency(res.deduction)} • RBT12: {formatCurrency(rbt12)}</p>
+                    {/* T8 — PIS / COFINS — Lucro Real */}
+                    {clientData.regime === 'Lucro Real' && (
+                        <Section title="PIS / COFINS — Lucro Real" icon={BadgePercent} defaultOpen={false}>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="field-label">PIS apurado (R$) — líquido de créditos</label>
+                                    <input className="field-input" type="text" value={clientData.pisApurado || ''} onChange={e => updateClient('pisApurado', parseBRL(e.target.value))} placeholder="débito 1,65% − créditos" />
                                 </div>
-                            );
-                        })()
+                                <div>
+                                    <label className="field-label">COFINS apurado (R$) — líquido de créditos</label>
+                                    <input className="field-input" type="text" value={clientData.cofinsApurado || ''} onChange={e => updateClient('cofinsApurado', parseBRL(e.target.value))} placeholder="débito 7,6% − créditos" />
+                                </div>
+                            </div>
+                            <p className="text-[10px] text-slate-400 mt-1.5">No Lucro Real, PIS/COFINS é não-cumulativo (1,65% / 7,6%) com créditos. Informe o valor apurado — prevalece sobre as linhas PIS e COFINS.</p>
+                        </Section>
                     )}
 
+                    {/* T9 — Faturamento dos últimos 12 meses */}
                     {(() => {
                         const compM = parseInt(clientData.compMonth || (clientData.competenceShort ? clientData.competenceShort.split('/')[0] : ''), 10);
                         const compY = parseInt(clientData.compYear || (clientData.competenceShort ? clientData.competenceShort.split('/')[1] : ''), 10);
@@ -927,11 +976,11 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
                         const win = [];
                         if (hasComp) { for (let k = 11; k >= 0; k--) { let mm = compM - k, yy = compY; while (mm <= 0) { mm += 12; yy--; } const key = String(mm).padStart(2, '0') + '/' + yy; win.push({ ym: key, mm, yy, receita: exist[key] || 0 }); } }
                         const soma = win.reduce((s, e) => s + e.receita, 0);
+                        const filled = win.filter(e => e.receita > 0).length;
                         const setEv = (ym, raw) => { const val = parseNumBR(formatInputBRL(raw)); updateClient('evolucao', win.map(e => ({ ym: e.ym, receita: e.ym === ym ? val : e.receita }))); };
                         return (
-                            <div className="col-span-2 border-t border-slate-100 pt-4 mt-2">
+                            <Section title="Faturamento dos últimos 12 meses" icon={TrendingUp} defaultOpen={false} summary={`${filled} mês(es) preenchido(s)`}>
                                 <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
-                                    <p className="text-xs font-bold text-navy flex items-center gap-2"><TrendingUp className="w-4 h-4" /> Faturamento dos últimos 12 meses</p>
                                     {hasComp && (
                                         <div className="flex items-center gap-2 text-[11px]">
                                             <span className="text-slate-500">Soma (RBT12): <strong className="text-navy">{formatCurrency(soma)}</strong></span>
@@ -952,7 +1001,7 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
                                     </div>
                                 )}
                                 <p className="text-[9px] text-slate-400 mt-2">Alimenta o gráfico de evolução do relatório. É preenchido automaticamente ao importar o PGDAS-D; aqui você pode digitar/editar manualmente.</p>
-                            </div>
+                            </Section>
                         );
                     })()}
                 </div>

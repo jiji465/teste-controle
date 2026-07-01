@@ -331,8 +331,12 @@ export function parsePGDASD(T) {
     const comp = g(/Per[ií]odo\s+de\s+Apura[çc][ãa]o:\s*\d{2}\/(\d{2})\/(\d{4})/i);
     const rpa = g(/RPA\)[\s\S]*?Compet[êe]ncia\s*([\d.]+,\d{2})/i);
     const rbt12 = g(/\(RBT12\)[^\d]*?([\d.]+,\d{2})/);
+    const rbt12p = g(/\(RBT12p\)[^\d]*?([\d.]+,\d{2})/);
     const folha = g(/Total\s+de\s+Folhas\s+de\s+Sal[áa]rios\s+Anteriores[\s\S]*?R\$\s*([\d.]+,\d{2})/i);
-    const fator = g(/Fator\s+r\s*=\s*([\d,]+)\s*[-–—]\s*(Anexo\s+[IVX]+)/i);
+    const anexoSuj = g(/Sujeitos?\s+ao\s+Anexo\s+([IVX]+)/i);
+    const fator = g(/Fator\s+r\s*=\s*(N[ãa]o\s+se\s+aplica|[\d,]+)(?:\s*[-–—]\s*(Anexo\s+[IVX]+))?/i);
+    // Repartição por tributo (segregação): IRPJ CSLL COFINS PIS/Pasep INSS/CPP ICMS IPI ISS Total
+    const repM = g(/IRPJ\s+CSLL\s+COFINS\s+PIS\/Pasep\s+INSS\/CPP\s+ICMS\s+IPI\s+ISS\s+Total\s+([\d.]+,\d{2})\s+([\d.]+,\d{2})\s+([\d.]+,\d{2})\s+([\d.]+,\d{2})\s+([\d.]+,\d{2})\s+([\d.]+,\d{2})\s+([\d.]+,\d{2})\s+([\d.]+,\d{2})\s+([\d.]+,\d{2})/i);
     const das = g(/Valor\s+Total\s+do\s+D[ée]bito\s+Declarado[^\d]*([\d.]+,\d{2})(?:\D{0,40}([\d.]+,\d{2}))?/i);
     const mun = g(/Munic[íi]pio:\s*([A-Za-zÀ-ú][A-Za-zÀ-ú .]*?)\s*UF:\s*([A-Z]{2})/i);
 
@@ -341,10 +345,20 @@ export function parsePGDASD(T) {
     if (comp) { res.compMonth = String(parseInt(comp[1])); res.compYear = comp[2]; res.competenceShort = comp[1] + '/' + comp[2]; }
     if (rpa) res.rpa = rpa[1];
     if (rbt12) res.rbt12 = rbt12[1];
+    if (rbt12p) res.rbt12p = rbt12p[1];
     if (folha) res.folha12m = folha[1];
-    if (fator) { res.fatorR = fator[1]; res.anexo = fator[2].replace(/\s+/, ' '); }
+    if (fator) { res.fatorR = fator[1].replace(/\s+/g, ' ').trim(); if (fator[2]) res.anexo = fator[2].replace(/\s+/g, ' ').trim(); }
+    if (!res.anexo && anexoSuj) res.anexo = 'Anexo ' + anexoSuj[1].toUpperCase();
     if (das) res.das = das[2] || das[1];
     if (mun) res.municipio = mun[1].trim() + '/' + mun[2];
+    if (repM) res.repart = { IRPJ: pgNum(repM[1]), CSLL: pgNum(repM[2]), COFINS: pgNum(repM[3]), PIS: pgNum(repM[4]), CPP: pgNum(repM[5]), ICMS: pgNum(repM[6]), IPI: pgNum(repM[7]), ISS: pgNum(repM[8]), total: pgNum(repM[9]) };
+    // Folha de Salários Anteriores (12m) — soma dos meses quando houver (senão "Nenhuma")
+    const folhaBlock = T.match(/2\.3\)[^]*?(?:2\.4\)|2\.5\)|$)/);
+    if (!res.folha12m && folhaBlock && !/Nenhuma/i.test(folhaBlock[0])) {
+        let soma = 0; const rf = /(\d{2}\/\d{4})\s+([\d.]+,\d{2})/g; let mf;
+        while ((mf = rf.exec(folhaBlock[0]))) soma += pgNum(mf[2]);
+        if (soma > 0) res.folha12m = soma.toFixed(2).replace('.', ',');
+    }
     res.atividade = /Presta[çc][ãa]o\s+de\s+Servi[çc]os/i.test(T) ? 'Serviços' : (/Com[ée]rcio/i.test(T) ? 'Comércio' : 'Serviços');
     // Mais de um estabelecimento: os valores capturados podem ser só da matriz — avisar o usuário.
     // Detecta por CNPJs DISTINTOS (filiais de verdade), não pela palavra "Estabelecimento"
@@ -524,10 +538,19 @@ export const autoFillTaxes = (data, currentTaxes) => {
 
         if (data.regime === 'Simples Nacional') {
             if (t.tax === 'DAS') {
-                if (totalRevenue > 0 && rbt12 > 0 && data.anexo) {
+                const dasOficial = parseNumBR(data.dasOfficial);
+                // RBT12 proporcionalizada (empresa < 12 meses) manda na alíquota, quando informada
+                const rbtAliq = parseNumBR(data.rbt12p) > 0 ? parseNumBR(data.rbt12p) : rbt12;
+                if (dasOficial > 0) {
+                    // Importado do PGDAS-D: o valor DECLARADO é a fonte da verdade — não recalcula
+                    updated.base = formatBRLDisplay(totalRevenue);
+                    updated.rate = totalRevenue > 0 ? (dasOficial / totalRevenue * 100).toFixed(4).replace('.', ',') : '';
+                    updated.apurado = formatBRLDisplay(dasOficial);
+                    updated.obs = 'Importado do PGDAS-D — valor declarado' + (data.anexo ? ' · ' + data.anexo : '');
+                } else if (totalRevenue > 0 && rbtAliq > 0 && data.anexo) {
                     const fR = calcFatorR(folha12m, rbt12);
                     const anexoEf = getAnexoEfetivo(data.anexo, fR, sujeitoFatorR);
-                    const res = calcAliquotaEfetivaSN(rbt12, anexoEf);
+                    const res = calcAliquotaEfetivaSN(rbtAliq, anexoEf);
 
                     updated.base = formatBRLDisplay(totalRevenue);
                     updated.rate = res.rate.toFixed(4).replace('.', ',');
@@ -535,6 +558,7 @@ export const autoFillTaxes = (data, currentTaxes) => {
                     const apuradoDAS = totalRevenue * res.rate / 100;
                     updated.apurado = formatBRLDisplay(apuradoDAS);
                     let obsDAS = `${anexoEf} (Faixa ${res.faixa}) — Alíq. Nom. ${res.nominal.toFixed(2).replace('.', ',')}%`;
+                    if (parseNumBR(data.rbt12p) > 0) obsDAS += ' · sobre RBT12p (proporcionalizado)';
                     if (rbt12 > LIMITE_SN) obsDAS += ' · ATENÇÃO: RBT12 acima do limite do Simples (R$ 4,8 mi)';
                     else if (rbt12 > SUBLIMITE_SN) obsDAS += ' · RBT12 acima do sublimite: ICMS/ISS fora do DAS';
                     // ISS retido na fonte (linha 'ISS (retido)') abate o DAS — a parcela de ISS
