@@ -1567,6 +1567,19 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
                         <KpiCard cls={kpi4.cls} label={kpi4.label} value={kpi4.value} foot={kpi4.foot} />
                     </div>
 
+                    {/* Faixa de destaque da economia — só quando há economia real
+                        (líquida do pró-labore). Reforça o KPI dourado com o valor
+                        e a projeção de 12 meses, em largura total. */}
+                    {economia && (
+                        <div className="avoid-break flex items-center gap-3 mb-4" style={{ background: '#FCEFD7', border: '1px solid #F79C04', borderRadius: 12, padding: '12px 16px' }}>
+                            <TrendingUp className="w-5 h-5" style={{ color: '#854F0B', flexShrink: 0 }} />
+                            <div style={{ fontSize: '12.5px', color: '#1a2230', lineHeight: 1.45 }}>
+                                <span style={{ textTransform: 'uppercase', letterSpacing: '1px', fontSize: '9.5px', color: '#854F0B', fontWeight: 700, display: 'block' }}>Economia tributária no mês</span>
+                                <b style={{ fontWeight: 700, color: '#854F0B' }}>{formatCurrency(economia.valor)}</b> economizados via {economia.tipo} — projeção de <b style={{ fontWeight: 700, color: '#854F0B' }}>{formatCurrency(economia.valor * 12)}</b> em 12 meses.
+                            </div>
+                        </div>
+                    )}
+
                     {(clientData.irpjCsllMode === 'Trimestral (Apuração)' || clientData.irpjCsllMode === 'Estimativa (Anual)') && parseNum(clientData.periodRevenue) > 0 && (
                         <div className="avoid-break flex items-center gap-2" style={{ fontSize: '10px', color: '#646d7c', margin: '-2px 2px 12px' }}>
                             <span style={{ width: 14, height: 2, background: '#F79C04', display: 'inline-block', flexShrink: 0 }}></span>
