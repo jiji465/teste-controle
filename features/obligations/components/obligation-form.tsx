@@ -128,6 +128,17 @@ export function ObligationForm({ obligation, clients, open, onOpenChange, onSave
   const [isSaving, setIsSaving] = useState(false)
 
   const onSubmit = async (data: ObligationFormData) => {
+    // "Gerar Automaticamente" ligado exige "Gerar até" — sem data final não
+    // geramos ocorrências (evita repetição infinita). Decisão de produto.
+    if (data.autoGenerate && !data.recurrenceEndDate) {
+      form.setError("recurrenceEndDate", {
+        type: "manual",
+        message: 'Informe "Gerar até" para gerar as ocorrências.',
+      })
+      toast.error('Informe a data em "Gerar até" para a geração automática.')
+      return
+    }
+
     const history = obligation?.history || []
     const newHistoryEntry = {
       id: crypto.randomUUID(),
@@ -446,10 +457,11 @@ export function ObligationForm({ obligation, clients, open, onOpenChange, onSave
                   name="recurrenceEndDate"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Gerar até (Opcional)</FormLabel>
+                      <FormLabel>Gerar até *</FormLabel>
                       <FormControl>
                         <Input type="date" {...field} />
                       </FormControl>
+                      <FormMessage />
                     </FormItem>
                   )}
                 />

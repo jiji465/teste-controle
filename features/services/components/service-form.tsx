@@ -36,6 +36,7 @@ import type { Service, Client, RecurrenceType } from "@/lib/types"
 import { SERVICE_CATEGORY_LABELS } from "@/lib/types"
 import { serviceSchema, type ServiceFormData } from "@/features/services/schemas"
 import { saveService } from "@/features/services/services"
+import { buildRecurringServices } from "@/lib/recurrence-generate"
 import { saveClient, DuplicateClientError } from "@/features/clients/services"
 import { useData } from "@/contexts/data-context"
 import { adjustForWeekend, buildSafeDate, formatDate, isWeekendOrHoliday, getHolidayName } from "@/lib/date-utils"
@@ -149,6 +150,17 @@ export function ServiceForm({ service, clients, open, onOpenChange, onSave }: Pr
   }, [service, open, form])
 
   const onSubmit = async (data: ServiceFormData) => {
+    // Recorrência exige "Repetir até" — sem data final não geramos nada
+    // (evita repetição infinita). Decisão de produto.
+    if (data.recurrence && !data.recurrenceEndDate) {
+      form.setError("recurrenceEndDate", {
+        type: "manual",
+        message: 'Informe "Repetir até" para gerar a recorrência.',
+      })
+      toast.error('Informe a data em "Repetir até" para a recorrência.')
+      return
+    }
+
     setIsSaving(true)
     try {
       // Aplica a regra de fim de semana / feriado na data digitada.
@@ -177,7 +189,23 @@ export function ServiceForm({ service, clients, open, onOpenChange, onSave }: Pr
         createdAt: data.createdAt || new Date().toISOString(),
       }
       await saveService(payload)
-      toast.success(service ? "Serviço atualizado" : "Serviço criado")
+
+      // Geração antecipada: cria TODAS as ocorrências até "Repetir até".
+      // Passa a data DIGITADA (data.dueDate, antes do ajuste) como base, pra
+      // não acumular drift do ajuste de fim de semana a cada mês.
+      const occurrences = buildRecurringServices(payload, data.dueDate)
+      if (occurrences.length > 0) {
+        await Promise.all(occurrences.map((s) => saveService(s)))
+      }
+
+      const extra = occurrences.length
+      toast.success(
+        service
+          ? "Serviço atualizado"
+          : extra > 0
+            ? `Serviço criado + ${extra} ocorrência${extra > 1 ? "s" : ""} recorrente${extra > 1 ? "s" : ""}`
+            : "Serviço criado",
+      )
       onSave()
       onOpenChange(false)
     } catch (err) {
@@ -527,7 +555,7 @@ export function ServiceForm({ service, clients, open, onOpenChange, onSave }: Pr
                     name="recurrenceEndDate"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Repetir até (opcional)</FormLabel>
+                        <FormLabel>Repetir até *</FormLabel>
                         <FormControl>
                           <Input type="date" {...field} />
                         </FormControl>

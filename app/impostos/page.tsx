@@ -23,6 +23,7 @@ import { BulkActionsBar } from "@/components/bulk-actions-bar"
 import { ExportButton } from "@/components/export-button"
 import type { ExportColumn } from "@/lib/export-utils"
 import { saveTax, deleteTax } from "@/lib/supabase/database"
+import { buildRecurringTaxes } from "@/lib/recurrence-generate"
 import { calculateDueDateFromCompetency, formatDate, isOverdue } from "@/lib/date-utils"
 import { checkAndGenerateRecurrences } from "@/lib/auto-recurrence"
 import { matchesText } from "@/lib/utils"
@@ -136,7 +137,21 @@ export default function ImpostosPage() {
   const handleSave = async (tax: Tax) => {
     try {
       await saveTax(tax)
-      toast.success("Imposto salvo com sucesso")
+
+      // Geração antecipada: com "Gerar Automaticamente" ligado + "Gerar até",
+      // cria TODAS as competências até a data final de uma vez (ids
+      // determinísticos → o motor diário não duplica).
+      const occurrences = tax.autoGenerate ? buildRecurringTaxes(tax) : []
+      if (occurrences.length > 0) {
+        await Promise.all(occurrences.map((t) => saveTax(t)))
+      }
+
+      const extra = occurrences.length
+      toast.success(
+        extra > 0
+          ? `Imposto salvo + ${extra} competência${extra > 1 ? "s" : ""} gerada${extra > 1 ? "s" : ""}`
+          : "Imposto salvo com sucesso",
+      )
       await updateData()
       setEditingTax(undefined)
       setIsFormOpen(false)

@@ -125,6 +125,17 @@ export function TaxForm({ tax, clients, open, onOpenChange, onSave }: TaxFormPro
   }, [tax, open, form])
 
   const onSubmit = async (data: TaxFormData) => {
+    // "Gerar Automaticamente" ligado exige "Gerar até" — sem data final não
+    // geramos competências (evita repetição infinita). Decisão de produto.
+    if (data.autoGenerate && !data.recurrenceEndDate) {
+      form.setError("recurrenceEndDate", {
+        type: "manual",
+        message: 'Informe "Gerar até" para gerar as competências.',
+      })
+      toast.error('Informe a data em "Gerar até" para a geração automática.')
+      return
+    }
+
     const taxData: Tax = {
       id: data.id || crypto.randomUUID(),
       name: data.name,
@@ -426,10 +437,11 @@ export function TaxForm({ tax, clients, open, onOpenChange, onSave }: TaxFormPro
                   name="recurrenceEndDate"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Gerar até (Opcional)</FormLabel>
+                      <FormLabel>Gerar até *</FormLabel>
                       <FormControl>
                         <Input type="date" {...field} />
                       </FormControl>
+                      <FormMessage />
                     </FormItem>
                   )}
                 />

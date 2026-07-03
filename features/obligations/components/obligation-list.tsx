@@ -33,9 +33,10 @@ import {
   Copy,
   FileText,
 } from "lucide-react"
-import type { ObligationWithDetails, Client, Tax, Priority, TaxRegime } from "@/lib/types"
+import type { Obligation, ObligationWithDetails, Client, Tax, Priority, TaxRegime } from "@/lib/types"
 import { TAX_REGIME_LABELS, TAX_REGIME_COLORS } from "@/lib/types"
 import { saveObligation, deleteObligation } from "@/features/obligations/services"
+import { buildRecurringObligations } from "@/lib/recurrence-generate"
 import { formatDate, isOverdue } from "@/lib/date-utils"
 import { effectiveStatus } from "@/lib/obligation-status"
 import { StatusBadge, PriorityBadge, type TaskStatus } from "@/components/status-badge"
@@ -155,11 +156,33 @@ export const ObligationList = forwardRef<ObligationListHandle, ObligationListPro
     })
   }, [filteredObligations, sortBy, sortOrder])
 
-  const handleSave = (obligation: any) => {
-    saveObligation(obligation)
-    toast.success("Obrigação salva com sucesso")
-    onUpdate()
-    setEditingObligation(undefined)
+  const handleSave = async (obligation: Obligation) => {
+    try {
+      await saveObligation(obligation)
+
+      // Geração antecipada: com "Gerar Automaticamente" ligado + "Gerar até",
+      // cria TODAS as ocorrências até a data final de uma vez (ids
+      // determinísticos → o motor diário não duplica).
+      const occurrences =
+        obligation.autoGenerate && !obligation.parentObligationId
+          ? buildRecurringObligations(obligation)
+          : []
+      if (occurrences.length > 0) {
+        await Promise.all(occurrences.map((o) => saveObligation(o)))
+      }
+
+      const extra = occurrences.length
+      toast.success(
+        extra > 0
+          ? `Obrigação salva + ${extra} ocorrência${extra > 1 ? "s" : ""} gerada${extra > 1 ? "s" : ""}`
+          : "Obrigação salva com sucesso",
+      )
+      onUpdate()
+      setEditingObligation(undefined)
+    } catch (error) {
+      console.error("[obligations] save error:", error)
+      toast.error("Erro ao salvar obrigação")
+    }
   }
 
   const handleDelete = (id: string) => {
