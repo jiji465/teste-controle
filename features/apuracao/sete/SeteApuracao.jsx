@@ -9,7 +9,7 @@ import {
     MessageSquare, ChevronDown
 } from 'lucide-react';
 import {
-    DEFAULT_TAXES, DEFAULT_TAXES_LP, DEFAULT_TAXES_MEI_AMBOS, DEFAULT_TAXES_MEI_COMERCIO, DEFAULT_TAXES_MEI_SERVICOS, DEFAULT_TAXES_SN_COMERCIO, DEFAULT_TAXES_SN_SERVICOS, GLOSSARY, MONTHS, OFFICE_NAME, STORAGE_KEY, autoFillTaxes, calcAliquotaEfetivaSN, calcComercioLP, calcFatorR, calculateTotalRevenue, extractPdfText, formatBRLDisplay, formatCNPJ, formatCurrency, formatPercent, getAnexoEfetivo, getDueDate, isSujeitoFatorR, lpDefaults, parseNumBR, parsePGDASD, pgNum, sumProLabore, SUBLIMITE_SN, LIMITE_SN
+    DEFAULT_TAXES, DEFAULT_TAXES_LP, DEFAULT_TAXES_MEI_AMBOS, DEFAULT_TAXES_MEI_COMERCIO, DEFAULT_TAXES_MEI_SERVICOS, DEFAULT_TAXES_SN_COMERCIO, DEFAULT_TAXES_SN_SERVICOS, GLOSSARY, MONTHS, OFFICE_NAME, STORAGE_KEY, autoFillTaxes, calcAliquotaEfetivaSN, calcComercioLP, calcFatorR, calcIRRFProLabore, calculateTotalRevenue, extractPdfText, formatBRLDisplay, formatCNPJ, formatCurrency, formatPercent, getAnexoEfetivo, getDueDate, isSujeitoFatorR, lpDefaults, parseNumBR, parsePGDASD, pgNum, sumProLabore, SALARIO_MINIMO, TETO_INSS, SUBLIMITE_SN, LIMITE_SN
 } from './engine.js';
 // ---- Integração com o controle fiscal (teste-controle) ----
 import { useData } from '@/contexts/data-context';
@@ -42,20 +42,38 @@ const FatorRDashboard = ({ clientData, isPrint = false }) => {
     const rateV = calcAliquotaEfetivaSN(rbt12, 'Anexo V').rate;
     
     const isFavorable = fR >= 28;
-    // Ancora no DAS declarado (importado do PGDAS-D) quando houver — assim a
-    // economia parte do valor real pago. O lado ancorado é o do anexo EFETIVO
-    // (III quando atinge o Fator R, V quando não); o outro lado é reescalado
-    // pela razão das alíquotas efetivas. Sem DAS real, estima por alíq × receita.
+    // DAS de cada anexo, ancorado no declarado (PGDAS-D) quando houver — o lado
+    // do anexo EFETIVO usa o DAS real; o outro é reescalado pela razão das
+    // alíquotas efetivas. Sem DAS real, estima por alíquota × receita.
     const dasReal = parseNumBR(clientData.dasOfficial);
-    let taxIII, taxV;
+    let dasIII, dasV;
     if (dasReal > 0 && rateIII > 0 && rateV > 0) {
-        if (anexoEf === 'Anexo III') { taxIII = dasReal; taxV = dasReal * (rateV / rateIII); }
-        else { taxV = dasReal; taxIII = dasReal * (rateIII / rateV); }
+        if (anexoEf === 'Anexo III') { dasIII = dasReal; dasV = dasReal * (rateV / rateIII); }
+        else { dasV = dasReal; dasIII = dasReal * (rateIII / rateV); }
     } else {
-        taxIII = revenue * (rateIII / 100);
-        taxV = revenue * (rateV / 100);
+        dasIII = revenue * (rateIII / 100);
+        dasV = revenue * (rateV / 100);
     }
-    const diff = Math.abs(taxV - taxIII);
+    // Quando o Fator R é atingido, a economia REAL considera o custo TOTAL de
+    // cada cenário, incluindo os tributos do pró-labore: para chegar no Anexo
+    // III paga-se o pró-labore atual (INSS + IRRF); sem Fator R, o sócio
+    // receberia 1 salário mínimo. Assim um pró-labore alto pode anular a
+    // economia da alíquota (mesma lógica do relatório). Fora do Fator R,
+    // mostra só a diferença de DAS (informativo).
+    let taxIII, taxV;
+    if (isFavorable) {
+        const plAtual = sumProLabore(clientData);
+        const inssCom = Math.min(plAtual, TETO_INSS) * 0.11;
+        const inssSem = SALARIO_MINIMO * 0.11;
+        taxIII = dasIII + inssCom + calcIRRFProLabore(plAtual, inssCom).imposto;
+        taxV = dasV + inssSem + calcIRRFProLabore(SALARIO_MINIMO, inssSem).imposto;
+    } else {
+        taxIII = dasIII;
+        taxV = dasV;
+    }
+    // Economia só existe se o cenário atual (III, com pró-labore) sai mais
+    // barato que o alternativo (V, pró-labore mínimo); senão, zero.
+    const diff = isFavorable ? Math.max(0, taxV - taxIII) : Math.abs(taxV - taxIII);
 
     if (!isPrint) {
         return (
@@ -100,13 +118,16 @@ const FatorRDashboard = ({ clientData, isPrint = false }) => {
                                 {isFavorable ? 'Economia Tributária Gerada' : 'Custo Adicional por desenquadramento'}
                             </p>
                             <div className="flex items-center gap-2 mb-1">
-                                <p className="text-[11px] text-slate-600 line-through">Anexo V: {formatCurrency(taxV)}</p>
+                                <p className="text-[11px] text-slate-600 line-through">{isFavorable ? 'Anexo V + pró-labore mín.' : 'Anexo V'}: {formatCurrency(taxV)}</p>
                                 <ArrowRight className="w-3 h-3 text-slate-400" />
-                                <p className={`text-sm font-bold ${isFavorable ? 'text-emerald-700' : 'text-red-700'}`}>Anexo III: {formatCurrency(taxIII)}</p>
+                                <p className={`text-sm font-bold ${isFavorable ? 'text-emerald-700' : 'text-red-700'}`}>{isFavorable ? 'Anexo III + pró-labore atual' : 'Anexo III'}: {formatCurrency(taxIII)}</p>
                             </div>
                             <p className={`text-lg font-black ${isFavorable ? 'text-emerald-600' : 'text-red-600'}`}>
                                 {isFavorable ? '-' : '+'} {formatCurrency(diff)} <span className="text-[10px] font-medium text-slate-500 uppercase tracking-wide">Neste mês</span>
                             </p>
+                            {isFavorable && (
+                                <p className="text-[10px] text-slate-500 mt-1">Custo total = DAS + INSS + IRRF do pró-labore. O pró-labore alto necessário ao Fator R já entra na conta.</p>
+                            )}
                         </div>
                     </div>
                 )}
@@ -142,10 +163,10 @@ const FatorRDashboard = ({ clientData, isPrint = false }) => {
                 <div className="mt-3 pt-3 border-t border-slate-200 flex items-center justify-between">
                     <div className="flex items-center gap-3">
                         <div className="text-[10px]">
-                            <span className="text-slate-500">Simulação Anexo V:</span> <span className="font-semibold text-slate-700">{formatCurrency(taxV)}</span>
+                            <span className="text-slate-500">{isFavorable ? 'Anexo V + pró-labore mín.' : 'Simulação Anexo V'}:</span> <span className="font-semibold text-slate-700">{formatCurrency(taxV)}</span>
                         </div>
                         <div className="text-[10px]">
-                            <span className="text-slate-500">Simulação Anexo III:</span> <span className="font-semibold text-slate-700">{formatCurrency(taxIII)}</span>
+                            <span className="text-slate-500">{isFavorable ? 'Anexo III + pró-labore atual' : 'Simulação Anexo III'}:</span> <span className="font-semibold text-slate-700">{formatCurrency(taxIII)}</span>
                         </div>
                     </div>
                     <div className="text-right">
@@ -1163,22 +1184,36 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
     if ((clientData.sujeitoFatorR === true || clientData.mostrarEconomiaFatorR) && clientData.regime === 'Simples Nacional' && (clientData.anexo === 'Anexo III' || clientData.anexo === 'Anexo V') && rbt12 > 0 && fR >= 28) {
         const rateIII = calcAliquotaEfetivaSN(rbt12, 'Anexo III').rate;
         const rateV = calcAliquotaEfetivaSN(rbt12, 'Anexo V').rate;
-        // Ancora no DAS REALMENTE apurado (Anexo III efetivo). O "sem Fator R"
-        // é esse mesmo DAS reescalado pela razão das alíquotas efetivas V/III —
-        // assim a economia parte do valor real pago, não de um recálculo solto.
+        // DAS ancorado no REALMENTE apurado (Anexo III efetivo); o Anexo V é o
+        // mesmo DAS reescalado pela razão das alíquotas efetivas V/III.
         const dasReal = parseNum((taxes.find(t => t.tax === 'DAS') || {}).apurado);
-        const taxIII = dasReal > 0 ? dasReal : revenue * rateIII / 100;
-        const taxV = dasReal > 0 && rateIII > 0 ? dasReal * (rateV / rateIII) : revenue * rateV / 100;
-        if (taxV - taxIII > 0) {
+        const dasIII = dasReal > 0 ? dasReal : revenue * rateIII / 100;
+        const dasV = dasReal > 0 && rateIII > 0 ? dasReal * (rateV / rateIII) : revenue * rateV / 100;
+        // CUSTO TOTAL de cada cenário — inclui os tributos do pró-labore. Para
+        // atingir o Fator R paga-se um pró-labore alto, que gera INSS (11%, até
+        // o teto) e IRRF; sem o Fator R, o sócio recebe o mínimo legal (1
+        // salário mínimo). A economia REAL é a diferença dos custos totais, não
+        // só do DAS — um pró-labore alto pode anular a economia da alíquota.
+        const plAtual = sumProLabore(clientData);
+        const inssCom = Math.min(plAtual, TETO_INSS) * 0.11;
+        const irrfCom = calcIRRFProLabore(plAtual, inssCom).imposto;
+        const custoCom = dasIII + inssCom + irrfCom;
+        const inssSem = SALARIO_MINIMO * 0.11;
+        const irrfSem = calcIRRFProLabore(SALARIO_MINIMO, inssSem).imposto; // ~0 (isento)
+        const custoSem = dasV + inssSem + irrfSem;
+        // Só é "economia" quando o Anexo III (com pró-labore atual) sai mais
+        // barato que o Anexo V (com pró-labore mínimo). Se não, não há economia
+        // real a exibir (economia fica null → some do KPI e da página 2).
+        if (custoSem - custoCom > 0) {
             economia = {
                 tipo: 'Fator R',
-                valor: taxV - taxIII,
-                semLabel: 'Sem Fator R · Anexo V',
-                comLabel: 'Com Fator R · Anexo III',
-                semVal: taxV, comVal: taxIII,
-                semExtra: `Alíquota efetiva ${rateV.toFixed(2).replace('.', ',')}%`,
-                comExtra: `Alíquota efetiva ${rateIII.toFixed(2).replace('.', ',')}%`,
-                explica: `A folha + pró-labore dos últimos 12 meses representa ${fR.toFixed(1).replace('.', ',')}% do RBT12 (≥ 28%), enquadrando a empresa no Anexo III — alíquotas menores. Sem atingir o Fator R, a tributação seria pelo Anexo V.`,
+                valor: custoSem - custoCom,
+                semLabel: 'Sem Fator R · Anexo V (pró-labore mínimo)',
+                comLabel: 'Com Fator R · Anexo III (pró-labore atual)',
+                semVal: custoSem, comVal: custoCom,
+                semExtra: `DAS ${formatCurrency(dasV)} + INSS ${formatCurrency(inssSem)} (1 salário mínimo)`,
+                comExtra: `DAS ${formatCurrency(dasIII)} + INSS ${formatCurrency(inssCom)}${irrfCom > 0 ? ' + IRRF ' + formatCurrency(irrfCom) : ''}`,
+                explica: `O custo total considera os tributos do pró-labore. Para atingir o Fator R (${fR.toFixed(1).replace('.', ',')}% ≥ 28%), o pró-labore de ${formatCurrency(plAtual)} gera INSS e IRRF; sem o Fator R, o sócio receberia 1 salário mínimo (${formatCurrency(SALARIO_MINIMO)}). A economia é a diferença entre o custo total no Anexo V (com pró-labore mínimo) e no Anexo III (com o pró-labore atual).`,
             };
         }
     } else if ((clientData.regime === 'Lucro Presumido' || clientData.regime === 'Lucro Real') && clientData.equiparacaoHospitalar && (clientData.atividade || 'Serviços') === 'Serviços') {
