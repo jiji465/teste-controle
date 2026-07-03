@@ -41,9 +41,20 @@ const FatorRDashboard = ({ clientData, isPrint = false }) => {
     const rateIII = calcAliquotaEfetivaSN(rbt12, 'Anexo III').rate;
     const rateV = calcAliquotaEfetivaSN(rbt12, 'Anexo V').rate;
     
-    const taxIII = revenue * (rateIII / 100);
-    const taxV = revenue * (rateV / 100);
     const isFavorable = fR >= 28;
+    // Ancora no DAS declarado (importado do PGDAS-D) quando houver — assim a
+    // economia parte do valor real pago. O lado ancorado é o do anexo EFETIVO
+    // (III quando atinge o Fator R, V quando não); o outro lado é reescalado
+    // pela razão das alíquotas efetivas. Sem DAS real, estima por alíq × receita.
+    const dasReal = parseNumBR(clientData.dasOfficial);
+    let taxIII, taxV;
+    if (dasReal > 0 && rateIII > 0 && rateV > 0) {
+        if (anexoEf === 'Anexo III') { taxIII = dasReal; taxV = dasReal * (rateV / rateIII); }
+        else { taxV = dasReal; taxIII = dasReal * (rateIII / rateV); }
+    } else {
+        taxIII = revenue * (rateIII / 100);
+        taxV = revenue * (rateV / 100);
+    }
     const diff = Math.abs(taxV - taxIII);
 
     if (!isPrint) {
@@ -191,6 +202,11 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
                 regime: 'Simples Nacional',
                 atividade: d.atividade || clientData.atividade || 'Serviços',
                 anexo: d.anexo || clientData.anexo,
+                // Fator R: quando o PGDAS indica atividade sujeita, gravamos o
+                // anexo-base V (a migração p/ III vem do Fator R ≥ 28%) e já
+                // ligamos a economia III × V no relatório.
+                sujeitoFatorR: d.sujeitoFatorR !== undefined ? d.sujeitoFatorR : clientData.sujeitoFatorR,
+                mostrarEconomiaFatorR: d.sujeitoFatorR ? true : clientData.mostrarEconomiaFatorR,
                 compMonth: d.compMonth || clientData.compMonth,
                 compYear: d.compYear || clientData.compYear,
                 competenceShort: d.competenceShort || clientData.competenceShort,
@@ -1144,11 +1160,15 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
 
     // ===== Economia inteligente: Fator R (Simples) e Equiparação Hospitalar (Lucro Presumido) =====
     let economia = null;
-    if (clientData.mostrarEconomiaFatorR && clientData.regime === 'Simples Nacional' && (clientData.anexo === 'Anexo III' || clientData.anexo === 'Anexo V') && rbt12 > 0 && fR >= 28) {
+    if ((clientData.sujeitoFatorR === true || clientData.mostrarEconomiaFatorR) && clientData.regime === 'Simples Nacional' && (clientData.anexo === 'Anexo III' || clientData.anexo === 'Anexo V') && rbt12 > 0 && fR >= 28) {
         const rateIII = calcAliquotaEfetivaSN(rbt12, 'Anexo III').rate;
         const rateV = calcAliquotaEfetivaSN(rbt12, 'Anexo V').rate;
-        const taxIII = revenue * rateIII / 100;
-        const taxV = revenue * rateV / 100;
+        // Ancora no DAS REALMENTE apurado (Anexo III efetivo). O "sem Fator R"
+        // é esse mesmo DAS reescalado pela razão das alíquotas efetivas V/III —
+        // assim a economia parte do valor real pago, não de um recálculo solto.
+        const dasReal = parseNum((taxes.find(t => t.tax === 'DAS') || {}).apurado);
+        const taxIII = dasReal > 0 ? dasReal : revenue * rateIII / 100;
+        const taxV = dasReal > 0 && rateIII > 0 ? dasReal * (rateV / rateIII) : revenue * rateV / 100;
         if (taxV - taxIII > 0) {
             economia = {
                 tipo: 'Fator R',

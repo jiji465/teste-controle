@@ -355,6 +355,19 @@ export function parsePGDASD(T) {
     if (folha) res.folha12m = folha[1];
     if (fator) { res.fatorR = fator[1].replace(/\s+/g, ' ').trim(); if (fator[2]) res.anexo = fator[2].replace(/\s+/g, ' ').trim(); }
     if (!res.anexo && anexoSuj) res.anexo = 'Anexo ' + anexoSuj[1].toUpperCase();
+    // Sujeito ao Fator R: o PGDAS traz um Fator r NUMÉRICO (não "Não se aplica")
+    // ou classifica a atividade no Anexo V. Nesses casos o anexo-BASE é o V; a
+    // migração para o III é DERIVADA quando o Fator R ≥ 28% — não gravamos o III
+    // direto (era o que fazia o sistema "esquecer" que é empresa de Fator R e
+    // não reconhecer a economia III × V).
+    const fatorAplica = !!(fator && !/N[ãa]o\s+se\s+aplica/i.test(fator[1]));
+    const classificadoV = /Anexo\s+V\b/i.test(res.anexo || '') || (anexoSuj && /^V$/i.test(anexoSuj[1]));
+    if (fatorAplica || classificadoV) {
+        res.sujeitoFatorR = true;
+        res.anexo = 'Anexo V'; // base natural; efetivo (III se Fator R ≥ 28%) é derivado
+    } else if (res.anexo) {
+        res.sujeitoFatorR = false; // Anexo III por natureza (contabilidade, escola…) — não migra
+    }
     if (das) res.das = das[2] || das[1];
     if (mun) res.municipio = mun[1].trim() + '/' + mun[2];
     if (repM) res.repart = { IRPJ: pgNum(repM[1]), CSLL: pgNum(repM[2]), COFINS: pgNum(repM[3]), PIS: pgNum(repM[4]), CPP: pgNum(repM[5]), ICMS: pgNum(repM[6]), IPI: pgNum(repM[7]), ISS: pgNum(repM[8]), total: pgNum(repM[9]) };
@@ -552,7 +565,10 @@ export const autoFillTaxes = (data, currentTaxes) => {
                     updated.base = formatBRLDisplay(totalRevenue);
                     updated.rate = totalRevenue > 0 ? (dasOficial / totalRevenue * 100).toFixed(4).replace('.', ',') : '';
                     updated.apurado = formatBRLDisplay(dasOficial);
-                    updated.obs = 'Importado do PGDAS-D — valor declarado' + (data.anexo ? ' · ' + data.anexo : '');
+                    // Mostra o anexo EFETIVO (III quando o Fator R ≥ 28%), não o
+                    // base V — o valor em si é o declarado, fonte da verdade.
+                    const anexoEfDAS = data.anexo ? getAnexoEfetivo(data.anexo, calcFatorR(folha12m, rbt12), sujeitoFatorR) : '';
+                    updated.obs = 'Importado do PGDAS-D — valor declarado' + (anexoEfDAS ? ' · ' + anexoEfDAS : '');
                 } else if (totalRevenue > 0 && rbtAliq > 0 && data.anexo) {
                     const fR = calcFatorR(folha12m, rbt12);
                     const anexoEf = getAnexoEfetivo(data.anexo, fR, sujeitoFatorR);
