@@ -184,12 +184,18 @@ export const isSujeitoFatorR = (data, folha12m) =>
 // (vigente desde jan/2026): rendimento até R$ 5.000 fica isento e há redução
 // parcial e decrescente entre R$ 5.000,01 e R$ 7.350. Base = pró-labore − INSS.
 export const IRRF_DEPENDENTE = 189.59;
+// Tabela progressiva mensal vigente (desde mai/2025, mantida em 2026).
+// ⚠️ Antes estavam os valores de 2024 (isenção 2.259,20 e parcelas a deduzir
+// 169,44 / 381,44 / 662,77 / 896,00), o que dava IRRF R$ 12,73 acima do que a
+// Receita apura. A tabela atual elevou a isenção p/ 2.428,80 e cada parcela a
+// deduzir em ~12,72 (última faixa: 908,73). Ex.: base 8.067,69 →
+// 8.067,69×27,5% − 908,73 = 1.309,88 (batendo com o DARF/DCTFWeb).
 export const IRRF_TABLE = [
-    { limit: 2259.20, rate: 0, deduction: 0 },
-    { limit: 2826.65, rate: 7.5, deduction: 169.44 },
-    { limit: 3751.05, rate: 15, deduction: 381.44 },
-    { limit: 4664.68, rate: 22.5, deduction: 662.77 },
-    { limit: Infinity, rate: 27.5, deduction: 896.00 },
+    { limit: 2428.80, rate: 0, deduction: 0 },
+    { limit: 2826.65, rate: 7.5, deduction: 182.16 },
+    { limit: 3751.05, rate: 15, deduction: 394.16 },
+    { limit: 4664.68, rate: 22.5, deduction: 675.49 },
+    { limit: Infinity, rate: 27.5, deduction: 908.73 },
 ];
 export const calcIRRFProLabore = (proLabore, inss) => {
     const pl = parseNumBR(proLabore);
