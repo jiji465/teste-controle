@@ -1176,6 +1176,12 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
     const liquido = revenue - totalApurado;
     const compLabel = clientData.competence || clientData.competenceShort || '—';
 
+    // Folha de salários e pró-labore — BASES da apuração (não são receita nem tributo).
+    // Exibidas em bloco próprio na página 1 quando informadas ("caso tenha").
+    const folhaMensal = parseNum(clientData.folhaMensal !== undefined ? clientData.folhaMensal : clientData.folha);
+    const proLaboreTotal = sumProLabore(clientData);
+    const hasFolhaPL = folhaMensal > 0 || proLaboreTotal > 0;
+
     // Função que totaliza uma lista de tributos
     const calcTotal = (list) => list.reduce((s, t) => s + parseNum(t.value), 0);
 
@@ -1536,7 +1542,7 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
         );
     })() : null;
     const estImpostosMM = 14 + taxRows.length * 6.6 + 8;
-    const estResumoBaseMM = 26 + 15 + 21 + 12 + (hasRetentions ? 32 + estImpostosMM : Math.max(34, estImpostosMM)) + ((clientData.irpjCsllMode === 'Trimestral (Apuração)' || clientData.irpjCsllMode === 'Estimativa (Anual)') && parseNum(clientData.periodRevenue) > 0 ? 8 : 0);
+    const estResumoBaseMM = 26 + 15 + 21 + 12 + (hasRetentions ? 32 + estImpostosMM : Math.max(34, estImpostosMM)) + ((clientData.irpjCsllMode === 'Trimestral (Apuração)' || clientData.irpjCsllMode === 'Estimativa (Anual)') && parseNum(clientData.periodRevenue) > 0 ? 8 : 0) + (hasFolhaPL ? 34 : 0);
     const evolucaoSeparada = !!evolucaoCard && (estResumoBaseMM + 46 > PAGE_BUDGET_MM);
 
     return (
@@ -1668,6 +1674,38 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
                             </div>
                         </>
                     )}
+
+                    {/* Folha & Pró-labore — bases da apuração; aparece só quando informado.
+                        Fecha com um total bordado, no mesmo idioma das tabelas vizinhas. */}
+                    {hasFolhaPL && (() => {
+                        const totalFolhaPL = folhaMensal + proLaboreTotal;
+                        const notaFolha = clientData.regime === 'MEI'
+                            ? 'Valores informados na apuração. No MEI, a contribuição do sócio é recolhida no próprio DAS-MEI.'
+                            : (clientData.regime === 'Simples Nacional' && clientData.anexo !== 'Anexo IV')
+                                ? 'Bases informadas na apuração. A CPP patronal já está inclusa no DAS; FGTS e INSS do sócio, quando devidos, constam nos impostos apurados.'
+                                : 'Base de cálculo dos encargos de folha (INSS do sócio, CPP patronal e FGTS). Não compõe o faturamento.';
+                        const col = (label, val, sub) => (
+                            <>
+                                <div style={{ textTransform: 'uppercase', letterSpacing: '.5px', fontSize: '9px', color: '#7c8595', fontWeight: 700 }}>{label}</div>
+                                <div style={{ fontSize: '17px', fontWeight: 800, color: '#001D3D', marginTop: 5, fontVariantNumeric: 'tabular-nums' }}>{formatCurrency(val)}</div>
+                                <div style={{ fontSize: '9px', color: '#7c8595', marginTop: 3 }}>{sub}</div>
+                            </>
+                        );
+                        return (
+                            <div className={card + ' mb-4 avoid-break'} style={cardPad}>
+                                <SectionTitle right="base da apuração">Folha &amp; Pró-labore</SectionTitle>
+                                <div className="grid grid-cols-2" style={{ gap: 0 }}>
+                                    <div style={{ paddingRight: 18 }}>{col('Folha de salários', folhaMensal, 'remuneração dos empregados no mês')}</div>
+                                    <div style={{ paddingLeft: 18, borderLeft: '1px solid #e9e6dd' }}>{col('Pró-labore', proLaboreTotal, 'retirada dos sócios no mês')}</div>
+                                </div>
+                                <div className="flex justify-between items-center" style={{ marginTop: 12, paddingTop: 9, borderTop: '2px solid #001D3D' }}>
+                                    <span style={{ fontSize: '11px', fontWeight: 700, color: '#1a2230' }}>Total folha + pró-labore</span>
+                                    <span style={{ fontSize: '13px', fontWeight: 800, color: '#001D3D', fontVariantNumeric: 'tabular-nums' }}>{formatCurrency(totalFolhaPL)}</span>
+                                </div>
+                                <div style={{ fontSize: '9.5px', color: '#646d7c', lineHeight: 1.45, marginTop: 9 }}>{notaFolha}</div>
+                            </div>
+                        );
+                    })()}
 
                     {!evolucaoSeparada && evolucaoCard}
 
