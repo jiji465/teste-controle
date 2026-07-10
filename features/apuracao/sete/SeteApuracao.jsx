@@ -847,7 +847,7 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
 
                     {/* T5 — Folha, encargos & sócios */}
                     {clientData.regime !== 'MEI' && (
-                        <Section title="Folha, encargos & sócios" icon={Scale} defaultOpen={false} summary={`PL ${formatCurrency(clientData.proLabore)}`}>
+                        <Section title="Folha, encargos & sócios" icon={Scale} defaultOpen={false} summary={`Folha ${formatCurrency(clientData.folhaMensal !== undefined ? clientData.folhaMensal : clientData.folha)} · PL ${formatCurrency(clientData.proLabore)}`}>
                             <div className="grid grid-cols-2 gap-4">
                                 {(clientData.regime === 'Lucro Presumido' || clientData.regime === 'Lucro Real') && (
                                     <div>
@@ -857,7 +857,7 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
                                     </div>
                                 )}
 
-                                {clientData.regime === 'Simples Nacional' && clientData.anexo === 'Anexo IV' && (
+                                {clientData.regime === 'Simples Nacional' && (
                                     <div>
                                         <label className="field-label">Folha de Salários Mensal (R$)</label>
                                         <input className="field-input" type="text" value={clientData.folhaMensal !== undefined ? clientData.folhaMensal : (clientData.folha || '')}
@@ -1442,9 +1442,13 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
         }
         return h;
     };
-    const numDatasVenc = withDue.length > 0 ? new Set(withDue.map(t => t.dueDate)).size : 0;
-    const estTabelaGuiasMM = 14 + numDatasVenc * 10 + 7; // detalhamento agrupado por data (cada linha pode quebrar em 2)
-    const vencSplit = venciMonths.length > 0 && (estCalMM(venciMonths[0]) + 32 + estTabelaGuiasMM + 10 > PAGE_BUDGET_MM);
+    const nGuiasVenc = withDue.length;
+    const manyGuias = nGuiasVenc > 8; // muitas guias → 2 colunas compactas p/ não quebrar a página
+    const estTabelaGuiasMM = 14 + (manyGuias ? Math.ceil(nGuiasVenc / 2) * 6 : nGuiasVenc * 7) + 10; // uma guia por linha (lista)
+    // Detalhamento vai para página própria quando (a) há muitas guias — a lista
+    // longa não cabe junto do calendário — ou (b) a estimativa calendário+guias
+    // estoura o orçamento da página. Evita quebra de página no meio de um card.
+    const vencSplit = venciMonths.length > 0 && (manyGuias || estCalMM(venciMonths[0]) + 32 + estTabelaGuiasMM + 10 > PAGE_BUDGET_MM);
 
     // Indicadores e detalhamento calculados uma vez (usados na página única ou divididos em duas)
     let vencIndicadores = null, vencDetalhamento = null;
@@ -1480,31 +1484,35 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
                 </div>
             </div>
         );
-        // Agrupa as guias por data de vencimento (sortedG já está em ordem cronológica)
-        const grupos = [];
-        sortedG.forEach(t => {
-            const last = grupos[grupos.length - 1];
-            if (last && last.dueDate === t.dueDate) { last.itens.push(t); last.total += parseNum(t.value); }
-            else grupos.push({ dueDate: t.dueDate, itens: [t], total: parseNum(t.value) });
-        });
+        // Uma guia por linha (sem agrupar/juntar por data) — lista com pills, não planilha.
+        // Muitas guias → 2 colunas compactas para caber sem quebrar a página.
+        const GuiaRow = (t, key, compact, isLast) => {
+            const isDas = /^DAS/.test(t.tax);
+            return (
+                <div key={key} className="flex items-center avoid-break" style={{ gap: 9, padding: compact ? '4.5px 0' : '6.5px 0', borderBottom: isLast ? 'none' : '1px solid #f0eee7' }}>
+                    <span style={{ fontSize: compact ? '8.5px' : '9.5px', fontWeight: 700, color: '#7c8595', minWidth: compact ? 34 : 40, flexShrink: 0, whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{fmtD(t.dueDate)}</span>
+                    <span style={{ fontSize: compact ? '8.5px' : '10px', fontWeight: 700, padding: '1.5px 8px', borderRadius: 20, background: isDas ? '#fcefd7' : '#eef2f7', color: isDas ? '#b06f06' : '#0a3160', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: compact ? 104 : 170 }}>{t.tax}</span>
+                    <span style={{ marginLeft: 'auto', fontSize: compact ? '10px' : '11px', fontWeight: 700, color: '#1a2230', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{formatCurrency(parseNum(t.value))}</span>
+                </div>
+            );
+        };
+        const half = Math.ceil(sortedG.length / 2);
+        const colA = sortedG.slice(0, half), colB = sortedG.slice(half);
         vencDetalhamento = (
             <div className={card} style={cardPad}>
-                <SectionTitle right={`${grupos.length} data${grupos.length > 1 ? 's' : ''} · ${withDue.length} guia${withDue.length > 1 ? 's' : ''}`}>Detalhamento das guias</SectionTitle>
-                <table className="w-full" style={{ fontSize: '11px', borderCollapse: 'collapse' }}>
-                    <tbody>
-                        {grupos.map((g, i) => {
-                            const bd = i < grupos.length - 1 ? rowBorder : {};
-                            return (
-                                <tr key={i}>
-                                    <td style={{ ...cellL, ...bd, width: 64, fontWeight: 700, verticalAlign: 'top', whiteSpace: 'nowrap' }}>{fmtD(g.dueDate)}</td>
-                                    <td style={{ ...cellL, ...bd, color: '#646d7c', paddingLeft: 10, paddingRight: 10 }}>{g.itens.map(t => t.tax).join(', ')}</td>
-                                    <td style={{ ...cellR, ...bd, fontWeight: 700, verticalAlign: 'top', whiteSpace: 'nowrap' }}>{formatCurrency(g.total)}</td>
-                                </tr>
-                            );
-                        })}
-                        <tr><td style={totL} colSpan="2">Total a recolher</td><td style={totR}>{formatCurrency(totalDue)}</td></tr>
-                    </tbody>
-                </table>
+                <SectionTitle right={`${withDue.length} guia${withDue.length > 1 ? 's' : ''}`}>Detalhamento das guias</SectionTitle>
+                {manyGuias ? (
+                    <div className="grid grid-cols-2" style={{ columnGap: 22, rowGap: 0, alignItems: 'start' }}>
+                        <div>{colA.map((t, i) => GuiaRow(t, 'a' + i, true, i === colA.length - 1))}</div>
+                        <div>{colB.map((t, i) => GuiaRow(t, 'b' + i, true, i === colB.length - 1))}</div>
+                    </div>
+                ) : (
+                    <div>{sortedG.map((t, i) => GuiaRow(t, i, false, i === sortedG.length - 1))}</div>
+                )}
+                <div className="flex justify-between items-center" style={{ marginTop: 11, paddingTop: 9, borderTop: '2px solid #001D3D' }}>
+                    <span style={{ fontSize: '11px', fontWeight: 700, color: '#1a2230' }}>Total a recolher</span>
+                    <span style={{ fontSize: '13px', fontWeight: 800, color: '#001D3D', fontVariantNumeric: 'tabular-nums' }}>{formatCurrency(totalDue)}</span>
+                </div>
             </div>
         );
     }
