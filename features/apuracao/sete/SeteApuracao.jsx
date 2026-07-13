@@ -23,6 +23,15 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 
+// ===== Alíquota efetiva: quais tributos compõem a "carga sobre a receita" =====
+// Encargos sobre a folha/pró-labore (INSS, IRRF, FGTS, CPP, RAT, Terceiros) NÃO
+// incidem sobre o faturamento, então por padrão ficam FORA da alíquota efetiva.
+// Cada linha pode ser sobreposta manualmente pelo botão (campo `foraAliquota`).
+// IRRF e INSS do segurado/sócio, além disso, são retenções — dinheiro do
+// trabalhador, não custo tributário da empresa sobre a receita.
+const isFolhaTax = (name) => /\b(INSS|IRRF|FGTS|CPP|RAT|Terceiros)\b/i.test(name || '');
+const entraNaAliquota = (t) => (t && t.foraAliquota !== undefined) ? !t.foraAliquota : !isFolhaTax(t && t.tax);
+
 const BrandIcon = () => (
     <svg viewBox="0 0 80.7 103.3" fill="#F79C04" fillRule="evenodd" role="img" aria-label="SETE" style={{ height: 46, width: 'auto', display: 'block', flexShrink: 0 }}>
         <path d="M47.06 64.0 C46.87 63.83 49.08 60.12 49.35 59.42 C53.43 48.72 51.97 37.5 45.31 28.27 C46.82 28.83 48.15 29.69 49.45 30.62 C57.78 36.55 59.91 48.35 54.89 57.22 C54.17 58.5 48.53 65.29 47.06 64.0 M31.74 59.42 C32.01 60.12 34.23 63.83 34.04 64.0 C32.56 65.29 26.93 58.5 26.2 57.22 C21.18 48.35 23.32 36.55 31.64 30.62 C32.94 29.69 34.28 28.83 35.78 28.27 C29.12 37.5 27.66 48.72 31.74 59.42 M48.32 28.0 L48.4 27.1 C48.47 26.21 48.11 25.34 47.43 24.77 L40.55 24.77 L40.54 24.77 L33.66 24.77 C32.98 25.34 32.62 26.21 32.7 27.1 L32.78 28.0 C19.27 34.53 17.29 52.07 27.67 62.5 C28.3 63.14 31.53 65.05 31.67 65.25 C32.12 65.87 31.8 67.76 32.29 68.63 C32.36 68.76 34.27 70.69 34.4 70.76 C35.15 71.2 37.27 71.65 37.55 70.37 C37.6 70.09 37.54 64.97 37.5 64.69 C37.4 64.17 35.45 61.47 35.1 60.56 C30.81 49.45 31.27 38.15 38.66 28.52 L39.16 64.01 L40.54 64.01 L40.55 64.01 L40.55 64.01 L41.94 64.01 L42.44 28.52 C49.83 38.15 50.28 49.45 45.99 60.56 C45.64 61.47 43.69 64.17 43.6 64.69 C43.55 64.97 43.49 70.09 43.55 70.37 C43.83 71.65 45.95 71.2 46.69 70.76 C46.82 70.69 48.73 68.76 48.81 68.63 C49.3 67.76 48.98 65.87 49.43 65.25 C49.57 65.05 52.79 63.14 53.43 62.5 C63.81 52.07 61.82 34.53 48.32 28.0" />
@@ -1109,6 +1118,7 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
                                 <th className="text-left py-2 px-1 text-[10px] uppercase text-navy font-extrabold w-24">{showRetentionsTable ? 'A Pagar' : 'Valor (R$)'}</th>
                                 <th className="text-center py-2 px-1 text-[10px] uppercase text-slate-500 font-bold w-24">Venc.</th>
                                 <th className="text-left py-2 px-1 text-[10px] uppercase text-slate-500 font-bold min-w-[120px]">Obs</th>
+                                <th className="text-center py-2 px-1 text-[10px] uppercase text-slate-500 font-bold w-14" title="Se o tributo entra na alíquota efetiva (carga sobre a receita)">Alíq.</th>
                                 <th className="w-8"></th>
                             </tr>
                         </thead>
@@ -1137,6 +1147,14 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
                                     <td className="py-2 px-1"><input className={`field-input !py-1.5 !px-2 !text-xs text-right font-bold text-navy ${showRetentionsTable ? 'bg-blue-50 border-blue-200' : ''}`} value={row.value} onChange={e => updateTax(row.id, 'value', formatInputBRL(e.target.value))} placeholder="0,00" /></td>
                                     <td className="py-2 px-1"><input className="field-input !py-1.5 !px-2 !text-xs text-center" value={row.dueDate} onChange={e => { const dg = e.target.value.replace(/\D/g, '').slice(0, 8); const fmt = dg.length > 4 ? dg.slice(0, 2) + '/' + dg.slice(2, 4) + '/' + dg.slice(4) : dg.length > 2 ? dg.slice(0, 2) + '/' + dg.slice(2) : dg; updateTax(row.id, 'dueDate', fmt); }} placeholder="dd/mm/aaaa" /></td>
                                     <td className="py-2 px-1"><input className="field-input !py-1.5 !px-2 !text-[11px]" value={row.obs} onChange={e => updateTax(row.id, 'obs', e.target.value)} placeholder="Observação" /></td>
+                                    <td className="py-2 px-1 text-center">{(() => { const on = entraNaAliquota(row); return (
+                                        <button type="button" onClick={() => updateTax(row.id, 'foraAliquota', on)}
+                                            aria-label={on ? 'Tirar da alíquota efetiva' : 'Incluir na alíquota efetiva'}
+                                            title={on ? 'Conta na alíquota efetiva — clique para tirar' : 'Fora da alíquota efetiva — clique para incluir'}
+                                            className={`p-1 rounded transition-colors cursor-pointer ${on ? 'text-emerald-600 hover:text-emerald-700' : 'text-slate-300 hover:text-emerald-500'}`}>
+                                            <BadgePercent className="w-4 h-4" />
+                                        </button>
+                                    ); })()}</td>
                                     <td className="py-2 px-1 text-center"><button onClick={() => removeTax(row.id)} aria-label={'Remover ' + (row.tax || 'tributo')} className="text-slate-300 hover:text-red-500 transition-colors cursor-pointer p-1 opacity-0 group-hover:opacity-100 focus-visible:opacity-100"><Trash2 className="w-4 h-4" /></button></td>
                                 </tr>
                             ))}
@@ -1164,7 +1182,11 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
     const totalTributos = taxes.reduce((s, r) => s + (ehRetido(r) ? 0 : parseNum(r.value)), 0);
     const totalApurado = taxes.reduce((s, r) => s + (ehRetido(r) ? 0 : (parseNum(r.apurado) || parseNum(r.value))), 0);
     const totalRetido = taxes.reduce((s, r) => s + parseNum(r.retido), 0);
-    const aliquotaEfetiva = revenue > 0 ? (totalApurado / revenue) * 100 : 0;
+    // Alíquota efetiva = só os tributos que incidem sobre a receita (encargos de
+    // folha/pró-labore ficam de fora por padrão; ajustável por linha). O "total a
+    // pagar" continua somando tudo — o que sai daqui você ainda recolhe.
+    const baseAliquota = taxes.reduce((s, r) => s + ((ehRetido(r) || !entraNaAliquota(r)) ? 0 : (parseNum(r.apurado) || parseNum(r.value))), 0);
+    const aliquotaEfetiva = revenue > 0 ? (baseAliquota / revenue) * 100 : 0;
 
     const rbt12 = parseNum(clientData.rbt12);
     const folha12m = parseNum(clientData.folha12m !== undefined ? clientData.folha12m : clientData.folha);
@@ -1883,7 +1905,9 @@ const LiveSummary = ({ clientData, taxes }) => {
     const totalApurado = taxes.reduce((s, t) => s + (ehRetido(t) ? 0 : (parseNumBR(t.apurado) || parseNumBR(t.value))), 0);
     const totalPagar = taxes.reduce((s, t) => s + (ehRetido(t) ? 0 : parseNumBR(t.value)), 0);
     const totalRetido = taxes.reduce((s, t) => s + parseNumBR(t.retido), 0);
-    const aliquota = revenue > 0 ? (totalApurado / revenue) * 100 : 0;
+    // Alíquota efetiva só com os tributos sobre a receita (encargos de folha/pró-labore fora por padrão)
+    const baseAliquota = taxes.reduce((s, t) => s + ((ehRetido(t) || !entraNaAliquota(t)) ? 0 : (parseNumBR(t.apurado) || parseNumBR(t.value))), 0);
+    const aliquota = revenue > 0 ? (baseAliquota / revenue) * 100 : 0;
     const guias = taxes.filter(t => t.tax && !ehRetido(t) && parseNumBR(t.value) > 0);
 
     const isSN = clientData.regime === 'Simples Nacional' || clientData.regime === 'MEI';
@@ -2040,7 +2064,19 @@ const App = () => {
         await loadRecords(id);
     };
 
-    const compKeyOf = (cd) => (cd.compYear && cd.compMonth) ? `${cd.compYear}-${String(cd.compMonth).padStart(2, '0')}` : '';
+    // Deriva a chave AAAA-MM da competência. Aceita tanto os campos crus
+    // (compMonth/compYear) quanto o competenceShort "MM/AAAA" — que é o que o
+    // dropdown exibe quando a competência veio de import PGDAS ou de um registro
+    // sem os campos crus (senão o "Salvar" reclamava mesmo com mês/ano na tela).
+    const compKeyOf = (cd) => {
+        let y = cd.compYear, m = cd.compMonth;
+        if ((!y || !m) && cd.competenceShort && /^\d{1,2}\/\d{4}$/.test(cd.competenceShort)) {
+            const [mm, yy] = cd.competenceShort.split('/');
+            if (!m) m = mm;
+            if (!y) y = yy;
+        }
+        return (y && m) ? `${y}-${String(m).padStart(2, '0')}` : '';
+    };
 
     const saveComp = async () => {
         if (!clientId) { setToast({ message: 'Selecione a empresa do controle fiscal.', type: 'error' }); return; }
@@ -2048,6 +2084,7 @@ const App = () => {
         if (!compKey) { setToast({ message: 'Informe mês e ano da competência.', type: 'error' }); return; }
         const totalPagar = taxes.reduce((s, t) => s + parseNumBR(t.value), 0);
         const totalApurado = taxes.reduce((s, t) => s + (parseNumBR(t.apurado) || parseNumBR(t.value)), 0);
+        const baseAliquota = taxes.reduce((s, t) => s + (entraNaAliquota(t) ? (parseNumBR(t.apurado) || parseNumBR(t.value)) : 0), 0);
         const revenue = calculateTotalRevenue(clientData);
         const das = taxes.filter(t => /^DAS/.test(t.tax)).reduce((s, t) => s + parseNumBR(t.value), 0);
         const rec = {
@@ -2063,7 +2100,7 @@ const App = () => {
             proLabore: parseNumBR(clientData.proLabore),
             totalTributos: totalApurado,
             totalPagar,
-            aliquotaEfetiva: revenue > 0 ? (totalApurado / revenue) * 100 : 0,
+            aliquotaEfetiva: revenue > 0 ? (baseAliquota / revenue) * 100 : 0,
             economia: 0,
             das,
             payload: { clientData, taxes },
