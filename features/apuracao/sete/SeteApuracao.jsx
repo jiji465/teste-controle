@@ -1537,8 +1537,11 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
         );
     }
 
-    // Gráfico de evolução vira página própria quando o Resumo (muitos tributos) não comporta os dois
-    const evolucaoCard = (Array.isArray(clientData.evolucao) && clientData.evolucao.some(p => p.receita > 0)) ? (() => {
+    // Gráfico de evolução vira página própria quando o Resumo (muitos tributos) não comporta os dois.
+    // tall=true → versão "herói" (mais alta) na página dedicada; compacto na página 1.
+    const hasEvolucao = Array.isArray(clientData.evolucao) && clientData.evolucao.some(p => p.receita > 0);
+    const renderEvolucao = (tall = false) => {
+        if (!hasEvolucao) return null;
         const ev = clientData.evolucao;
         const fmtMil = (v) => v <= 0 ? '' : (v >= 1000 ? (v / 1000).toFixed(1).replace('.', ',') + 'k' : Math.round(v).toString());
         const mx = Math.max(...ev.map(p => p.receita), 1);
@@ -1548,17 +1551,17 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
         return (
             <div className={card + ' mb-4 avoid-break'} style={cardPad}>
                 <SectionTitle right="notas emitidas · últimos 12 meses">Evolução do faturamento</SectionTitle>
-                <div className="evo-chart" style={{ display: 'flex', alignItems: 'flex-end', gap: 6, height: 118, borderBottom: '1.5px solid #e9e6dd', paddingTop: 6 }}>
+                <div className="evo-chart" style={{ display: 'flex', alignItems: 'flex-end', gap: 6, height: tall ? 210 : 118, borderBottom: '1.5px solid #e9e6dd', paddingTop: 6 }}>
                     {ev.map((p, i) => (
                         <div key={i} title={`${p.ym}: ${formatCurrency(p.receita)}`} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end', height: '100%' }}>
-                            <div style={{ fontSize: 7, lineHeight: 1, color: i === ev.length - 1 ? '#b06f06' : '#646d7c', fontWeight: 700, marginBottom: 3, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{fmtMil(p.receita)}</div>
-                            <div style={{ width: '100%', maxWidth: 22, height: Math.max(p.receita / mx * 82, p.receita > 0 ? 2 : 0) + '%', background: i === ev.length - 1 ? '#F79C04' : '#001D3D', borderRadius: '3px 3px 0 0' }}></div>
+                            <div style={{ fontSize: tall ? 8.5 : 7, lineHeight: 1, color: i === ev.length - 1 ? '#b06f06' : '#646d7c', fontWeight: 700, marginBottom: 3, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{fmtMil(p.receita)}</div>
+                            <div style={{ width: '100%', maxWidth: tall ? 30 : 22, height: Math.max(p.receita / mx * 82, p.receita > 0 ? 2 : 0) + '%', background: i === ev.length - 1 ? '#F79C04' : '#001D3D', borderRadius: '3px 3px 0 0' }}></div>
                         </div>
                     ))}
                 </div>
                 <div style={{ display: 'flex', gap: 6, marginTop: 5 }}>
                     {ev.map((p, i) => (
-                        <div key={i} style={{ flex: 1, textAlign: 'center', fontSize: 8, color: i === ev.length - 1 ? '#b06f06' : '#646d7c', fontWeight: i === ev.length - 1 ? 700 : 500 }}>{MES_ABBR[(parseInt(p.ym.slice(0, 2)) || 1) - 1]}</div>
+                        <div key={i} style={{ flex: 1, textAlign: 'center', fontSize: tall ? 9 : 8, color: i === ev.length - 1 ? '#b06f06' : '#646d7c', fontWeight: i === ev.length - 1 ? 700 : 500 }}>{MES_ABBR[(parseInt(p.ym.slice(0, 2)) || 1) - 1]}</div>
                     ))}
                 </div>
                 <div style={{ display: 'flex', gap: 14, marginTop: 9, fontSize: 10, color: '#646d7c', alignItems: 'center' }}>
@@ -1567,6 +1570,62 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
                     <span style={{ marginLeft: 'auto', color: '#b06f06', fontWeight: 600 }}>Média {formatCurrency(media)}{varPct !== null ? ` · ${varPct >= 0 ? '▲' : '▼'} ${Math.abs(varPct).toFixed(1).replace('.', ',')}% no mês` : ''}</span>
                 </div>
             </div>
+        );
+    };
+    const evolucaoCard = renderEvolucao(false);
+    // Painel de faturamento (só dados reais da própria série — sem margem/KPI
+    // inventado): cartões de resumo + faturamento por trimestre. Preenche a
+    // página separada da evolução com conteúdo útil em vez de deixá-la vazia.
+    const evolucaoDetalhe = (Array.isArray(clientData.evolucao) && clientData.evolucao.some(p => p.receita > 0)) ? (() => {
+        const ev = clientData.evolucao;
+        const acumulado = ev.reduce((s, p) => s + p.receita, 0);
+        const media = acumulado / ev.length;
+        const mesLabel = (ym) => { const [mm, yy] = String(ym).split('/'); return `${MES_ABBR[(parseInt(mm) || 1) - 1]}/${yy}`; };
+        const mesAbbr = (ym) => MES_ABBR[(parseInt(String(ym).split('/')[0]) || 1) - 1];
+        const maior = ev.reduce((m, p) => p.receita > m.receita ? p : m, ev[0]);
+        const menor = ev.reduce((m, p) => p.receita < m.receita ? p : m, ev[0]);
+        // Trimestres: blocos de 3 meses consecutivos, ancorados no mês mais recente
+        // (trimestres incompletos no início da janela são descartados).
+        const chunks = [];
+        for (let i = ev.length; i >= 3; i -= 3) chunks.unshift(ev.slice(i - 3, i));
+        const trimestres = chunks.map(c => ({ label: `${mesAbbr(c[0].ym)}–${mesAbbr(c[2].ym)}`, total: c.reduce((s, p) => s + p.receita, 0) }));
+        const triMax = Math.max(...trimestres.map(t => t.total), 1);
+        const tile = (cls, label, value, foot) => {
+            const white = cls === 'w';
+            const box = white ? { background: '#fff', border: '1px solid #e2e8f0', color: '#1a2230' }
+                : cls === 'gold' ? { background: 'linear-gradient(160deg,#F79C04,#d4830a)', color: '#fff' }
+                    : { background: '#001D3D', color: '#fff' };
+            return (
+                <div style={{ ...box, borderRadius: 12, padding: 13 }}>
+                    <div style={{ fontSize: '8.5px', textTransform: 'uppercase', letterSpacing: '.5px', fontWeight: 600, ...(white ? { color: '#7c8595' } : { opacity: .88 }) }}>{label}</div>
+                    <div style={{ fontSize: '15px', fontWeight: 800, marginTop: 5, lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>{value}</div>
+                    <div style={{ fontSize: '8.5px', marginTop: 4, ...(white ? { color: '#7c8595' } : { opacity: .85 }) }}>{foot}</div>
+                </div>
+            );
+        };
+        return (
+            <>
+                <div className="grid grid-cols-4 gap-3 mb-4 avoid-break">
+                    {tile('navy', 'Acumulado 12 meses', formatCurrency(acumulado), 'base do RBT12')}
+                    {tile('w', 'Média mensal', formatCurrency(media), 'por mês')}
+                    {tile('gold', 'Maior mês', formatCurrency(maior.receita), mesLabel(maior.ym))}
+                    {tile('w', 'Menor mês', formatCurrency(menor.receita), mesLabel(menor.ym))}
+                </div>
+                {trimestres.length > 1 && (
+                    <div className={card + ' avoid-break'} style={cardPad}>
+                        <SectionTitle right="somatório de cada trimestre do período">Faturamento por trimestre</SectionTitle>
+                        <div style={{ display: 'grid', gridTemplateColumns: `repeat(${trimestres.length}, 1fr)`, gap: 16, alignItems: 'end', height: 170 }}>
+                            {trimestres.map((t, i) => (
+                                <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end', height: '100%' }}>
+                                    <div style={{ fontSize: '11px', fontWeight: 800, color: '#001D3D', marginBottom: 5, fontVariantNumeric: 'tabular-nums' }}>{formatCurrency(t.total)}</div>
+                                    <div style={{ width: '100%', maxWidth: 60, height: Math.max(t.total / triMax * 68, 2) + '%', background: '#001D3D', borderRadius: '4px 4px 0 0' }}></div>
+                                    <div style={{ fontSize: '9.5px', color: '#646d7c', marginTop: 6, fontWeight: 600 }}>{t.label}</div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
+            </>
         );
     })() : null;
     const estImpostosMM = 14 + taxRows.length * 6.6 + 8;
@@ -1746,7 +1805,8 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
                 <div className="report-preview">
                     <div className="report-preview-body">
                         <Header kicker="Relatório Mensal" title="Evolução do Faturamento" sub={`${clientData.clientName || 'Empresa'} · ${compLabel}`} />
-                        {evolucaoCard}
+                        {renderEvolucao(true)}
+                        {evolucaoDetalhe}
                     </div>
                     <Footer />
                 </div>
