@@ -1465,12 +1465,12 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
         return h;
     };
     const nGuiasVenc = withDue.length;
-    const manyGuias = nGuiasVenc > 8; // muitas guias → 2 colunas compactas p/ não quebrar a página
-    const estTabelaGuiasMM = 14 + (manyGuias ? Math.ceil(nGuiasVenc / 2) * 6 : nGuiasVenc * 7) + 10; // uma guia por linha (lista)
-    // Detalhamento vai para página própria quando (a) há muitas guias — a lista
-    // longa não cabe junto do calendário — ou (b) a estimativa calendário+guias
-    // estoura o orçamento da página. Evita quebra de página no meio de um card.
-    const vencSplit = venciMonths.length > 0 && (manyGuias || estCalMM(venciMonths[0]) + 32 + estTabelaGuiasMM + 10 > PAGE_BUDGET_MM);
+    // Nº de colunas do detalhamento: mais guias → mais colunas (até 4), para caber
+    // JUNTO do calendário na mesma página em vez de gerar uma folha só pra ele.
+    const nCols = Math.min(4, Math.max(1, Math.ceil(nGuiasVenc / 4)));
+    const pillMax = nCols >= 4 ? 62 : nCols >= 3 ? 88 : 104; // largura da pill encolhe em colunas estreitas
+    // O detalhamento nunca vira página própria — compacta em colunas, não quebra.
+    const vencSplit = false;
 
     // Indicadores e detalhamento calculados uma vez (usados na página única ou divididos em duas)
     let vencIndicadores = null, vencDetalhamento = null;
@@ -1508,29 +1508,27 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
         );
         // Uma guia por linha (sem agrupar/juntar por data) — lista com pills, não planilha.
         // Muitas guias → 2 colunas compactas para caber sem quebrar a página.
-        const GuiaRow = (t, key, compact, isLast) => {
+        const GuiaRow = (t, key, compact, isLast, maxPill = 104) => {
             const isDas = /^DAS/.test(t.tax);
             return (
-                <div key={key} className="flex items-center avoid-break" style={{ gap: 9, padding: compact ? '4.5px 0' : '6.5px 0', borderBottom: isLast ? 'none' : '1px solid #f0eee7' }}>
-                    <span style={{ fontSize: compact ? '8.5px' : '9.5px', fontWeight: 700, color: '#7c8595', minWidth: compact ? 34 : 40, flexShrink: 0, whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{fmtD(t.dueDate)}</span>
-                    <span style={{ fontSize: compact ? '8.5px' : '10px', fontWeight: 700, padding: '1.5px 8px', borderRadius: 20, background: isDas ? '#fcefd7' : '#eef2f7', color: isDas ? '#b06f06' : '#0a3160', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: compact ? 104 : 170 }}>{t.tax}</span>
-                    <span style={{ marginLeft: 'auto', fontSize: compact ? '10px' : '11px', fontWeight: 700, color: '#1a2230', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{formatCurrency(parseNum(t.value))}</span>
+                <div key={key} className="flex items-center avoid-break" style={{ gap: compact ? 7 : 9, padding: compact ? '4px 0' : '6.5px 0', borderBottom: isLast ? 'none' : '1px solid #f0eee7' }}>
+                    <span style={{ fontSize: compact ? '8px' : '9.5px', fontWeight: 700, color: '#7c8595', minWidth: compact ? 30 : 40, flexShrink: 0, whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{fmtD(t.dueDate)}</span>
+                    <span style={{ fontSize: compact ? '8px' : '10px', fontWeight: 700, padding: '1.5px 7px', borderRadius: 20, background: isDas ? '#fcefd7' : '#eef2f7', color: isDas ? '#b06f06' : '#0a3160', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: compact ? maxPill : 170 }}>{t.tax}</span>
+                    <span style={{ marginLeft: 'auto', fontSize: compact ? '9px' : '11px', fontWeight: 700, color: '#1a2230', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{formatCurrency(parseNum(t.value))}</span>
                 </div>
             );
         };
-        const half = Math.ceil(sortedG.length / 2);
-        const colA = sortedG.slice(0, half), colB = sortedG.slice(half);
+        const compactRows = nCols >= 2;
+        const perCol = Math.ceil(sortedG.length / nCols);
+        const columns = Array.from({ length: nCols }, (_, c) => sortedG.slice(c * perCol, (c + 1) * perCol));
         vencDetalhamento = (
-            <div className={card} style={cardPad}>
+            <div className={card + ' avoid-break'} style={cardPad}>
                 <SectionTitle right={`${withDue.length} guia${withDue.length > 1 ? 's' : ''}`}>Detalhamento das guias</SectionTitle>
-                {manyGuias ? (
-                    <div className="grid grid-cols-2" style={{ columnGap: 22, rowGap: 0, alignItems: 'start' }}>
-                        <div>{colA.map((t, i) => GuiaRow(t, 'a' + i, true, i === colA.length - 1))}</div>
-                        <div>{colB.map((t, i) => GuiaRow(t, 'b' + i, true, i === colB.length - 1))}</div>
-                    </div>
-                ) : (
-                    <div>{sortedG.map((t, i) => GuiaRow(t, i, false, i === sortedG.length - 1))}</div>
-                )}
+                <div style={{ display: 'grid', gridTemplateColumns: `repeat(${nCols}, minmax(0, 1fr))`, columnGap: nCols >= 3 ? 14 : 22, rowGap: 0, alignItems: 'start' }}>
+                    {columns.map((col, ci) => (
+                        <div key={ci}>{col.map((t, i) => GuiaRow(t, ci + '-' + i, compactRows, i === col.length - 1, pillMax))}</div>
+                    ))}
+                </div>
                 <div className="flex justify-between items-center" style={{ marginTop: 11, paddingTop: 9, borderTop: '2px solid #001D3D' }}>
                     <span style={{ fontSize: '11px', fontWeight: 700, color: '#1a2230' }}>Total a recolher</span>
                     <span style={{ fontSize: '13px', fontWeight: 800, color: '#001D3D', fontVariantNumeric: 'tabular-nums' }}>{formatCurrency(totalDue)}</span>
