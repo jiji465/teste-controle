@@ -1,6 +1,6 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
-exports[`autoFillTaxes — Lucro Presumido / Comércio > snapshot completo (LP Comércio) 1`] = `
+exports[`autoFillTaxes — Lucro Presumido / Comércio (lançamento guiado) > snapshot completo (LP Comércio) 1`] = `
 [
   {
     "apurado": "1.300,00",
@@ -24,10 +24,10 @@ exports[`autoFillTaxes — Lucro Presumido / Comércio > snapshot completo (LP C
   },
   {
     "apurado": "18.400,00",
-    "base": "200.000,00",
+    "base": "",
     "dueDate": "22/06/2026",
     "provisao": undefined,
-    "rate": "23,00",
+    "rate": "",
     "retido": "",
     "tax": "ICMS",
     "value": "18.400,00",
@@ -101,26 +101,6 @@ exports[`autoFillTaxes — Lucro Presumido / Comércio > snapshot completo (LP C
     "retido": "",
     "tax": "FGTS",
     "value": "1.200,00",
-  },
-  {
-    "apurado": "",
-    "base": "",
-    "dueDate": "22/06/2026",
-    "provisao": undefined,
-    "rate": "",
-    "retido": "",
-    "tax": "Antecipação Parcial",
-    "value": "",
-  },
-  {
-    "apurado": "",
-    "base": "",
-    "dueDate": "10/06/2026",
-    "provisao": undefined,
-    "rate": "",
-    "retido": "",
-    "tax": "DIFAL",
-    "value": "",
   },
 ]
 `;

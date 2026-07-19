@@ -13,12 +13,12 @@ import {
   calcAliquotaEfetivaSN,
   getBasePresumidaLP,
   getDueDate,
-  calcComercioLP,
   parseNumBR,
   calculateTotalRevenue,
   SALARIO_MINIMO,
   resumoApuracao,
   avisosApuracao,
+  acumuladoPeriodo,
 } from "./engine.js"
 
 // Projeção estável dos tributos p/ snapshot (ignora id, que é volátil).
@@ -148,14 +148,12 @@ describe("autoFillTaxes — Lucro Presumido / Serviços", () => {
   })
 })
 
-describe("autoFillTaxes — Lucro Presumido / Comércio", () => {
+describe("autoFillTaxes — Lucro Presumido / Comércio (lançamento guiado)", () => {
   const data = {
     regime: "Lucro Presumido",
     atividade: "Comércio",
     revenueNonRetained: "200.000,00",
-    entradasCompras: "120.000,00",
-    aliqIcmsSaida: "23,00",
-    aliqIcmsEntrada: "23,00",
+    icmsApurado: "18.400,00", // ICMS próprio do SPED (valor lançado, não calculado)
     compMonth: "5",
     compYear: "2026",
     folhaMensal: "15.000,00",
@@ -173,11 +171,54 @@ describe("autoFillTaxes — Lucro Presumido / Comércio", () => {
   it("CSLL base 12% → 9% de 24.000 = 2.160", () => {
     expect(parseNumBR(byTax(out, "CSLL").apurado)).toBeCloseTo(2160, 2)
   })
-  it("ICMS = débito(23% de 200.000) − crédito(23% de 120.000) = 18.400", () => {
+  it("ICMS = valor lançado do SPED (não estimado)", () => {
     expect(parseNumBR(byTax(out, "ICMS").apurado)).toBeCloseTo(18400, 2)
   })
   it("snapshot completo (LP Comércio)", () => {
     expect(project(out)).toMatchSnapshot()
+  })
+})
+
+describe("Comércio — guias estaduais por valor lançado", () => {
+  const data = {
+    regime: "Lucro Presumido",
+    atividade: "Comércio",
+    revenueNonRetained: "250.000,00",
+    icmsApurado: "22.000,00",
+    receitaMonofasica: "60.000,00", // CST 04/05/06/09 → fora da base de PIS/COFINS
+    icmsStValor: "4.500,00",
+    difalValor: "1.300,00",
+    antecipacaoValor: "2.100,00",
+    fumacopValor: "1.800,00",
+    compMonth: "5",
+    compYear: "2026",
+  }
+  // Simula o que o recalcular monta: núcleo + guias estaduais ligadas por interruptor
+  const taxes = [
+    ...lpDefaults("Comércio"),
+    { tax: "ICMS (ST)", base: "", rate: "", apurado: "", retido: "", value: "", dueDate: "", obs: "", retidoManual: false },
+    { tax: "Antecipação Parcial", base: "", rate: "", apurado: "", retido: "", value: "", dueDate: "", obs: "", retidoManual: false },
+    { tax: "DIFAL", base: "", rate: "", apurado: "", retido: "", value: "", dueDate: "", obs: "", retidoManual: false },
+    { tax: "FUMACOP", base: "", rate: "", apurado: "", retido: "", value: "", dueDate: "", obs: "", retidoManual: false },
+  ].map((t, i) => ({ ...t, id: i + 1 }))
+  const out = autoFillTaxes(data, taxes)
+
+  it("cada guia estadual recebe o valor lançado (não calculado)", () => {
+    expect(parseNumBR(byTax(out, "ICMS").apurado)).toBeCloseTo(22000, 2)
+    expect(parseNumBR(byTax(out, "ICMS (ST)").apurado)).toBeCloseTo(4500, 2)
+    expect(parseNumBR(byTax(out, "DIFAL").apurado)).toBeCloseTo(1300, 2)
+    expect(parseNumBR(byTax(out, "Antecipação Parcial").apurado)).toBeCloseTo(2100, 2)
+    expect(parseNumBR(byTax(out, "FUMACOP").apurado)).toBeCloseTo(1800, 2)
+  })
+  it("PIS/COFINS excluem a receita sem PIS/COFINS (CST 04/05/06/09)", () => {
+    // base = 250.000 − 60.000 = 190.000 → PIS 1.235, COFINS 5.700
+    expect(parseNumBR(byTax(out, "PIS").apurado)).toBeCloseTo(1235, 2)
+    expect(parseNumBR(byTax(out, "COFINS").apurado)).toBeCloseTo(5700, 2)
+  })
+  it("vencimentos automáticos por tipo (ICMS-ST/DIFAL dia 10; FUMACOP/Antecipação dia 20)", () => {
+    expect(byTax(out, "ICMS (ST)").dueDate).toMatch(/^\d{2}\/06\/2026$/)
+    expect(byTax(out, "DIFAL").dueDate).toMatch(/^\d{2}\/06\/2026$/)
+    expect(byTax(out, "FUMACOP").dueDate).toMatch(/^\d{2}\/06\/2026$/)
   })
 })
 
@@ -214,8 +255,6 @@ describe("autoFillTaxes — MEI / Serviços", () => {
     expect(project(out)).toMatchSnapshot()
   })
 })
-
-/* ===================== calcComercioLP ===================== */
 
 describe("Vazamento de receita e monofásica (Fases 1.4 / 1.5)", () => {
   it("LP Comércio ignora 'receita com retenção' — usa só as saídas", () => {
@@ -277,6 +316,42 @@ describe("IRPJ/CSLL — provisão × recolhimento (dois perfis)", () => {
     expect(R.totalRecolherMes).toBeGreaterThan(0)
     // mas contam na carga efetiva (base sobre receita)
     expect(R.baseCarga).toBeGreaterThanOrEqual(7680)
+  })
+})
+
+describe("acumuladoPeriodo — soma do período pelo histórico salvo (LP)", () => {
+  const base = { regime: "Lucro Presumido", atividade: "Comércio", compYear: "2026", revenueNonRetained: "150.000,00" }
+  const records = [
+    { compKey: "2026-04", faturamento: 100000 },
+    { compKey: "2026-05", faturamento: 120000 },
+    { compKey: "2026-01", faturamento: 90000 },
+    { compKey: "2026-02", faturamento: 110000 },
+    { compKey: "2026-03", faturamento: 130000 },
+  ]
+  it("Trimestral, junho (Q2): abr + mai salvos + junho vivo", () => {
+    const r = acumuladoPeriodo({ ...base, compMonth: "6", irpjCsllMode: "Trimestral (Apuração)" }, records)
+    expect(r.total).toBeCloseTo(370000, 2) // 100k + 120k + 150k
+    expect(r.salvos).toBe(2)
+    expect(r.faltando).toBe(0)
+    expect(r.meses).toBe(3)
+  })
+  it("Trimestral, abril (início do trimestre): só o mês corrente", () => {
+    const r = acumuladoPeriodo({ ...base, compMonth: "4", irpjCsllMode: "Trimestral (Apuração)" }, records)
+    expect(r.total).toBeCloseTo(150000, 2)
+    expect(r.meses).toBe(1)
+  })
+  it("Estimativa, março: jan + fev salvos + março vivo", () => {
+    const r = acumuladoPeriodo({ ...base, compMonth: "3", irpjCsllMode: "Estimativa (Anual)" }, records)
+    expect(r.total).toBeCloseTo(90000 + 110000 + 150000, 2)
+    expect(r.salvos).toBe(2)
+  })
+  it("mês faltante no período conta como 0 e é sinalizado", () => {
+    const r = acumuladoPeriodo({ ...base, compMonth: "6", irpjCsllMode: "Trimestral (Apuração)" }, [{ compKey: "2026-05", faturamento: 120000 }])
+    expect(r.total).toBeCloseTo(120000 + 150000, 2) // abril faltando
+    expect(r.faltando).toBe(1)
+  })
+  it("modo Mensal (antecipado) não acumula → null", () => {
+    expect(acumuladoPeriodo({ ...base, compMonth: "6", irpjCsllMode: "Mensal (Provisão)" }, records)).toBeNull()
   })
 })
 
@@ -367,14 +442,3 @@ describe("avisosApuracao — sanidade / anti-erro (Fase 5)", () => {
   })
 })
 
-describe("calcComercioLP — ICMS débito/crédito", () => {
-  it("ST fora do débito próprio", () => {
-    const mov = calcComercioLP(
-      { aliqIcmsSaida: "23,00", aliqIcmsEntrada: "23,00", entradasCompras: "0", saidasST: "50.000,00" },
-      200000,
-    )
-    // baseSaidas = 200.000 − 50.000 = 150.000 → débito 34.500
-    expect(mov.icms.debito).toBeCloseTo(34500, 2)
-    expect(mov.icms.baseSaidas).toBeCloseTo(150000, 2)
-  })
-})
