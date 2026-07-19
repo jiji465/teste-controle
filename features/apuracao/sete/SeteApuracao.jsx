@@ -9,7 +9,8 @@ import {
     MessageSquare, ChevronDown
 } from 'lucide-react';
 import {
-    DEFAULT_TAXES, DEFAULT_TAXES_LP, DEFAULT_TAXES_MEI_AMBOS, DEFAULT_TAXES_MEI_COMERCIO, DEFAULT_TAXES_MEI_SERVICOS, DEFAULT_TAXES_SN_COMERCIO, DEFAULT_TAXES_SN_SERVICOS, GLOSSARY, MONTHS, OFFICE_NAME, STORAGE_KEY, autoFillTaxes, calcAliquotaEfetivaSN, calcComercioLP, calcFatorR, calcIRRFProLabore, calculateTotalRevenue, extractPdfText, formatBRLDisplay, formatCNPJ, formatCurrency, formatPercent, getAnexoEfetivo, getDueDate, isSujeitoFatorR, lpDefaults, parseNumBR, parsePGDASD, pgNum, sumProLabore, SALARIO_MINIMO, TETO_INSS, SUBLIMITE_SN, LIMITE_SN
+    DEFAULT_TAXES, DEFAULT_TAXES_LP, DEFAULT_TAXES_MEI_AMBOS, DEFAULT_TAXES_MEI_COMERCIO, DEFAULT_TAXES_MEI_SERVICOS, DEFAULT_TAXES_SN_COMERCIO, DEFAULT_TAXES_SN_SERVICOS, GLOSSARY, MONTHS, OFFICE_NAME, STORAGE_KEY, autoFillTaxes, calcAliquotaEfetivaSN, calcComercioLP, calcFatorR, calcIRRFProLabore, calculateTotalRevenue, extractPdfText, formatBRLDisplay, formatCNPJ, formatCurrency, formatPercent, getAnexoEfetivo, getDueDate, isSujeitoFatorR, lpDefaults, parseNumBR, parsePGDASD, pgNum, sumProLabore, SALARIO_MINIMO, TETO_INSS, SUBLIMITE_SN, LIMITE_SN,
+    ehRetido, entraNaAliquota, resumoApuracao, avisosApuracao
 } from './engine.js';
 // ---- Integração com o controle fiscal (teste-controle) ----
 import { useData } from '@/contexts/data-context';
@@ -23,14 +24,8 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 
-// ===== Alíquota efetiva: quais tributos compõem a "carga sobre a receita" =====
-// Encargos sobre a folha/pró-labore (INSS, IRRF, FGTS, CPP, RAT, Terceiros) NÃO
-// incidem sobre o faturamento, então por padrão ficam FORA da alíquota efetiva.
-// Cada linha pode ser sobreposta manualmente pelo botão (campo `foraAliquota`).
-// IRRF e INSS do segurado/sócio, além disso, são retenções — dinheiro do
-// trabalhador, não custo tributário da empresa sobre a receita.
-const isFolhaTax = (name) => /\b(INSS|IRRF|FGTS|CPP|RAT|Terceiros)\b/i.test(name || '');
-const entraNaAliquota = (t) => (t && t.foraAliquota !== undefined) ? !t.foraAliquota : !isFolhaTax(t && t.tax);
+// `isFolhaTax` / `entraNaAliquota` / `ehRetido` / `resumoApuracao` vivem em engine.js
+// (fonte única dos totais — importados acima).
 
 const BrandIcon = () => (
     <svg viewBox="0 0 80.7 103.3" fill="#F79C04" fillRule="evenodd" role="img" aria-label="SETE" style={{ height: 46, width: 'auto', display: 'block', flexShrink: 0 }}>
@@ -271,10 +266,12 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
         }
     };
 
-    const recalcular = (overrideData) => {
+    const recalcular = (overrideData, clearLocks = false) => {
         const data = overrideData || clientData;
         setTaxes(prev => {
             let baseTaxes = [...prev];
+            // "Restaurar padrões": destrava todos os campos manuais e recalcula do zero
+            if (clearLocks) baseTaxes = baseTaxes.map(t => ({ ...t, baseManual: false, rateManual: false, apuradoManual: false, valueManual: false, retidoManual: false }));
             if (baseTaxes.length === 0) {
                 if (data.regime === 'Lucro Presumido' || data.regime === 'Lucro Real') {
                     baseTaxes = [...lpDefaults(data.atividade)];
@@ -387,23 +384,29 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
             if (t.id !== id) return t;
             const updated = { ...t, [field]: val };
             
+            // Locks por campo: editar à mão trava o campo (não é sobrescrito no recálculo).
             if (field === 'base' || field === 'rate') {
+                updated[field + 'Manual'] = (String(val).trim() !== '');
                 const b = parseNumBR(updated.base);
                 const r = parseNumBR(updated.rate);
                 if (b > 0 && r > 0) {
                     const ap = b * r / 100;
                     updated.apurado = formatBRLDisplay(ap);
-                    updated.value = formatBRLDisplay(Math.max(0, ap - parseNumBR(updated.retido)));
+                    updated.apuradoManual = true; // apurado passa a refletir a entrada manual (base × alíq)
+                    if (!updated.valueManual) updated.value = formatBRLDisplay(Math.max(0, ap - parseNumBR(updated.retido)));
                 } else {
-                    updated.apurado = ""; updated.value = "";
+                    updated.apurado = ""; updated.apuradoManual = false;
+                    if (!updated.valueManual) updated.value = "";
                 }
-            } else if (field === 'apurado' || field === 'retido') {
-                if (field === 'retido') {
-                    updated.retidoManual = (val.trim() !== '');
+            } else if (field === 'apurado' || field === 'retido' || field === 'value') {
+                if (field === 'retido') updated.retidoManual = (val.trim() !== '');
+                if (field === 'apurado') updated.apuradoManual = (val.trim() !== '');
+                if (field === 'value') updated.valueManual = (val.trim() !== '');
+                if (field !== 'value') {
+                    const a = parseNumBR(updated.apurado);
+                    const ret = parseNumBR(updated.retido);
+                    if (!updated.valueManual) updated.value = formatBRLDisplay(Math.max(0, a - ret));
                 }
-                const a = parseNumBR(updated.apurado);
-                const ret = parseNumBR(updated.retido);
-                updated.value = formatBRLDisplay(Math.max(0, a - ret));
             }
             return updated;
         }));
@@ -414,6 +417,10 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
     };
 
     const removeTax = (id) => { setTaxes(prev => prev.filter(t => t.id !== id)); };
+
+    // Indicador visual de campo travado (editado à mão) — mesmo idioma do realce de "Retido"
+    const lockCls = (on) => on ? ' shadow-[inset_0_0_0_1px_rgba(245,158,11,0.45)]' : '';
+    const lockTitle = (on) => on ? 'Editado à mão (travado — não é sobrescrito ao recalcular). Use "Restaurar padrões" para soltar.' : 'Valor calculado automaticamente';
 
     const formatInputBRL = (raw) => {
         if (!raw && raw !== 0) return '';
@@ -727,7 +734,7 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
                                             <span>IRPJ (1,5%): <b className="text-slate-800">{formatCurrency(irpj)}</b></span>
                                             <span className="text-emerald-700 font-bold">Total federal: {formatCurrency(csrf + irpj)}</span>
                                         </div>
-                                        <p className="text-[10px] text-slate-400 mt-1.5">+ ISS conforme o município (alíquota da linha ISS). A CSRF (4,65%) só incide em notas acima de R$ 5.000/mês por tomador — se não se aplicar, ajuste na coluna "Retido" da tabela.</p>
+                                        <p className="text-[10px] text-slate-400 mt-1.5">+ ISS conforme o município (alíquota da linha ISS). A <b>CSRF (4,65%)</b> é dispensada quando os pagamentos no mês ao <b>mesmo prestador</b> não passam de R$ 5.000. O <b>IRRF (1,5%)</b> incide quase sempre (dispensa só se a retenção ficar ≤ R$ 10) — e cai para <b>1%</b> em limpeza, vigilância, segurança e locação de mão de obra. Ajuste o valor exato na coluna "Retido" da tabela quando necessário.</p>
                                     </div>
                                 );
                             })()}
@@ -737,8 +744,9 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
 
                     {/* T4 — Receita & ICMS — Comércio */}
                     {(clientData.regime === 'Lucro Presumido' || clientData.regime === 'Lucro Real') && (clientData.atividade === 'Comércio' || clientData.atividade === 'Indústria') && (
-                        <Section title="Receita & ICMS — Comércio" icon={DollarSign} defaultOpen={false} summary={`Vendas ${formatCurrency(totalRevenue)}`}>
+                        <Section title="Receita & ICMS — Comércio" icon={DollarSign} defaultOpen={true} summary={`Vendas ${formatCurrency(totalRevenue)}`}>
                             <div className="grid grid-cols-2 gap-4">
+                                <div className="col-span-2 text-[11px] font-bold text-navy">ICMS próprio — saídas × entradas</div>
                                 <div>
                                     <label className="field-label">Total de Saídas — Vendas (R$) <span className="text-red-400">*</span></label>
                                     <input className={`field-input border-amber-200 focus:border-amber-500 ${validationErrors.revenue ? 'field-error' : ''}`} type="text" value={clientData.revenueNonRetained || ''}
@@ -775,6 +783,7 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
                                     <input className="field-input" type="text" value={clientData.saldoCredorICMS || ''}
                                         onChange={e => updateClient('saldoCredorICMS', parseBRL(e.target.value))} placeholder="0,00" />
                                 </div>
+                                <div className="col-span-2 text-[11px] font-bold text-navy border-t border-slate-100 pt-3 mt-1">Ajustes — ST, monofásico e FUMACOP</div>
                                 <div>
                                     <label className="field-label">Vendas c/ FUMACOP — Lei 8.205/04 (R$)</label>
                                     <input className="field-input" type="text" value={clientData.baseFumacop || ''}
@@ -858,21 +867,12 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
                     {clientData.regime !== 'MEI' && (
                         <Section title="Folha, encargos & sócios" icon={Scale} defaultOpen={false} summary={`Folha ${formatCurrency(clientData.folhaMensal !== undefined ? clientData.folhaMensal : clientData.folha)} · PL ${formatCurrency(clientData.proLabore)}`}>
                             <div className="grid grid-cols-2 gap-4">
-                                {(clientData.regime === 'Lucro Presumido' || clientData.regime === 'Lucro Real') && (
-                                    <div>
-                                        <label className="field-label">Folha de Salários Mensal (R$)</label>
-                                        <input className="field-input" type="text" value={clientData.folhaMensal !== undefined ? clientData.folhaMensal : (clientData.folha || '')}
-                                            onChange={e => { updateClient('folhaMensal', parseBRL(e.target.value)); updateClient('folha', undefined); }} placeholder="0,00" />
-                                    </div>
-                                )}
-
-                                {clientData.regime === 'Simples Nacional' && (
-                                    <div>
-                                        <label className="field-label">Folha de Salários Mensal (R$)</label>
-                                        <input className="field-input" type="text" value={clientData.folhaMensal !== undefined ? clientData.folhaMensal : (clientData.folha || '')}
-                                            onChange={e => { updateClient('folhaMensal', parseBRL(e.target.value)); updateClient('folha', undefined); }} placeholder="0,00" />
-                                    </div>
-                                )}
+                                {/* Folha mensal — vale para todos os regimes desta seção (não-MEI) */}
+                                <div>
+                                    <label className="field-label">Folha de Salários Mensal (R$)</label>
+                                    <input className="field-input" type="text" value={clientData.folhaMensal !== undefined ? clientData.folhaMensal : (clientData.folha || '')}
+                                        onChange={e => { updateClient('folhaMensal', parseBRL(e.target.value)); updateClient('folha', undefined); }} placeholder="0,00" />
+                                </div>
 
                                 {clientData.regime === 'Simples Nacional' && (clientData.anexo === 'Anexo V' || clientData.anexo === 'Anexo III') && (
                                     <div>
@@ -940,8 +940,8 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
                                     <label className="field-label">Forma de Apuração</label>
                                     <select className="field-input border-blue-200 focus:border-blue-500" value={clientData.irpjCsllMode || 'Mensal (Provisão)'}
                                         onChange={e => updateClient('irpjCsllMode', e.target.value)}>
-                                        <option value="Mensal (Provisão)">Provisão Mensal (Calculada no mês)</option>
-                                        <option value="Trimestral (Apuração)">Apuração Trimestral (Definitiva)</option>
+                                        <option value="Mensal (Provisão)">Mensal — recolhe todo mês (antecipado)</option>
+                                        <option value="Trimestral (Apuração)">Trimestral — provisão no mês, recolhe no fechamento</option>
                                         {clientData.regime === 'Lucro Real' && <option value="Estimativa (Anual)">Estimativa Mensal (Anual)</option>}
                                     </select>
                                 </div>
@@ -956,9 +956,14 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
                                     </div>
                                 )}
                                 
-                                {clientData.irpjCsllMode === 'Mensal (Provisão)' && (
+                                {(!clientData.irpjCsllMode || clientData.irpjCsllMode === 'Mensal (Provisão)') && (
                                     <div className="flex items-center">
-                                        <p className="text-[10px] text-slate-500 italic">IRPJ e CSLL serão calculados com base no Faturamento Bruto Total do Mês demonstrado acima.</p>
+                                        <p className="text-[10px] text-slate-500 italic">IRPJ e CSLL calculados sobre o faturamento do mês e <b>recolhidos todo mês</b> (guia mensal).</p>
+                                    </div>
+                                )}
+                                {clientData.irpjCsllMode === 'Trimestral (Apuração)' && (
+                                    <div className="flex items-center">
+                                        <p className="text-[10px] text-slate-500 italic">Nos meses comuns aparece só a <b>provisão</b> (não entra no total do mês). No <b>fechamento do trimestre</b> (mar/jun/set/dez) vira guia a recolher.</p>
                                     </div>
                                 )}
                                 {(clientData.atividade || 'Serviços') === 'Serviços' && (
@@ -1089,9 +1094,10 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
                                 + Habilitar Retenções
                             </button>
                         )}
-                        <button onClick={() => { recalcular(); }}
+                        <button onClick={() => { recalcular(undefined, true); }}
+                            title="Destrava os campos editados à mão e recalcula tudo do zero"
                             className="bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-emerald-700 transition-all cursor-pointer shadow-sm hover:shadow-md">
-                            <TrendingUp className="w-4 h-4" /> Recalcular Tudo
+                            <TrendingUp className="w-4 h-4" /> Restaurar padrões
                         </button>
                         <button onClick={addTax}
                             className="bg-navy text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-blue-900 transition-all cursor-pointer shadow-sm hover:shadow-md">
@@ -1126,12 +1132,12 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
                             {taxes.map((row) => (
                                 <tr key={row.id} className="border-b border-slate-100 tax-row group">
                                     <td className="py-2 px-1"><input className="field-input !py-1.5 !px-2 !text-xs font-bold text-navy" value={row.tax} onChange={e => updateTax(row.id, 'tax', e.target.value)} placeholder="Nome" /></td>
-                                    <td className="py-2 px-1"><input className="field-input !py-1.5 !px-2 !text-xs text-right" value={row.base} onChange={e => updateTax(row.id, 'base', formatInputBRL(e.target.value))} placeholder="0,00" /></td>
-                                    <td className="py-2 px-1"><input className="field-input !py-1.5 !px-2 !text-xs text-center bg-slate-50" value={row.rate} onChange={e => updateTax(row.id, 'rate', e.target.value.replace(/\./g, ',').replace(/[^\d,]/g, ''))} placeholder="0,00" /></td>
+                                    <td className="py-2 px-1"><input className={`field-input !py-1.5 !px-2 !text-xs text-right${lockCls(row.baseManual)}`} title={lockTitle(row.baseManual)} value={row.base} onChange={e => updateTax(row.id, 'base', formatInputBRL(e.target.value))} placeholder="0,00" /></td>
+                                    <td className="py-2 px-1"><input className={`field-input !py-1.5 !px-2 !text-xs text-center bg-slate-50${lockCls(row.rateManual)}`} title={lockTitle(row.rateManual)} value={row.rate} onChange={e => updateTax(row.id, 'rate', e.target.value.replace(/\./g, ',').replace(/[^\d,]/g, ''))} placeholder="0,00" /></td>
                                     
                                     {showRetentionsTable && (
                                         <>
-                                            <td className="py-2 px-1"><input className="field-input !py-1.5 !px-2 !text-xs text-right font-medium" value={row.apurado} onChange={e => updateTax(row.id, 'apurado', formatInputBRL(e.target.value))} placeholder="0,00" /></td>
+                                            <td className="py-2 px-1"><input className={`field-input !py-1.5 !px-2 !text-xs text-right font-medium${lockCls(row.apuradoManual)}`} title={lockTitle(row.apuradoManual)} value={row.apurado} onChange={e => updateTax(row.id, 'apurado', formatInputBRL(e.target.value))} placeholder="0,00" /></td>
                                             <td className="py-2 px-1">
                                                 <input 
                                                     className={`field-input !py-1.5 !px-2 !text-xs text-right text-emerald-700 bg-emerald-50 border-emerald-200 focus:border-emerald-500 ${row.retidoManual ? 'shadow-[inset_0_0_0_1px_rgba(52,211,153,0.3)]' : ''}`} 
@@ -1144,7 +1150,7 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
                                         </>
                                     )}
 
-                                    <td className="py-2 px-1"><input className={`field-input !py-1.5 !px-2 !text-xs text-right font-bold text-navy ${showRetentionsTable ? 'bg-blue-50 border-blue-200' : ''}`} value={row.value} onChange={e => updateTax(row.id, 'value', formatInputBRL(e.target.value))} placeholder="0,00" /></td>
+                                    <td className="py-2 px-1"><input className={`field-input !py-1.5 !px-2 !text-xs text-right font-bold text-navy ${showRetentionsTable ? 'bg-blue-50 border-blue-200' : ''}${lockCls(row.valueManual)}`} title={lockTitle(row.valueManual)} value={row.value} onChange={e => updateTax(row.id, 'value', formatInputBRL(e.target.value))} placeholder="0,00" /></td>
                                     <td className="py-2 px-1"><input className="field-input !py-1.5 !px-2 !text-xs text-center" value={row.dueDate} onChange={e => { const dg = e.target.value.replace(/\D/g, '').slice(0, 8); const fmt = dg.length > 4 ? dg.slice(0, 2) + '/' + dg.slice(2, 4) + '/' + dg.slice(4) : dg.length > 2 ? dg.slice(0, 2) + '/' + dg.slice(2) : dg; updateTax(row.id, 'dueDate', fmt); }} placeholder="dd/mm/aaaa" /></td>
                                     <td className="py-2 px-1"><input className="field-input !py-1.5 !px-2 !text-[11px]" value={row.obs} onChange={e => updateTax(row.id, 'obs', e.target.value)} placeholder="Observação" /></td>
                                     <td className="py-2 px-1 text-center">{(() => { const on = entraNaAliquota(row); return (
@@ -1177,16 +1183,13 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
     const parseNum = parseNumBR;
 
     const revenue = calculateTotalRevenue(clientData);
-    // Linhas "(retido)" são informativas (valor já retido na fonte) — não entram como guia a pagar
-    const ehRetido = (t) => /\(retido\)/i.test(t.tax || '');
-    const totalTributos = taxes.reduce((s, r) => s + (ehRetido(r) ? 0 : parseNum(r.value)), 0);
-    const totalApurado = taxes.reduce((s, r) => s + (ehRetido(r) ? 0 : (parseNum(r.apurado) || parseNum(r.value))), 0);
-    const totalRetido = taxes.reduce((s, r) => s + parseNum(r.retido), 0);
-    // Alíquota efetiva = só os tributos que incidem sobre a receita (encargos de
-    // folha/pró-labore ficam de fora por padrão; ajustável por linha). O "total a
-    // pagar" continua somando tudo — o que sai daqui você ainda recolhe.
-    const baseAliquota = taxes.reduce((s, r) => s + ((ehRetido(r) || !entraNaAliquota(r)) ? 0 : (parseNum(r.apurado) || parseNum(r.value))), 0);
-    const aliquotaEfetiva = revenue > 0 ? (baseAliquota / revenue) * 100 : 0;
+    // Totais pela fonte ÚNICA (engine.resumoApuracao) — número e % sempre coerentes.
+    const R = resumoApuracao(taxes, revenue);
+    const totalTributos = R.totalRecolherMes;  // guias a recolher no mês (caixa; exclui provisão)
+    const totalProvisao = R.totalProvisao;      // IRPJ/CSLL provisionados (recolhem no fechamento do trimestre)
+    const totalApurado = R.totalApurado;
+    const totalRetido = R.totalRetido;
+    const aliquotaEfetiva = R.cargaEfetiva;     // carga sobre o faturamento (só tributos sobre a receita)
 
     const rbt12 = parseNum(clientData.rbt12);
     const folha12m = parseNum(clientData.folha12m !== undefined ? clientData.folha12m : clientData.folha);
@@ -1195,7 +1198,7 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
 
     const hasRetentions = parseNum(clientData.revenueRetained) > 0 || taxes.some(t => parseNum(t.retido) > 0 || t.retidoManual);
     const isSN = clientData.regime === 'Simples Nacional' || clientData.regime === 'MEI';
-    const liquido = revenue - totalApurado;
+    const liquido = R.liquido;  // faturamento − tributos que incidem sobre a receita (exclui folha/retenções)
     const compLabel = clientData.competence || clientData.competenceShort || '—';
 
     // Folha de salários e pró-labore — BASES da apuração (não são receita nem tributo).
@@ -1330,6 +1333,7 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
     const totL = { padding: '8px 0 0', borderTop: '2px solid #001D3D', fontWeight: 700 };
     const totR = { padding: '8px 0 0', borderTop: '2px solid #001D3D', fontWeight: 700, textAlign: 'right', fontVariantNumeric: 'tabular-nums' };
     const rowBorder = { borderBottom: '1px solid #e9e6dd' };
+    const provTag = { marginLeft: 6, fontSize: '8px', fontWeight: 700, letterSpacing: '.3px', textTransform: 'uppercase', color: '#854F0B', background: '#FCEFD7', borderRadius: 20, padding: '1px 6px' };
     const thL = { textAlign: 'left', fontSize: '9px', textTransform: 'uppercase', letterSpacing: '.5px', color: '#7c8595', fontWeight: 700, padding: '0 0 6px', borderBottom: '1px solid #e9e6dd' };
     const thR = { ...thL, textAlign: 'right' };
 
@@ -1655,7 +1659,7 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
 
                     <div className="grid grid-cols-4 gap-3 mb-4 avoid-break">
                         <KpiCard cls="navy" label="Faturamento" value={fmtKpi(revenue)} foot="Receita bruta do mês" />
-                        <KpiCard cls="w" label="Total a pagar" value={fmtKpi(totalTributos)} foot={hasRetentions ? 'líquido após retenção' : `${formatPercent(aliquotaEfetiva)} do faturamento`} />
+                        <KpiCard cls="w" label="Total a pagar" value={fmtKpi(totalTributos)} foot={hasRetentions ? 'guias do mês · líquido após retenção' : (totalProvisao > 0 ? `guias do mês · + ${formatCurrency(totalProvisao)} provisão` : 'guias a recolher no mês')} />
                         <KpiCard cls={kpi3.cls} label={kpi3.label} value={kpi3.value} foot={kpi3.foot} />
                         <KpiCard cls={kpi4.cls} label={kpi4.label} value={kpi4.value} foot={kpi4.foot} />
                     </div>
@@ -1700,12 +1704,13 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
                                         {taxRows.map((t, i) => (
                                             <tr key={i}>
                                                 <td style={{ ...cellL, ...(i < taxRows.length - 1 ? rowBorder : {}) }}>
-                                                    {t.tax}{t.rate && parseNum(t.rate) > 0 ? <span style={{ color: '#7c8595', fontWeight: 500 }}> · {String(t.rate).replace('.', ',')}%</span> : null}
+                                                    {t.tax}{t.rate && parseNum(t.rate) > 0 ? <span style={{ color: '#7c8595', fontWeight: 500 }}> · {String(t.rate).replace('.', ',')}%</span> : null}{t.provisao ? <span style={provTag}>provisão</span> : null}
                                                 </td>
-                                                <td style={{ ...cellR, ...(i < taxRows.length - 1 ? rowBorder : {}) }}>{formatCurrency(parseNum(t.value))}</td>
+                                                <td style={{ ...cellR, ...(i < taxRows.length - 1 ? rowBorder : {}), ...(t.provisao ? { color: '#9aa2af' } : {}) }}>{formatCurrency(parseNum(t.value))}</td>
                                             </tr>
                                         ))}
                                         <tr><td style={totL}>Total a recolher</td><td style={totR}>{formatCurrency(totalTributos)}</td></tr>
+                                        {totalProvisao > 0 && <tr><td style={{ ...cellL, color: '#9aa2af', fontSize: '10px' }}>Provisão do mês (recolhe no fechamento do trimestre)</td><td style={{ ...cellR, color: '#9aa2af', fontSize: '10px' }}>{formatCurrency(totalProvisao)}</td></tr>}
                                     </tbody>
                                 </table>
                             </div>
@@ -1741,10 +1746,10 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
                                             const bd = i < taxRows.length - 1 ? rowBorder : {};
                                             return (
                                                 <tr key={i}>
-                                                    <td style={{ ...cellL, ...bd }}>{t.tax}{t.rate && parseNum(t.rate) > 0 ? <span style={{ color: '#7c8595', fontWeight: 500 }}> · {String(t.rate).replace('.', ',')}%</span> : null}</td>
+                                                    <td style={{ ...cellL, ...bd }}>{t.tax}{t.rate && parseNum(t.rate) > 0 ? <span style={{ color: '#7c8595', fontWeight: 500 }}> · {String(t.rate).replace('.', ',')}%</span> : null}{t.provisao ? <span style={provTag}>provisão</span> : null}</td>
                                                     <td style={{ ...cellR, ...bd }}>{formatCurrency(ap)}</td>
                                                     <td style={{ ...cellR, ...bd, color: re > 0 ? '#1f7a4d' : '#7c8595' }}>{re > 0 ? '− ' + formatCurrency(re) : '—'}</td>
-                                                    <td style={{ ...cellR, ...bd, fontWeight: 700 }}>{formatCurrency(parseNum(t.value))}</td>
+                                                    <td style={{ ...cellR, ...bd, fontWeight: 700, ...(t.provisao ? { color: '#9aa2af' } : {}) }}>{t.provisao ? 'no trim.' : formatCurrency(parseNum(t.value))}</td>
                                                 </tr>
                                             );
                                         })}
@@ -1957,16 +1962,27 @@ const LoadingOverlay = () => (
 
 /* ===== Painel-resumo ao vivo (coluna direita do editor) =====
    Calcula em tempo real a partir de clientData + taxes. Estilo 100% nos tokens do app. */
-const LiveSummary = ({ clientData, taxes }) => {
-    const ehRetido = (t) => /\(retido\)/i.test(t.tax || ''); // linhas informativas, não são guia
+const LiveSummary = ({ clientData, taxes, records = [] }) => {
     const revenue = calculateTotalRevenue(clientData);
-    const totalApurado = taxes.reduce((s, t) => s + (ehRetido(t) ? 0 : (parseNumBR(t.apurado) || parseNumBR(t.value))), 0);
-    const totalPagar = taxes.reduce((s, t) => s + (ehRetido(t) ? 0 : parseNumBR(t.value)), 0);
-    const totalRetido = taxes.reduce((s, t) => s + parseNumBR(t.retido), 0);
-    // Alíquota efetiva só com os tributos sobre a receita (encargos de folha/pró-labore fora por padrão)
-    const baseAliquota = taxes.reduce((s, t) => s + ((ehRetido(t) || !entraNaAliquota(t)) ? 0 : (parseNumBR(t.apurado) || parseNumBR(t.value))), 0);
-    const aliquota = revenue > 0 ? (baseAliquota / revenue) * 100 : 0;
-    const guias = taxes.filter(t => t.tax && !ehRetido(t) && parseNumBR(t.value) > 0);
+    // Fonte única de totais (mesma do relatório e da persistência)
+    const R = resumoApuracao(taxes, revenue);
+    const totalPagar = R.totalRecolherMes;
+    const totalProvisao = R.totalProvisao;
+    const totalRetido = R.totalRetido;
+    const aliquota = R.cargaEfetiva;
+    const guias = taxes.filter(t => t.tax && !ehRetido(t) && !t.provisao && parseNumBR(t.value) > 0);
+
+    // ===== Assertividade: avisos de sanidade + variação vs mês anterior =====
+    const avisos = avisosApuracao(taxes);
+    const curKey = (clientData.compYear && clientData.compMonth) ? `${clientData.compYear}-${String(clientData.compMonth).padStart(2, '0')}` : '';
+    let deltaFat = null;
+    if (curKey && Array.isArray(records) && records.length) {
+        const prev = records.filter(r => r.compKey && r.compKey < curKey).sort((a, b) => a.compKey.localeCompare(b.compKey)).pop();
+        if (prev && prev.faturamento > 0 && revenue > 0) {
+            const d = ((revenue - prev.faturamento) / prev.faturamento) * 100;
+            if (Math.abs(d) >= 50) deltaFat = { pct: d, prev: prev.faturamento };
+        }
+    }
 
     const isSN = clientData.regime === 'Simples Nacional' || clientData.regime === 'MEI';
     const dasTax = taxes.find(t => /^DAS/.test(t.tax || ''));
@@ -2028,7 +2044,7 @@ const LiveSummary = ({ clientData, taxes }) => {
             <div className="rounded-lg bg-primary text-primary-foreground p-4">
                 <p className="text-[10px] uppercase tracking-wider font-bold opacity-80">Total a pagar</p>
                 <p className="text-3xl font-bold leading-none mt-1.5 tabular-nums">{formatCurrency(totalPagar)}</p>
-                <p className="text-[11px] opacity-80 mt-2">{formatPercent(aliquota)} sobre o faturamento{totalRetido > 0 ? ` · retenção ${formatCurrency(totalRetido)}` : ''}</p>
+                <p className="text-[11px] opacity-80 mt-2">{formatPercent(aliquota)} sobre o faturamento{totalRetido > 0 ? ` · retenção ${formatCurrency(totalRetido)}` : ''}{totalProvisao > 0 ? ` · +${formatCurrency(totalProvisao)} provisão trim.` : ''}</p>
             </div>
 
             {/* KPIs */}
@@ -2047,6 +2063,17 @@ const LiveSummary = ({ clientData, taxes }) => {
                 <div className={"rounded-lg border p-3 text-xs " + (acimaTeto ? "bg-destructive/10 border-destructive/30 text-destructive" : "bg-warning/10 border-warning/30 text-warning")}>
                     <p className="font-bold">{acimaTeto ? 'RBT12 acima do teto do Simples (R$ 4,8 mi)' : 'RBT12 acima do sublimite (R$ 3,6 mi)'}</p>
                     <p className="opacity-90 mt-0.5">{acimaTeto ? 'Possível desenquadramento do Simples — confira o enquadramento.' : 'ICMS/ISS devem ser recolhidos FORA do DAS, por apuração estadual/municipal própria.'}</p>
+                </div>
+            )}
+
+            {/* Avisos de sanidade + variação vs mês anterior (reduz erro de digitação) */}
+            {(avisos.length > 0 || deltaFat) && (
+                <div className="rounded-lg border border-warning/30 bg-warning/10 p-3 text-xs">
+                    <p className="font-bold text-warning mb-1 flex items-center gap-1.5"><AlertTriangle className="w-3.5 h-3.5" /> Confira antes de fechar</p>
+                    <ul className="space-y-1 text-foreground/80 list-disc pl-4">
+                        {deltaFat && <li>Faturamento {deltaFat.pct >= 0 ? '+' : ''}{deltaFat.pct.toFixed(0)}% vs. mês anterior ({formatCurrency(deltaFat.prev)}) — confira se não é erro de digitação.</li>}
+                        {avisos.map((a, i) => <li key={i}><b>{a.tax}:</b> {a.msg}</li>)}
+                    </ul>
                 </div>
             )}
 
@@ -2140,10 +2167,8 @@ const App = () => {
         if (!clientId) { setToast({ message: 'Selecione a empresa do controle fiscal.', type: 'error' }); return; }
         const compKey = compKeyOf(clientData);
         if (!compKey) { setToast({ message: 'Informe mês e ano da competência.', type: 'error' }); return; }
-        const totalPagar = taxes.reduce((s, t) => s + parseNumBR(t.value), 0);
-        const totalApurado = taxes.reduce((s, t) => s + (parseNumBR(t.apurado) || parseNumBR(t.value)), 0);
-        const baseAliquota = taxes.reduce((s, t) => s + (entraNaAliquota(t) ? (parseNumBR(t.apurado) || parseNumBR(t.value)) : 0), 0);
         const revenue = calculateTotalRevenue(clientData);
+        const R = resumoApuracao(taxes, revenue);
         const das = taxes.filter(t => /^DAS/.test(t.tax)).reduce((s, t) => s + parseNumBR(t.value), 0);
         const rec = {
             clientId,
@@ -2156,9 +2181,9 @@ const App = () => {
             rbt12: parseNumBR(clientData.rbt12),
             folha12m: parseNumBR(clientData.folha12m),
             proLabore: parseNumBR(clientData.proLabore),
-            totalTributos: totalApurado,
-            totalPagar,
-            aliquotaEfetiva: revenue > 0 ? (baseAliquota / revenue) * 100 : 0,
+            totalTributos: R.totalApurado,
+            totalPagar: R.totalRecolherMes,
+            aliquotaEfetiva: R.cargaEfetiva,
             economia: 0,
             das,
             payload: { clientData, taxes },
@@ -2373,7 +2398,7 @@ const App = () => {
                                 setValidationErrors={setValidationErrors}
                             />
                         </div>
-                        <LiveSummary clientData={clientData} taxes={taxes} />
+                        <LiveSummary clientData={clientData} taxes={taxes} records={records} />
                     </div>
                 </TabsContent>
 
