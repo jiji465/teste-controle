@@ -9,7 +9,8 @@ import {
     MessageSquare, ChevronDown
 } from 'lucide-react';
 import {
-    DEFAULT_TAXES, DEFAULT_TAXES_LP, DEFAULT_TAXES_MEI_AMBOS, DEFAULT_TAXES_MEI_COMERCIO, DEFAULT_TAXES_MEI_SERVICOS, DEFAULT_TAXES_SN_COMERCIO, DEFAULT_TAXES_SN_SERVICOS, GLOSSARY, MONTHS, OFFICE_NAME, STORAGE_KEY, autoFillTaxes, calcAliquotaEfetivaSN, calcComercioLP, calcFatorR, calcIRRFProLabore, calculateTotalRevenue, extractPdfText, formatBRLDisplay, formatCNPJ, formatCurrency, formatPercent, getAnexoEfetivo, getDueDate, isSujeitoFatorR, lpDefaults, parseNumBR, parsePGDASD, pgNum, sumProLabore, SALARIO_MINIMO, TETO_INSS, SUBLIMITE_SN, LIMITE_SN
+    DEFAULT_TAXES, DEFAULT_TAXES_LP, DEFAULT_TAXES_MEI_AMBOS, DEFAULT_TAXES_MEI_COMERCIO, DEFAULT_TAXES_MEI_SERVICOS, DEFAULT_TAXES_SN_COMERCIO, DEFAULT_TAXES_SN_SERVICOS, GLOSSARY, MONTHS, OFFICE_NAME, STORAGE_KEY, autoFillTaxes, calcAliquotaEfetivaSN, calcFatorR, calcIRRFProLabore, calculateTotalRevenue, extractPdfText, formatBRLDisplay, formatCNPJ, formatCurrency, formatPercent, getAnexoEfetivo, getDueDate, isSujeitoFatorR, lpDefaults, parseNumBR, parsePGDASD, pgNum, sumProLabore, SALARIO_MINIMO, TETO_INSS, SUBLIMITE_SN, LIMITE_SN,
+    ehRetido, entraNaAliquota, resumoApuracao, avisosApuracao, COMERCIO_GUIA_ESTADUAL, acumuladoPeriodo
 } from './engine.js';
 // ---- Integração com o controle fiscal (teste-controle) ----
 import { useData } from '@/contexts/data-context';
@@ -23,14 +24,8 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 
-// ===== Alíquota efetiva: quais tributos compõem a "carga sobre a receita" =====
-// Encargos sobre a folha/pró-labore (INSS, IRRF, FGTS, CPP, RAT, Terceiros) NÃO
-// incidem sobre o faturamento, então por padrão ficam FORA da alíquota efetiva.
-// Cada linha pode ser sobreposta manualmente pelo botão (campo `foraAliquota`).
-// IRRF e INSS do segurado/sócio, além disso, são retenções — dinheiro do
-// trabalhador, não custo tributário da empresa sobre a receita.
-const isFolhaTax = (name) => /\b(INSS|IRRF|FGTS|CPP|RAT|Terceiros)\b/i.test(name || '');
-const entraNaAliquota = (t) => (t && t.foraAliquota !== undefined) ? !t.foraAliquota : !isFolhaTax(t && t.tax);
+// `isFolhaTax` / `entraNaAliquota` / `ehRetido` / `resumoApuracao` vivem em engine.js
+// (fonte única dos totais — importados acima).
 
 const BrandIcon = () => (
     <svg viewBox="0 0 80.7 103.3" fill="#F79C04" fillRule="evenodd" role="img" aria-label="SETE" style={{ height: 46, width: 'auto', display: 'block', flexShrink: 0 }}>
@@ -204,7 +199,30 @@ const Section = ({ title, icon: Icon, defaultOpen = true, summary, children }) =
     );
 };
 
-const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErrors = {}, setValidationErrors = () => { } }) => {
+// Guia estadual do comércio: interruptor liga/desliga a guia; o valor é lançado (não calculado).
+// Definido no NÍVEL DO MÓDULO (não dentro do EditorPanel) — senão cada tecla recria o componente
+// e o input perde o foco a cada dígito. Desligar limpa o valor (evita re-lançar do mês anterior).
+const ComercioGuia = ({ clientData, updateClient, parseBRL, flag, valorField, label, fieldLabel }) => {
+    const on = !!clientData[flag];
+    return (
+        <div className={`rounded-lg border p-3 ${on ? 'border-emerald-200 bg-emerald-50/40' : 'border-slate-200'}`}>
+            <label className="flex items-start gap-2 cursor-pointer select-none">
+                <input type="checkbox" className="w-4 h-4 mt-0.5 accent-emerald-600" checked={on}
+                    onChange={e => { updateClient(flag, e.target.checked); if (!e.target.checked) updateClient(valorField, ''); }} />
+                <span className="text-xs font-bold text-navy leading-snug">{label}</span>
+            </label>
+            {on && (
+                <div className="mt-2 animate-fade-in">
+                    <label className="field-label">{fieldLabel}</label>
+                    <input className="field-input" type="text" value={clientData[valorField] || ''}
+                        onChange={e => updateClient(valorField, parseBRL(e.target.value))} placeholder="0,00" />
+                </div>
+            )}
+        </div>
+    );
+};
+
+const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErrors = {}, setValidationErrors = () => { }, records = [] }) => {
 
     const [forceShowRetentions, setForceShowRetentions] = useState(false);
     const [importMsg, setImportMsg] = useState(null);
@@ -271,10 +289,12 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
         }
     };
 
-    const recalcular = (overrideData) => {
+    const recalcular = (overrideData, clearLocks = false) => {
         const data = overrideData || clientData;
         setTaxes(prev => {
             let baseTaxes = [...prev];
+            // "Restaurar padrões": destrava todos os campos manuais e recalcula do zero
+            if (clearLocks) baseTaxes = baseTaxes.map(t => ({ ...t, baseManual: false, rateManual: false, apuradoManual: false, valueManual: false, retidoManual: false }));
             if (baseTaxes.length === 0) {
                 if (data.regime === 'Lucro Presumido' || data.regime === 'Lucro Real') {
                     baseTaxes = [...lpDefaults(data.atividade)];
@@ -304,17 +324,37 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
                 baseTaxes = baseTaxes.filter(t => t.tax !== 'IRRF');
             }
 
-            // FUMACOP (2%) entra/sai conforme a base; Antecipação Parcial e DIFAL ficam fixos no
-            // template do comércio como valor manual.
-            const isLPComercio = (data.regime === 'Lucro Presumido' || data.regime === 'Lucro Real') && (data.atividade === 'Comércio' || data.atividade === 'Indústria');
-            const movC = isLPComercio ? calcComercioLP(data, calculateTotalRevenue(data)) : null;
-            const temFumacop = !!(movC && movC.fumacop > 0);
-            const idxFum = baseTaxes.findIndex(t => t.tax === 'FUMACOP');
-            if (temFumacop && idxFum === -1) {
-                baseTaxes = [...baseTaxes, { id: Date.now() + 101, tax: 'FUMACOP', base: '', rate: '2,00', apurado: '', retido: '', value: '', dueDate: '', obs: '', retidoManual: false }];
-            } else if (!temFumacop && idxFum !== -1 && isLPComercio) {
-                baseTaxes = baseTaxes.filter(t => t.tax !== 'FUMACOP');
+            // LP/Real: ISS é só de Serviços; ICMS é só de Comércio/Indústria. Reconcilia por atividade
+            // aqui (não só ao trocar o dropdown) — corrige quando a atividade muda ao selecionar a
+            // empresa ou importar, caminhos que não trocam o template. autoFillTaxes só preenche linhas
+            // existentes, então sem isto o ISS herdado do template de Serviços sobrevivia no comércio.
+            if (data.regime === 'Lucro Presumido' || data.regime === 'Lucro Real') {
+                const isComInd = data.atividade === 'Comércio' || data.atividade === 'Indústria';
+                const idxISS = baseTaxes.findIndex(t => t.tax === 'ISS');
+                if (isComInd && idxISS !== -1) baseTaxes = baseTaxes.filter(t => t.tax !== 'ISS');
+                else if (!isComInd && idxISS === -1) baseTaxes = [...baseTaxes, { id: Date.now() + 220, tax: 'ISS', base: '', rate: '5,00', apurado: '', retido: '', value: '', dueDate: '', obs: 'Imposto municipal sobre serviços', retidoManual: false }];
+                const idxICMS = baseTaxes.findIndex(t => t.tax === 'ICMS');
+                if (isComInd && idxICMS === -1) baseTaxes = [...baseTaxes, { id: Date.now() + 221, tax: 'ICMS', base: '', rate: '', apurado: '', retido: '', value: '', dueDate: '', obs: 'ICMS próprio apurado no SPED/EFD', retidoManual: false }];
+                else if (!isComInd && idxICMS !== -1) baseTaxes = baseTaxes.filter(t => t.tax !== 'ICMS');
             }
+
+            // Comércio (LP/Real): guias estaduais entram/saem por interruptor do cliente
+            // (ICMS-ST, DIFAL, Antecipação, FUMACOP) — valor lançado, não calculado.
+            const isLPComercio = (data.regime === 'Lucro Presumido' || data.regime === 'Lucro Real') && (data.atividade === 'Comércio' || data.atividade === 'Indústria');
+            const guiasComercio = [
+                { on: !!data.temIcmsST, meta: COMERCIO_GUIA_ESTADUAL.icmsST, seed: 210 },
+                { on: !!data.temAntecipacao, meta: COMERCIO_GUIA_ESTADUAL.antecipacao, seed: 211 },
+                { on: !!data.temDifal, meta: COMERCIO_GUIA_ESTADUAL.difal, seed: 212 },
+                { on: !!data.temFumacop, meta: COMERCIO_GUIA_ESTADUAL.fumacop, seed: 213 },
+            ];
+            guiasComercio.forEach(({ on, meta, seed }) => {
+                const idx = baseTaxes.findIndex(t => t.tax === meta.tax);
+                if (isLPComercio && on && idx === -1) {
+                    baseTaxes = [...baseTaxes, { id: Date.now() + seed, tax: meta.tax, base: '', rate: '', apurado: '', retido: '', value: '', dueDate: '', obs: meta.obs, retidoManual: false }];
+                } else if ((!isLPComercio || !on) && idx !== -1) {
+                    baseTaxes = baseTaxes.filter(t => t.tax !== meta.tax);
+                }
+            });
 
             // Anexo IV do Simples: a contribuição patronal (CPP 20%) NÃO está no DAS —
             // é recolhida à parte (GPS), sobre folha + pró-labore. Entra/sai com o anexo.
@@ -365,21 +405,36 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
         clientData.compYear,
         clientData.periodRevenue,
         clientData.sujeitoFatorR,
-        clientData.entradasCompras,
-        clientData.aliqIcmsSaida,
-        clientData.aliqIcmsEntrada,
-        clientData.saldoCredorICMS,
-        clientData.baseFumacop,
-        clientData.saidasST,
         clientData.receitaMonofasica,
         clientData.icmsApurado,
-        clientData.icmsDebitoTotal,
-        clientData.icmsCreditoTotal,
-        clientData.aliqInterestadual,
-        clientData.baseDifal,
-        clientData.baseAntecipacao,
+        clientData.temIcmsST,
+        clientData.icmsStValor,
+        clientData.temDifal,
+        clientData.difalValor,
+        clientData.temAntecipacao,
+        clientData.antecipacaoValor,
+        clientData.temFumacop,
+        clientData.fumacopValor,
         clientData.pisApurado,
         clientData.cofinsApurado
+    ]);
+
+    // Auto-preenche o "Faturamento acumulado do período" (LP trimestral/estimativa) a partir do
+    // histórico salvo (records) + a receita do mês atual. Editável: se travado à mão
+    // (periodRevenueManual), não sobrescreve. "usar histórico" destrava.
+    React.useEffect(() => {
+        const mode = clientData.irpjCsllMode;
+        if (mode !== 'Trimestral (Apuração)' && mode !== 'Estimativa (Anual)') return;
+        if (clientData.periodRevenueManual) return;
+        const sug = acumuladoPeriodo(clientData, records);
+        if (!sug) return;
+        if (Math.abs(parseNumBR(clientData.periodRevenue) - sug.total) > 0.005) {
+            updateClient('periodRevenue', formatBRLDisplay(sug.total));
+        }
+    }, [
+        clientData.irpjCsllMode, clientData.compMonth, clientData.compYear,
+        clientData.revenue, clientData.revenueRetained, clientData.revenueNonRetained,
+        clientData.periodRevenueManual, records,
     ]);
 
     const updateTax = (id, field, val) => {
@@ -387,23 +442,31 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
             if (t.id !== id) return t;
             const updated = { ...t, [field]: val };
             
+            // Locks por campo: editar à mão trava o campo (não é sobrescrito no recálculo).
             if (field === 'base' || field === 'rate') {
+                updated[field + 'Manual'] = (String(val).trim() !== '');
                 const b = parseNumBR(updated.base);
                 const r = parseNumBR(updated.rate);
                 if (b > 0 && r > 0) {
                     const ap = b * r / 100;
                     updated.apurado = formatBRLDisplay(ap);
-                    updated.value = formatBRLDisplay(Math.max(0, ap - parseNumBR(updated.retido)));
+                    updated.apuradoManual = true; // apurado passa a refletir a entrada manual (base × alíq)
+                    if (!updated.valueManual) updated.value = formatBRLDisplay(Math.max(0, ap - parseNumBR(updated.retido)));
                 } else {
-                    updated.apurado = ""; updated.value = "";
+                    updated.apurado = ""; updated.apuradoManual = false;
+                    if (!updated.valueManual) updated.value = "";
                 }
-            } else if (field === 'apurado' || field === 'retido') {
-                if (field === 'retido') {
-                    updated.retidoManual = (val.trim() !== '');
+            } else if (field === 'apurado' || field === 'retido' || field === 'value') {
+                if (field === 'retido') updated.retidoManual = (val.trim() !== '');
+                if (field === 'apurado') updated.apuradoManual = (val.trim() !== '');
+                if (field === 'value') updated.valueManual = (val.trim() !== '');
+                if (field !== 'value') {
+                    const a = parseNumBR(updated.apurado);
+                    const ret = parseNumBR(updated.retido);
+                    if (!updated.valueManual) updated.value = formatBRLDisplay(Math.max(0, a - ret));
                 }
-                const a = parseNumBR(updated.apurado);
-                const ret = parseNumBR(updated.retido);
-                updated.value = formatBRLDisplay(Math.max(0, a - ret));
+            } else if (field === 'dueDate') {
+                updated.dueDateManual = (String(val).trim() !== ''); // data ajustada à mão não é sobrescrita
             }
             return updated;
         }));
@@ -414,6 +477,10 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
     };
 
     const removeTax = (id) => { setTaxes(prev => prev.filter(t => t.id !== id)); };
+
+    // Indicador visual de campo travado (editado à mão) — mesmo idioma do realce de "Retido"
+    const lockCls = (on) => on ? ' shadow-[inset_0_0_0_1px_rgba(245,158,11,0.45)]' : '';
+    const lockTitle = (on) => on ? 'Editado à mão (travado — não é sobrescrito ao recalcular). Use "Restaurar padrões" para soltar.' : 'Valor calculado automaticamente';
 
     const formatInputBRL = (raw) => {
         if (!raw && raw !== 0) return '';
@@ -466,7 +533,7 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
                 <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 mb-4 flex items-start gap-2 animate-fade-in-up">
                     <Info className="w-5 h-5 text-blue-600 flex-shrink-0" />
                     <p className="text-xs text-blue-800 font-medium leading-relaxed">
-                        <strong>Comércio no {clientData.regime}:</strong> informe Entradas e Saídas abaixo — o sistema apura o ICMS por débito × crédito (com saldo credor), a Antecipação Parcial das compras interestaduais, o DIFAL e o FUMACOP (2%, Lei 8.205/04-MA). IRPJ e CSLL usam presunção de 8% / 12% automaticamente.
+                        <strong>Comércio no {clientData.regime}:</strong> o sistema calcula PIS/COFINS (cumulativo), IRPJ e CSLL (presunção 8% / 12%) sobre as saídas. O ICMS você lança pronto do SPED; ICMS-ST, DIFAL, Antecipação e FUMACOP entram por interruptor com o valor da guia. Vencimentos automáticos (editáveis).
                     </p>
                 </div>
             )}
@@ -550,7 +617,6 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
                                     newTaxes = [...lpDefaults(atv)];
                                     updatedData.anexo = '';
                                     updatedData.revenue = '';
-                                    if ((atv === 'Comércio' || atv === 'Indústria') && !updatedData.aliqIcmsSaida) updatedData.aliqIcmsSaida = '23,00';
                                 } else if (nr === 'Simples Nacional') {
                                     newTaxes = atv === 'Comércio' ? [...DEFAULT_TAXES_SN_COMERCIO] : [...DEFAULT_TAXES_SN_SERVICOS];
                                     updatedData.revenueRetained = '';
@@ -588,9 +654,8 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
                                         const map = { 'Comércio': DEFAULT_TAXES_MEI_COMERCIO, 'Serviços': DEFAULT_TAXES_MEI_SERVICOS, 'Ambos': DEFAULT_TAXES_MEI_AMBOS };
                                         setTaxes(map[atv] || DEFAULT_TAXES_MEI_SERVICOS);
                                     } else {
-                                        // LP/Real: troca o conjunto padrão (ICMS no comércio, ISS nos serviços) e pré-preenche alíquotas
+                                        // LP/Real: troca o conjunto padrão (ICMS no comércio, ISS nos serviços)
                                         const upd = { ...clientData, atividade: atv };
-                                        if ((atv === 'Comércio' || atv === 'Indústria') && !upd.aliqIcmsSaida) upd.aliqIcmsSaida = '23,00';
                                         setClientData(upd);
                                         setTaxes(autoFillTaxes(upd, lpDefaults(atv).map((t, i) => ({ ...t, id: Date.now() + i }))));
                                     }
@@ -727,7 +792,7 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
                                             <span>IRPJ (1,5%): <b className="text-slate-800">{formatCurrency(irpj)}</b></span>
                                             <span className="text-emerald-700 font-bold">Total federal: {formatCurrency(csrf + irpj)}</span>
                                         </div>
-                                        <p className="text-[10px] text-slate-400 mt-1.5">+ ISS conforme o município (alíquota da linha ISS). A CSRF (4,65%) só incide em notas acima de R$ 5.000/mês por tomador — se não se aplicar, ajuste na coluna "Retido" da tabela.</p>
+                                        <p className="text-[10px] text-slate-400 mt-1.5">+ ISS conforme o município (alíquota da linha ISS). A <b>CSRF (4,65%)</b> é dispensada quando os pagamentos no mês ao <b>mesmo prestador</b> não passam de R$ 5.000. O <b>IRRF (1,5%)</b> incide quase sempre (dispensa só se a retenção ficar ≤ R$ 10) — e cai para <b>1%</b> em limpeza, vigilância, segurança e locação de mão de obra. Ajuste o valor exato na coluna "Retido" da tabela quando necessário.</p>
                                     </div>
                                 );
                             })()}
@@ -735,122 +800,42 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
                         </Section>
                     )}
 
-                    {/* T4 — Receita & ICMS — Comércio */}
+                    {/* T4 — Comércio: lançamento guiado (captura o que já vem apurado; não estima ICMS) */}
                     {(clientData.regime === 'Lucro Presumido' || clientData.regime === 'Lucro Real') && (clientData.atividade === 'Comércio' || clientData.atividade === 'Indústria') && (
-                        <Section title="Receita & ICMS — Comércio" icon={DollarSign} defaultOpen={false} summary={`Vendas ${formatCurrency(totalRevenue)}`}>
+                        <Section title="Comércio — lançamento" icon={DollarSign} defaultOpen={true} summary={`Vendas ${formatCurrency(totalRevenue)}`}>
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
-                                    <label className="field-label">Total de Saídas — Vendas (R$) <span className="text-red-400">*</span></label>
+                                    <label className="field-label">Faturamento — saídas do mês (R$) <span className="text-red-400">*</span></label>
                                     <input className={`field-input border-amber-200 focus:border-amber-500 ${validationErrors.revenue ? 'field-error' : ''}`} type="text" value={clientData.revenueNonRetained || ''}
                                         onChange={e => { updateClient('revenueNonRetained', parseBRL(e.target.value)); setValidationErrors(prev => ({ ...prev, revenue: undefined })); }}
                                         placeholder="0,00" />
+                                    <p className="text-[10px] text-slate-500 mt-1">Base de PIS/COFINS, IRPJ e CSLL.</p>
                                 </div>
                                 <div>
-                                    <label className="field-label">Entradas — Mercadorias recebidas (crédito de ICMS) (R$)</label>
-                                    <input className="field-input" type="text" value={clientData.entradasCompras || ''}
-                                        onChange={e => updateClient('entradasCompras', parseBRL(e.target.value))} placeholder="0,00" />
-                                </div>
-                                <div>
-                                    <label className="field-label">Alíq. interna ICMS (%) — MA: 23%</label>
-                                    <input className="field-input" type="text" value={clientData.aliqIcmsSaida || ''}
-                                        onChange={e => updateClient('aliqIcmsSaida', e.target.value.replace(/\./g, ',').replace(/[^\d,]/g, ''))} placeholder="23,00" />
-                                </div>
-                                <div>
-                                    <label className="field-label">Alíq. média do crédito de entradas (%)</label>
-                                    <input className="field-input" type="text" value={clientData.aliqIcmsEntrada || ''}
-                                        onChange={e => updateClient('aliqIcmsEntrada', e.target.value.replace(/\./g, ',').replace(/[^\d,]/g, ''))} placeholder="= alíq. interna" />
-                                </div>
-                                <div>
-                                    <label className="field-label">ICMS débito TOTAL (R$) — ajustes em bloco</label>
-                                    <input className="field-input border-blue-200 focus:border-blue-500" type="text" value={clientData.icmsDebitoTotal || ''}
-                                        onChange={e => updateClient('icmsDebitoTotal', parseBRL(e.target.value))} placeholder="prevalece sobre saídas × alíq." />
-                                </div>
-                                <div>
-                                    <label className="field-label">ICMS crédito TOTAL (R$) — ajustes em bloco</label>
-                                    <input className="field-input border-blue-200 focus:border-blue-500" type="text" value={clientData.icmsCreditoTotal || ''}
-                                        onChange={e => updateClient('icmsCreditoTotal', parseBRL(e.target.value))} placeholder="prevalece sobre entradas × alíq." />
-                                </div>
-                                <div>
-                                    <label className="field-label">Saldo credor ICMS do mês anterior (R$)</label>
-                                    <input className="field-input" type="text" value={clientData.saldoCredorICMS || ''}
-                                        onChange={e => updateClient('saldoCredorICMS', parseBRL(e.target.value))} placeholder="0,00" />
-                                </div>
-                                <div>
-                                    <label className="field-label">Vendas c/ FUMACOP — Lei 8.205/04 (R$)</label>
-                                    <input className="field-input" type="text" value={clientData.baseFumacop || ''}
-                                        onChange={e => updateClient('baseFumacop', parseBRL(e.target.value))} placeholder="0,00" />
-                                </div>
-                                <div>
-                                    <label className="field-label">Saídas em ST — não geram débito (R$)</label>
-                                    <input className="field-input" type="text" value={clientData.saidasST || ''}
-                                        onChange={e => updateClient('saidasST', parseBRL(e.target.value))} placeholder="0,00" />
-                                </div>
-                                <div>
-                                    <label className="field-label">Revenda monofásica/ST — PIS/COFINS zero (R$)</label>
-                                    <input className="field-input" type="text" value={clientData.receitaMonofasica || ''}
-                                        onChange={e => updateClient('receitaMonofasica', parseBRL(e.target.value))} placeholder="0,00" />
+                                    <label className="field-label">ICMS próprio do mês — do SPED/EFD (R$)</label>
+                                    <input className="field-input border-blue-200 focus:border-blue-500" type="text" value={clientData.icmsApurado || ''}
+                                        onChange={e => updateClient('icmsApurado', parseBRL(e.target.value))} placeholder="valor apurado na escrituração" />
+                                    <p className="text-[10px] text-slate-500 mt-1">Valor final do ICMS próprio (já contempla CST 40/20/60 do ICMS).</p>
                                 </div>
                                 <div className="col-span-2">
-                                    <label className="field-label">ICMS apurado no SPED/EFD (R$) — se preenchido, prevalece sobre a estimativa</label>
-                                    <input className="field-input border-amber-200 focus:border-amber-500" type="text" value={clientData.icmsApurado || ''}
-                                        onChange={e => updateClient('icmsApurado', parseBRL(e.target.value))} placeholder="Saldo devedor de ICMS apurado na escrituração fiscal" />
-                                </div>
-                                <div className="col-span-2 border-t border-slate-100 pt-3 mt-1">
-                                    <p className="text-[11px] font-bold text-navy mb-2">ICMS interestadual — DIFAL / Antecipação (compras de outros estados)</p>
-                                    <div className="grid grid-cols-3 gap-3">
-                                        <div>
-                                            <label className="field-label">Alíq. interestadual (%)</label>
-                                            <input className="field-input" type="text" value={clientData.aliqInterestadual || ''} onChange={e => updateClient('aliqInterestadual', e.target.value.replace(/\./g, ',').replace(/[^\d,]/g, ''))} placeholder="12 (ou 7 / 4)" />
-                                        </div>
-                                        <div>
-                                            <label className="field-label">Base Antecipação — p/ revenda (R$)</label>
-                                            <input className="field-input" type="text" value={clientData.baseAntecipacao || ''} onChange={e => updateClient('baseAntecipacao', parseBRL(e.target.value))} placeholder="0,00" />
-                                        </div>
-                                        <div>
-                                            <label className="field-label">Base DIFAL — uso/consumo/ativo (R$)</label>
-                                            <input className="field-input" type="text" value={clientData.baseDifal || ''} onChange={e => updateClient('baseDifal', parseBRL(e.target.value))} placeholder="0,00" />
-                                        </div>
-                                    </div>
-                                    <p className="text-[10px] text-slate-400 mt-1.5">Calculado como base × (alíquota interna − interestadual). As linhas <b>DIFAL</b> e <b>Antecipação Parcial</b> na tabela são preenchidas automaticamente.</p>
+                                    <label className="field-label">Receita SEM PIS/COFINS (R$) — some os CST 04/05/06/09</label>
+                                    <input className="field-input" type="text" value={clientData.receitaMonofasica || ''}
+                                        onChange={e => updateClient('receitaMonofasica', parseBRL(e.target.value))} placeholder="monofásico, alíquota zero, ST-PIS, suspensão" />
+                                    <p className="text-[10px] text-slate-500 mt-1">Parcela do faturamento sem incidência de PIS/COFINS — abatida da base cumulativa. Só o que é do PIS/COFINS (não confundir com ICMS-ST).</p>
                                 </div>
                             </div>
-                            <p className="text-[10px] text-slate-400 mt-2">Três formas de fechar o ICMS próprio, da mais simples à mais precisa: <b>(1)</b> saídas × alíquota (estimativa); <b>(2)</b> lance os <b>totais de débito e crédito</b> do livro de apuração (ajustes em bloco); <b>(3)</b> cole o <b>ICMS apurado no SPED</b> (definitivo, prevalece sobre tudo).</p>
-                            {(() => {
-                                const mov = calcComercioLP(clientData, totalRevenue);
-                                const sped = parseNumBR(clientData.icmsApurado);
-                                const temCredor = !sped && mov.icms && mov.icms.saldoCredor > 0;
-                                return (
-                                    <div className="mt-3 bg-slate-50 p-3 rounded-lg border border-slate-200 grid grid-cols-3 gap-3 text-center">
-                                        <div>
-                                            <p className="text-[9px] text-slate-500 font-bold uppercase">ICMS Débito − Crédito (estim.)</p>
-                                            <p className="text-sm font-bold text-slate-700">{mov.icms ? `${formatCurrency(mov.icms.debito)} − ${formatCurrency(mov.icms.credito)}` : '—'}</p>
-                                        </div>
-                                        <div>
-                                            <p className="text-[9px] text-slate-500 font-bold uppercase">{sped > 0 ? 'ICMS (SPED)' : (temCredor ? 'Saldo credor' : 'ICMS a recolher')}</p>
-                                            <p className={`text-sm font-extrabold ${temCredor ? 'text-emerald-600' : 'text-navy'}`}>{sped > 0 ? formatCurrency(sped) : (mov.icms ? formatCurrency(mov.icms.saldoCredor > 0 ? mov.icms.saldoCredor : mov.icms.aPagar) : '—')}</p>
-                                        </div>
-                                        <div>
-                                            <p className="text-[9px] text-slate-500 font-bold uppercase">FUMACOP (2%)</p>
-                                            <p className="text-sm font-bold text-slate-700">{mov.fumacop > 0 ? formatCurrency(mov.fumacop) : '—'}</p>
-                                        </div>
-                                    </div>
-                                );
-                            })()}
-                            {parseNumBR(clientData.receitaMonofasica) > 0 && (() => {
-                                const mono = Math.min(parseNumBR(clientData.receitaMonofasica), totalRevenue);
-                                const basePC = Math.max(0, totalRevenue - mono);
-                                return (
-                                    <div className="mt-3 bg-emerald-50/60 p-3 rounded-lg border border-emerald-200 text-[11px] text-slate-600">
-                                        <p className="font-bold text-emerald-800 mb-1">PIS/COFINS sobre base de {formatCurrency(basePC)} (sem monofásico/ST)</p>
-                                        <div className="flex flex-wrap gap-3">
-                                            <span>Monofásico/ST excluído: <b>{formatCurrency(mono)}</b></span>
-                                            <span>PIS (0,65%): <b>{formatCurrency(basePC * 0.0065)}</b></span>
-                                            <span>COFINS (3%): <b>{formatCurrency(basePC * 0.03)}</b></span>
-                                        </div>
-                                    </div>
-                                );
-                            })()}
-                            {validationErrors.revenue && <p className="field-error-msg mt-1 text-center">{validationErrors.revenue}</p>}
+
+                            <div className="mt-4 border-t border-slate-100 pt-3">
+                                <p className="text-[11px] font-bold text-navy mb-2">Guias estaduais — ligue as que este cliente tem (você lança o valor pronto)</p>
+                                <div className="grid grid-cols-2 gap-3">
+                                    <ComercioGuia clientData={clientData} updateClient={updateClient} parseBRL={parseBRL} flag="temIcmsST" valorField="icmsStValor" label="É substituto tributário? (recolhe ICMS-ST nas saídas)" fieldLabel="ICMS-ST a recolher (R$)" />
+                                    <ComercioGuia clientData={clientData} updateClient={updateClient} parseBRL={parseBRL} flag="temAntecipacao" valorField="antecipacaoValor" label="Antecipação / ICMS-ST na entrada?" fieldLabel="Valor da antecipação (R$)" />
+                                    <ComercioGuia clientData={clientData} updateClient={updateClient} parseBRL={parseBRL} flag="temDifal" valorField="difalValor" label="Tem DIFAL? (uso/consumo/ativo)" fieldLabel="Valor do DIFAL (R$)" />
+                                    <ComercioGuia clientData={clientData} updateClient={updateClient} parseBRL={parseBRL} flag="temFumacop" valorField="fumacopValor" label="Tem FUMACOP? (Lei 8.205/04 — MA)" fieldLabel="Valor do FUMACOP (R$)" />
+                                </div>
+                                <p className="text-[10px] text-slate-400 mt-2">Cada valor cai na guia certa da tabela abaixo, com vencimento automático (que você pode ajustar). O interruptor fica lembrado; o valor você digita a cada mês.</p>
+                            </div>
+                            {validationErrors.revenue && <p className="field-error-msg mt-2 text-center">{validationErrors.revenue}</p>}
                         </Section>
                     )}
 
@@ -858,21 +843,12 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
                     {clientData.regime !== 'MEI' && (
                         <Section title="Folha, encargos & sócios" icon={Scale} defaultOpen={false} summary={`Folha ${formatCurrency(clientData.folhaMensal !== undefined ? clientData.folhaMensal : clientData.folha)} · PL ${formatCurrency(clientData.proLabore)}`}>
                             <div className="grid grid-cols-2 gap-4">
-                                {(clientData.regime === 'Lucro Presumido' || clientData.regime === 'Lucro Real') && (
-                                    <div>
-                                        <label className="field-label">Folha de Salários Mensal (R$)</label>
-                                        <input className="field-input" type="text" value={clientData.folhaMensal !== undefined ? clientData.folhaMensal : (clientData.folha || '')}
-                                            onChange={e => { updateClient('folhaMensal', parseBRL(e.target.value)); updateClient('folha', undefined); }} placeholder="0,00" />
-                                    </div>
-                                )}
-
-                                {clientData.regime === 'Simples Nacional' && (
-                                    <div>
-                                        <label className="field-label">Folha de Salários Mensal (R$)</label>
-                                        <input className="field-input" type="text" value={clientData.folhaMensal !== undefined ? clientData.folhaMensal : (clientData.folha || '')}
-                                            onChange={e => { updateClient('folhaMensal', parseBRL(e.target.value)); updateClient('folha', undefined); }} placeholder="0,00" />
-                                    </div>
-                                )}
+                                {/* Folha mensal — vale para todos os regimes desta seção (não-MEI) */}
+                                <div>
+                                    <label className="field-label">Folha de Salários Mensal (R$)</label>
+                                    <input className="field-input" type="text" value={clientData.folhaMensal !== undefined ? clientData.folhaMensal : (clientData.folha || '')}
+                                        onChange={e => { updateClient('folhaMensal', parseBRL(e.target.value)); updateClient('folha', undefined); }} placeholder="0,00" />
+                                </div>
 
                                 {clientData.regime === 'Simples Nacional' && (clientData.anexo === 'Anexo V' || clientData.anexo === 'Anexo III') && (
                                     <div>
@@ -940,25 +916,44 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
                                     <label className="field-label">Forma de Apuração</label>
                                     <select className="field-input border-blue-200 focus:border-blue-500" value={clientData.irpjCsllMode || 'Mensal (Provisão)'}
                                         onChange={e => updateClient('irpjCsllMode', e.target.value)}>
-                                        <option value="Mensal (Provisão)">Provisão Mensal (Calculada no mês)</option>
-                                        <option value="Trimestral (Apuração)">Apuração Trimestral (Definitiva)</option>
+                                        <option value="Mensal (Provisão)">Mensal — recolhe todo mês (antecipado)</option>
+                                        <option value="Trimestral (Apuração)">Trimestral — provisão no mês, recolhe no fechamento</option>
                                         {clientData.regime === 'Lucro Real' && <option value="Estimativa (Anual)">Estimativa Mensal (Anual)</option>}
                                     </select>
                                 </div>
                                 
                                 {(clientData.irpjCsllMode === 'Trimestral (Apuração)' || clientData.irpjCsllMode === 'Estimativa (Anual)') && (
                                     <div className="animate-fade-in">
-                                        <label className="field-label">Faturamento Acumulado no Período (R$)</label>
+                                        <div className="flex items-center justify-between mb-1">
+                                            <label className="field-label !mb-0">Faturamento Acumulado no Período (R$)</label>
+                                            {clientData.periodRevenueManual && (
+                                                <button type="button" onClick={() => updateClient('periodRevenueManual', false)} className="text-[11px] font-bold text-emerald-700 hover:underline">usar histórico</button>
+                                            )}
+                                        </div>
                                         <input className="field-input border-amber-200 focus:border-amber-500 bg-white" type="text" value={clientData.periodRevenue || ''}
-                                            onChange={e => updateClient('periodRevenue', parseBRL(e.target.value))}
+                                            onChange={e => { updateClient('periodRevenue', parseBRL(e.target.value)); updateClient('periodRevenueManual', true); }}
                                             placeholder="Acumulado do trimestre/ano" />
-                                        <p className="text-[9px] text-slate-500 mt-1 uppercase font-bold">Base para calcular IRPJ/CSLL</p>
+                                        {(() => {
+                                            if (clientData.periodRevenueManual) return <p className="text-[10px] text-amber-600 mt-1">Valor travado à mão — clique em "usar histórico" para voltar ao automático.</p>;
+                                            const ac = acumuladoPeriodo(clientData, records);
+                                            if (!ac) return <p className="text-[9px] text-slate-500 mt-1 uppercase font-bold">Base para calcular IRPJ/CSLL</p>;
+                                            return (
+                                                <p className="text-[10px] text-slate-500 mt-1">Somado do histórico: <b>{ac.salvos}</b> mês(es) salvo(s) + mês atual.
+                                                    {ac.faltando > 0 && <span className="text-amber-600 font-bold"> ⚠ {ac.faltando} mês(es) do período sem competência salva (contado como R$ 0) — salve-os para o valor ficar completo.</span>}
+                                                </p>
+                                            );
+                                        })()}
                                     </div>
                                 )}
                                 
-                                {clientData.irpjCsllMode === 'Mensal (Provisão)' && (
+                                {(!clientData.irpjCsllMode || clientData.irpjCsllMode === 'Mensal (Provisão)') && (
                                     <div className="flex items-center">
-                                        <p className="text-[10px] text-slate-500 italic">IRPJ e CSLL serão calculados com base no Faturamento Bruto Total do Mês demonstrado acima.</p>
+                                        <p className="text-[10px] text-slate-500 italic">IRPJ e CSLL calculados sobre o faturamento do mês e <b>recolhidos todo mês</b> (guia mensal).</p>
+                                    </div>
+                                )}
+                                {clientData.irpjCsllMode === 'Trimestral (Apuração)' && (
+                                    <div className="flex items-center">
+                                        <p className="text-[10px] text-slate-500 italic">Nos meses comuns aparece só a <b>provisão</b> (não entra no total do mês). No <b>fechamento do trimestre</b> (mar/jun/set/dez) vira guia a recolher.</p>
                                     </div>
                                 )}
                                 {(clientData.atividade || 'Serviços') === 'Serviços' && (
@@ -1019,8 +1014,10 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
                         const hasComp = compM >= 1 && compM <= 12 && compY > 1900;
                         const ABBR = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
                         const exist = {}; (Array.isArray(clientData.evolucao) ? clientData.evolucao : []).forEach(e => exist[e.ym] = parseNumBR(e.receita));
+                        // Bônus: puxa também do histórico salvo (records) quando o mês não está na evolução manual/PGDAS
+                        const recFat = {}; (records || []).forEach(r => { if (r && r.compKey && String(r.compKey).includes('-')) { const [yy, mm] = String(r.compKey).split('-'); recFat[mm + '/' + yy] = parseNumBR(r.faturamento); } });
                         const win = [];
-                        if (hasComp) { for (let k = 11; k >= 0; k--) { let mm = compM - k, yy = compY; while (mm <= 0) { mm += 12; yy--; } const key = String(mm).padStart(2, '0') + '/' + yy; win.push({ ym: key, mm, yy, receita: exist[key] || 0 }); } }
+                        if (hasComp) { for (let k = 11; k >= 0; k--) { let mm = compM - k, yy = compY; while (mm <= 0) { mm += 12; yy--; } const key = String(mm).padStart(2, '0') + '/' + yy; win.push({ ym: key, mm, yy, receita: exist[key] || recFat[key] || 0 }); } }
                         const soma = win.reduce((s, e) => s + e.receita, 0);
                         const filled = win.filter(e => e.receita > 0).length;
                         const setEv = (ym, raw) => { const val = parseNumBR(formatInputBRL(raw)); updateClient('evolucao', win.map(e => ({ ym: e.ym, receita: e.ym === ym ? val : e.receita }))); };
@@ -1089,9 +1086,10 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
                                 + Habilitar Retenções
                             </button>
                         )}
-                        <button onClick={() => { recalcular(); }}
+                        <button onClick={() => { recalcular(undefined, true); }}
+                            title="Destrava os campos editados à mão e recalcula tudo do zero"
                             className="bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-emerald-700 transition-all cursor-pointer shadow-sm hover:shadow-md">
-                            <TrendingUp className="w-4 h-4" /> Recalcular Tudo
+                            <TrendingUp className="w-4 h-4" /> Restaurar padrões
                         </button>
                         <button onClick={addTax}
                             className="bg-navy text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-blue-900 transition-all cursor-pointer shadow-sm hover:shadow-md">
@@ -1126,12 +1124,12 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
                             {taxes.map((row) => (
                                 <tr key={row.id} className="border-b border-slate-100 tax-row group">
                                     <td className="py-2 px-1"><input className="field-input !py-1.5 !px-2 !text-xs font-bold text-navy" value={row.tax} onChange={e => updateTax(row.id, 'tax', e.target.value)} placeholder="Nome" /></td>
-                                    <td className="py-2 px-1"><input className="field-input !py-1.5 !px-2 !text-xs text-right" value={row.base} onChange={e => updateTax(row.id, 'base', formatInputBRL(e.target.value))} placeholder="0,00" /></td>
-                                    <td className="py-2 px-1"><input className="field-input !py-1.5 !px-2 !text-xs text-center bg-slate-50" value={row.rate} onChange={e => updateTax(row.id, 'rate', e.target.value.replace(/\./g, ',').replace(/[^\d,]/g, ''))} placeholder="0,00" /></td>
+                                    <td className="py-2 px-1"><input className={`field-input !py-1.5 !px-2 !text-xs text-right${lockCls(row.baseManual)}`} title={lockTitle(row.baseManual)} value={row.base} onChange={e => updateTax(row.id, 'base', formatInputBRL(e.target.value))} placeholder="0,00" /></td>
+                                    <td className="py-2 px-1"><input className={`field-input !py-1.5 !px-2 !text-xs text-center bg-slate-50${lockCls(row.rateManual)}`} title={lockTitle(row.rateManual)} value={row.rate} onChange={e => updateTax(row.id, 'rate', e.target.value.replace(/\./g, ',').replace(/[^\d,]/g, ''))} placeholder="0,00" /></td>
                                     
                                     {showRetentionsTable && (
                                         <>
-                                            <td className="py-2 px-1"><input className="field-input !py-1.5 !px-2 !text-xs text-right font-medium" value={row.apurado} onChange={e => updateTax(row.id, 'apurado', formatInputBRL(e.target.value))} placeholder="0,00" /></td>
+                                            <td className="py-2 px-1"><input className={`field-input !py-1.5 !px-2 !text-xs text-right font-medium${lockCls(row.apuradoManual)}`} title={lockTitle(row.apuradoManual)} value={row.apurado} onChange={e => updateTax(row.id, 'apurado', formatInputBRL(e.target.value))} placeholder="0,00" /></td>
                                             <td className="py-2 px-1">
                                                 <input 
                                                     className={`field-input !py-1.5 !px-2 !text-xs text-right text-emerald-700 bg-emerald-50 border-emerald-200 focus:border-emerald-500 ${row.retidoManual ? 'shadow-[inset_0_0_0_1px_rgba(52,211,153,0.3)]' : ''}`} 
@@ -1144,7 +1142,7 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
                                         </>
                                     )}
 
-                                    <td className="py-2 px-1"><input className={`field-input !py-1.5 !px-2 !text-xs text-right font-bold text-navy ${showRetentionsTable ? 'bg-blue-50 border-blue-200' : ''}`} value={row.value} onChange={e => updateTax(row.id, 'value', formatInputBRL(e.target.value))} placeholder="0,00" /></td>
+                                    <td className="py-2 px-1"><input className={`field-input !py-1.5 !px-2 !text-xs text-right font-bold text-navy ${showRetentionsTable ? 'bg-blue-50 border-blue-200' : ''}${lockCls(row.valueManual)}`} title={lockTitle(row.valueManual)} value={row.value} onChange={e => updateTax(row.id, 'value', formatInputBRL(e.target.value))} placeholder="0,00" /></td>
                                     <td className="py-2 px-1"><input className="field-input !py-1.5 !px-2 !text-xs text-center" value={row.dueDate} onChange={e => { const dg = e.target.value.replace(/\D/g, '').slice(0, 8); const fmt = dg.length > 4 ? dg.slice(0, 2) + '/' + dg.slice(2, 4) + '/' + dg.slice(4) : dg.length > 2 ? dg.slice(0, 2) + '/' + dg.slice(2) : dg; updateTax(row.id, 'dueDate', fmt); }} placeholder="dd/mm/aaaa" /></td>
                                     <td className="py-2 px-1"><input className="field-input !py-1.5 !px-2 !text-[11px]" value={row.obs} onChange={e => updateTax(row.id, 'obs', e.target.value)} placeholder="Observação" /></td>
                                     <td className="py-2 px-1 text-center">{(() => { const on = entraNaAliquota(row); return (
@@ -1177,16 +1175,13 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
     const parseNum = parseNumBR;
 
     const revenue = calculateTotalRevenue(clientData);
-    // Linhas "(retido)" são informativas (valor já retido na fonte) — não entram como guia a pagar
-    const ehRetido = (t) => /\(retido\)/i.test(t.tax || '');
-    const totalTributos = taxes.reduce((s, r) => s + (ehRetido(r) ? 0 : parseNum(r.value)), 0);
-    const totalApurado = taxes.reduce((s, r) => s + (ehRetido(r) ? 0 : (parseNum(r.apurado) || parseNum(r.value))), 0);
-    const totalRetido = taxes.reduce((s, r) => s + parseNum(r.retido), 0);
-    // Alíquota efetiva = só os tributos que incidem sobre a receita (encargos de
-    // folha/pró-labore ficam de fora por padrão; ajustável por linha). O "total a
-    // pagar" continua somando tudo — o que sai daqui você ainda recolhe.
-    const baseAliquota = taxes.reduce((s, r) => s + ((ehRetido(r) || !entraNaAliquota(r)) ? 0 : (parseNum(r.apurado) || parseNum(r.value))), 0);
-    const aliquotaEfetiva = revenue > 0 ? (baseAliquota / revenue) * 100 : 0;
+    // Totais pela fonte ÚNICA (engine.resumoApuracao) — número e % sempre coerentes.
+    const R = resumoApuracao(taxes, revenue);
+    const totalTributos = R.totalRecolherMes;  // guias a recolher no mês (caixa; exclui provisão)
+    const totalProvisao = R.totalProvisao;      // IRPJ/CSLL provisionados (recolhem no fechamento do trimestre)
+    const totalApurado = R.totalApurado;
+    const totalRetido = R.totalRetido;
+    const aliquotaEfetiva = R.cargaEfetiva;     // carga sobre o faturamento (só tributos sobre a receita)
 
     const rbt12 = parseNum(clientData.rbt12);
     const folha12m = parseNum(clientData.folha12m !== undefined ? clientData.folha12m : clientData.folha);
@@ -1195,7 +1190,7 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
 
     const hasRetentions = parseNum(clientData.revenueRetained) > 0 || taxes.some(t => parseNum(t.retido) > 0 || t.retidoManual);
     const isSN = clientData.regime === 'Simples Nacional' || clientData.regime === 'MEI';
-    const liquido = revenue - totalApurado;
+    const liquido = R.liquido;  // faturamento − tributos que incidem sobre a receita (exclui folha/retenções)
     const compLabel = clientData.competence || clientData.competenceShort || '—';
 
     // Folha de salários e pró-labore — BASES da apuração (não são receita nem tributo).
@@ -1330,6 +1325,7 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
     const totL = { padding: '8px 0 0', borderTop: '2px solid #001D3D', fontWeight: 700 };
     const totR = { padding: '8px 0 0', borderTop: '2px solid #001D3D', fontWeight: 700, textAlign: 'right', fontVariantNumeric: 'tabular-nums' };
     const rowBorder = { borderBottom: '1px solid #e9e6dd' };
+    const provTag = { marginLeft: 6, fontSize: '8px', fontWeight: 700, letterSpacing: '.3px', textTransform: 'uppercase', color: '#854F0B', background: '#FCEFD7', borderRadius: 20, padding: '1px 6px' };
     const thL = { textAlign: 'left', fontSize: '9px', textTransform: 'uppercase', letterSpacing: '.5px', color: '#7c8595', fontWeight: 700, padding: '0 0 6px', borderBottom: '1px solid #e9e6dd' };
     const thR = { ...thL, textAlign: 'right' };
 
@@ -1655,7 +1651,7 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
 
                     <div className="grid grid-cols-4 gap-3 mb-4 avoid-break">
                         <KpiCard cls="navy" label="Faturamento" value={fmtKpi(revenue)} foot="Receita bruta do mês" />
-                        <KpiCard cls="w" label="Total a pagar" value={fmtKpi(totalTributos)} foot={hasRetentions ? 'líquido após retenção' : `${formatPercent(aliquotaEfetiva)} do faturamento`} />
+                        <KpiCard cls="w" label="Total a pagar" value={fmtKpi(totalTributos)} foot={hasRetentions ? 'guias do mês · líquido após retenção' : (totalProvisao > 0 ? `guias do mês · + ${formatCurrency(totalProvisao)} provisão` : 'guias a recolher no mês')} />
                         <KpiCard cls={kpi3.cls} label={kpi3.label} value={kpi3.value} foot={kpi3.foot} />
                         <KpiCard cls={kpi4.cls} label={kpi4.label} value={kpi4.value} foot={kpi4.foot} />
                     </div>
@@ -1700,12 +1696,13 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
                                         {taxRows.map((t, i) => (
                                             <tr key={i}>
                                                 <td style={{ ...cellL, ...(i < taxRows.length - 1 ? rowBorder : {}) }}>
-                                                    {t.tax}{t.rate && parseNum(t.rate) > 0 ? <span style={{ color: '#7c8595', fontWeight: 500 }}> · {String(t.rate).replace('.', ',')}%</span> : null}
+                                                    {t.tax}{t.rate && parseNum(t.rate) > 0 ? <span style={{ color: '#7c8595', fontWeight: 500 }}> · {String(t.rate).replace('.', ',')}%</span> : null}{t.provisao ? <span style={provTag}>provisão</span> : null}
                                                 </td>
-                                                <td style={{ ...cellR, ...(i < taxRows.length - 1 ? rowBorder : {}) }}>{formatCurrency(parseNum(t.value))}</td>
+                                                <td style={{ ...cellR, ...(i < taxRows.length - 1 ? rowBorder : {}), ...(t.provisao ? { color: '#9aa2af' } : {}) }}>{formatCurrency(parseNum(t.value))}</td>
                                             </tr>
                                         ))}
                                         <tr><td style={totL}>Total a recolher</td><td style={totR}>{formatCurrency(totalTributos)}</td></tr>
+                                        {totalProvisao > 0 && <tr><td style={{ ...cellL, color: '#9aa2af', fontSize: '10px' }}>Provisão do mês (recolhe no fechamento do trimestre)</td><td style={{ ...cellR, color: '#9aa2af', fontSize: '10px' }}>{formatCurrency(totalProvisao)}</td></tr>}
                                     </tbody>
                                 </table>
                             </div>
@@ -1741,10 +1738,10 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
                                             const bd = i < taxRows.length - 1 ? rowBorder : {};
                                             return (
                                                 <tr key={i}>
-                                                    <td style={{ ...cellL, ...bd }}>{t.tax}{t.rate && parseNum(t.rate) > 0 ? <span style={{ color: '#7c8595', fontWeight: 500 }}> · {String(t.rate).replace('.', ',')}%</span> : null}</td>
+                                                    <td style={{ ...cellL, ...bd }}>{t.tax}{t.rate && parseNum(t.rate) > 0 ? <span style={{ color: '#7c8595', fontWeight: 500 }}> · {String(t.rate).replace('.', ',')}%</span> : null}{t.provisao ? <span style={provTag}>provisão</span> : null}</td>
                                                     <td style={{ ...cellR, ...bd }}>{formatCurrency(ap)}</td>
                                                     <td style={{ ...cellR, ...bd, color: re > 0 ? '#1f7a4d' : '#7c8595' }}>{re > 0 ? '− ' + formatCurrency(re) : '—'}</td>
-                                                    <td style={{ ...cellR, ...bd, fontWeight: 700 }}>{formatCurrency(parseNum(t.value))}</td>
+                                                    <td style={{ ...cellR, ...bd, fontWeight: 700, ...(t.provisao ? { color: '#9aa2af' } : {}) }}>{t.provisao ? 'no trim.' : formatCurrency(parseNum(t.value))}</td>
                                                 </tr>
                                             );
                                         })}
@@ -1957,16 +1954,27 @@ const LoadingOverlay = () => (
 
 /* ===== Painel-resumo ao vivo (coluna direita do editor) =====
    Calcula em tempo real a partir de clientData + taxes. Estilo 100% nos tokens do app. */
-const LiveSummary = ({ clientData, taxes }) => {
-    const ehRetido = (t) => /\(retido\)/i.test(t.tax || ''); // linhas informativas, não são guia
+const LiveSummary = ({ clientData, taxes, records = [] }) => {
     const revenue = calculateTotalRevenue(clientData);
-    const totalApurado = taxes.reduce((s, t) => s + (ehRetido(t) ? 0 : (parseNumBR(t.apurado) || parseNumBR(t.value))), 0);
-    const totalPagar = taxes.reduce((s, t) => s + (ehRetido(t) ? 0 : parseNumBR(t.value)), 0);
-    const totalRetido = taxes.reduce((s, t) => s + parseNumBR(t.retido), 0);
-    // Alíquota efetiva só com os tributos sobre a receita (encargos de folha/pró-labore fora por padrão)
-    const baseAliquota = taxes.reduce((s, t) => s + ((ehRetido(t) || !entraNaAliquota(t)) ? 0 : (parseNumBR(t.apurado) || parseNumBR(t.value))), 0);
-    const aliquota = revenue > 0 ? (baseAliquota / revenue) * 100 : 0;
-    const guias = taxes.filter(t => t.tax && !ehRetido(t) && parseNumBR(t.value) > 0);
+    // Fonte única de totais (mesma do relatório e da persistência)
+    const R = resumoApuracao(taxes, revenue);
+    const totalPagar = R.totalRecolherMes;
+    const totalProvisao = R.totalProvisao;
+    const totalRetido = R.totalRetido;
+    const aliquota = R.cargaEfetiva;
+    const guias = taxes.filter(t => t.tax && !ehRetido(t) && !t.provisao && parseNumBR(t.value) > 0);
+
+    // ===== Assertividade: avisos de sanidade + variação vs mês anterior =====
+    const avisos = avisosApuracao(taxes);
+    const curKey = (clientData.compYear && clientData.compMonth) ? `${clientData.compYear}-${String(clientData.compMonth).padStart(2, '0')}` : '';
+    let deltaFat = null;
+    if (curKey && Array.isArray(records) && records.length) {
+        const prev = records.filter(r => r.compKey && r.compKey < curKey).sort((a, b) => a.compKey.localeCompare(b.compKey)).pop();
+        if (prev && prev.faturamento > 0 && revenue > 0) {
+            const d = ((revenue - prev.faturamento) / prev.faturamento) * 100;
+            if (Math.abs(d) >= 50) deltaFat = { pct: d, prev: prev.faturamento };
+        }
+    }
 
     const isSN = clientData.regime === 'Simples Nacional' || clientData.regime === 'MEI';
     const dasTax = taxes.find(t => /^DAS/.test(t.tax || ''));
@@ -2028,7 +2036,7 @@ const LiveSummary = ({ clientData, taxes }) => {
             <div className="rounded-lg bg-primary text-primary-foreground p-4">
                 <p className="text-[10px] uppercase tracking-wider font-bold opacity-80">Total a pagar</p>
                 <p className="text-3xl font-bold leading-none mt-1.5 tabular-nums">{formatCurrency(totalPagar)}</p>
-                <p className="text-[11px] opacity-80 mt-2">{formatPercent(aliquota)} sobre o faturamento{totalRetido > 0 ? ` · retenção ${formatCurrency(totalRetido)}` : ''}</p>
+                <p className="text-[11px] opacity-80 mt-2">{formatPercent(aliquota)} sobre o faturamento{totalRetido > 0 ? ` · retenção ${formatCurrency(totalRetido)}` : ''}{totalProvisao > 0 ? ` · +${formatCurrency(totalProvisao)} provisão trim.` : ''}</p>
             </div>
 
             {/* KPIs */}
@@ -2047,6 +2055,17 @@ const LiveSummary = ({ clientData, taxes }) => {
                 <div className={"rounded-lg border p-3 text-xs " + (acimaTeto ? "bg-destructive/10 border-destructive/30 text-destructive" : "bg-warning/10 border-warning/30 text-warning")}>
                     <p className="font-bold">{acimaTeto ? 'RBT12 acima do teto do Simples (R$ 4,8 mi)' : 'RBT12 acima do sublimite (R$ 3,6 mi)'}</p>
                     <p className="opacity-90 mt-0.5">{acimaTeto ? 'Possível desenquadramento do Simples — confira o enquadramento.' : 'ICMS/ISS devem ser recolhidos FORA do DAS, por apuração estadual/municipal própria.'}</p>
+                </div>
+            )}
+
+            {/* Avisos de sanidade + variação vs mês anterior (reduz erro de digitação) */}
+            {(avisos.length > 0 || deltaFat) && (
+                <div className="rounded-lg border border-warning/30 bg-warning/10 p-3 text-xs">
+                    <p className="font-bold text-warning mb-1 flex items-center gap-1.5"><AlertTriangle className="w-3.5 h-3.5" /> Confira antes de fechar</p>
+                    <ul className="space-y-1 text-foreground/80 list-disc pl-4">
+                        {deltaFat && <li>Faturamento {deltaFat.pct >= 0 ? '+' : ''}{deltaFat.pct.toFixed(0)}% vs. mês anterior ({formatCurrency(deltaFat.prev)}) — confira se não é erro de digitação.</li>}
+                        {avisos.map((a, i) => <li key={i}><b>{a.tax}:</b> {a.msg}</li>)}
+                    </ul>
                 </div>
             )}
 
@@ -2140,10 +2159,8 @@ const App = () => {
         if (!clientId) { setToast({ message: 'Selecione a empresa do controle fiscal.', type: 'error' }); return; }
         const compKey = compKeyOf(clientData);
         if (!compKey) { setToast({ message: 'Informe mês e ano da competência.', type: 'error' }); return; }
-        const totalPagar = taxes.reduce((s, t) => s + parseNumBR(t.value), 0);
-        const totalApurado = taxes.reduce((s, t) => s + (parseNumBR(t.apurado) || parseNumBR(t.value)), 0);
-        const baseAliquota = taxes.reduce((s, t) => s + (entraNaAliquota(t) ? (parseNumBR(t.apurado) || parseNumBR(t.value)) : 0), 0);
         const revenue = calculateTotalRevenue(clientData);
+        const R = resumoApuracao(taxes, revenue);
         const das = taxes.filter(t => /^DAS/.test(t.tax)).reduce((s, t) => s + parseNumBR(t.value), 0);
         const rec = {
             clientId,
@@ -2156,9 +2173,9 @@ const App = () => {
             rbt12: parseNumBR(clientData.rbt12),
             folha12m: parseNumBR(clientData.folha12m),
             proLabore: parseNumBR(clientData.proLabore),
-            totalTributos: totalApurado,
-            totalPagar,
-            aliquotaEfetiva: revenue > 0 ? (baseAliquota / revenue) * 100 : 0,
+            totalTributos: R.totalApurado,
+            totalPagar: R.totalRecolherMes,
+            aliquotaEfetiva: R.cargaEfetiva,
             economia: 0,
             das,
             payload: { clientData, taxes },
@@ -2371,9 +2388,10 @@ const App = () => {
                                 setTaxes={setTaxes}
                                 validationErrors={validationErrors}
                                 setValidationErrors={setValidationErrors}
+                                records={records}
                             />
                         </div>
-                        <LiveSummary clientData={clientData} taxes={taxes} />
+                        <LiveSummary clientData={clientData} taxes={taxes} records={records} />
                     </div>
                 </TabsContent>
 

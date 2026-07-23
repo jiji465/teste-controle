@@ -25,12 +25,108 @@ export const formatPercent = (val) => (parseNumBR(val) || 0).toFixed(2).replace(
 export const calculateTotalRevenue = (data) => {
     const isSimplesOuMei = data.regime === 'Simples Nacional' || data.regime === 'MEI';
     if (isSimplesOuMei) return parseNumBR(data.revenue);
+    // Comércio/Indústria não tem "receita com retenção" (conceito de serviços): usa só as
+    // saídas (revenueNonRetained). Evita que um valor de "COM retenção" digitado antes de
+    // trocar a atividade continue somando na receita total (vazamento entre atividades).
+    const isComercioInd = data.atividade === 'Comércio' || data.atividade === 'Indústria';
+    if (isComercioInd) return parseNumBR(data.revenueNonRetained);
     return parseNumBR(data.revenueRetained) + parseNumBR(data.revenueNonRetained);
 };
 
 export const formatCNPJ = (v) => {
     const d = String(v || '').replace(/\D/g, '').slice(0, 14);
     return d.replace(/(\d{2})(\d)/, '$1.$2').replace(/(\d{3})(\d)/, '$1.$2').replace(/(\d{3})(\d)/, '$1/$2').replace(/(\d{4})(\d)/, '$1-$2');
+};
+
+// ===== Classificação de linhas para os totais =====
+// Linhas "(retido)" são informativas (o tributo já foi retido na fonte) — não são guia a pagar.
+export const ehRetido = (t) => /\(retido\)/i.test((t && t.tax) || '');
+// Encargos sobre folha/pró-labore (INSS/IRRF/FGTS/CPP/RAT/Terceiros) NÃO incidem sobre o
+// faturamento → ficam FORA da carga tributária efetiva (ajustável por linha via `foraAliquota`).
+export const isFolhaTax = (name) => /\b(INSS|IRRF|FGTS|CPP|RAT|Terceiros)\b/i.test(name || '');
+export const entraNaAliquota = (t) => (t && t.foraAliquota !== undefined) ? !t.foraAliquota : !isFolhaTax(t && t.tax);
+// Provisão (ex.: IRPJ/CSLL mensal no LP trimestral): imposto atribuível ao mês, mas NÃO
+// recolhido neste mês (o DARF é trimestral). Conta na carga do período, fora do caixa do mês.
+export const ehProvisao = (t) => !!(t && t.provisao);
+
+// ===== Fonte ÚNICA dos totais (relatório, resumo ao vivo e persistência) =====
+// Evita as contas divergentes que faziam o número e o "%" do KPI não baterem.
+//   totalRecolherMes = caixa a recolher no mês (exclui retido e provisão)
+//   totalProvisao    = provisão do mês (IRPJ/CSLL a recolher no fechamento do trimestre)
+//   baseCarga        = tributos que incidem sobre a receita (exclui folha; inclui provisão)
+//   cargaEfetiva     = baseCarga / faturamento  ·  liquido = faturamento − baseCarga
+//   totalApurado     = apurado bruto de todas as guias (compat. com a persistência)
+// ===== Avisos de sanidade (não-bloqueantes) — reduzem erro de digitação =====
+// Sinaliza situações suspeitas sem impedir o uso: alíquota fora de faixa, retenção
+// maior que o apurado (valor zerado em silêncio), e tributos duplicados.
+export const FAIXA_ALIQUOTA = { ISS: [2, 5], 'ISS (retido)': [2, 5], ICMS: [0, 35], 'ICMS (ST)': [0, 35] };
+export const avisosApuracao = (taxes) => {
+    const avisos = [];
+    const cont = {};
+    (taxes || []).forEach((t) => {
+        if (!t || !t.tax) return;
+        const ap = parseNumBR(t.apurado);
+        const ret = parseNumBR(t.retido);
+        const rate = parseNumBR(t.rate);
+        cont[t.tax] = (cont[t.tax] || 0) + 1;
+        // Retenção maior que o apurado → "A pagar" é zerado silenciosamente (Math.max(0, …))
+        if (ret > 0 && ap > 0 && ret > ap + 0.005) {
+            avisos.push({ tax: t.tax, nivel: 'erro', msg: `retido (${formatCurrency(ret)}) maior que o apurado (${formatCurrency(ap)})` });
+        }
+        // Alíquota acima de 100%
+        if (rate > 100) avisos.push({ tax: t.tax, nivel: 'erro', msg: `alíquota ${rate.toFixed(2).replace('.', ',')}% acima de 100%` });
+        // Alíquota fora da faixa usual do tributo
+        const faixa = FAIXA_ALIQUOTA[t.tax];
+        if (faixa && rate > 0 && (rate < faixa[0] || rate > faixa[1])) {
+            avisos.push({ tax: t.tax, nivel: 'aviso', msg: `${t.tax} ${rate.toFixed(2).replace('.', ',')}% fora da faixa usual (${faixa[0]}–${faixa[1]}%)` });
+        }
+    });
+    Object.entries(cont).forEach(([tax, n]) => {
+        if (n > 1) avisos.push({ tax, nivel: 'aviso', msg: `${tax} aparece ${n}× — possível duplicidade` });
+    });
+    return avisos;
+};
+
+// ===== Acumulado do período (LP trimestral/estimativa) a partir do histórico salvo =====
+// Soma o faturamento dos meses do período: meses anteriores vêm dos `records` salvos
+// (compKey 'AAAA-MM' + faturamento) e o mês corrente usa a receita viva da tela.
+//   Trimestral  → meses do trimestre atual até a competência
+//   Estimativa  → janeiro até a competência
+// Retorna null quando o modo não acumula ou faltam mês/ano.
+export const acumuladoPeriodo = (data, records) => {
+    const m = parseInt(data.compMonth), y = parseInt(data.compYear);
+    const mode = data.irpjCsllMode;
+    if (!m || !y) return null;
+    let startM;
+    if (mode === 'Trimestral (Apuração)') startM = Math.floor((m - 1) / 3) * 3 + 1;
+    else if (mode === 'Estimativa (Anual)') startM = 1;
+    else return null;
+    let total = 0, salvos = 0, faltando = 0;
+    for (let mm = startM; mm <= m; mm++) {
+        if (mm === m) { total += calculateTotalRevenue(data); continue; }
+        const key = y + '-' + String(mm).padStart(2, '0');
+        const rec = (records || []).find(r => r && r.compKey === key);
+        const fat = rec ? parseNumBR(rec.faturamento) : 0;
+        if (fat > 0) { total += fat; salvos++; } else faltando++;
+    }
+    return { total, salvos, faltando, meses: m - startM + 1 };
+};
+
+export const resumoApuracao = (taxes, revenue) => {
+    const rev = parseNumBR(revenue);
+    let totalRecolherMes = 0, totalProvisao = 0, totalRetido = 0, baseCarga = 0, totalApurado = 0;
+    (taxes || []).forEach((t) => {
+        totalRetido += parseNumBR(t.retido);
+        if (ehRetido(t)) return; // linha informativa, não entra em nenhum total de guia
+        const val = parseNumBR(t.value);
+        const apur = parseNumBR(t.apurado) || val;
+        if (ehProvisao(t)) totalProvisao += val; else totalRecolherMes += val;
+        totalApurado += apur;
+        if (entraNaAliquota(t)) baseCarga += apur;
+    });
+    const cargaEfetiva = rev > 0 ? (baseCarga / rev) * 100 : 0;
+    const liquido = rev - baseCarga;
+    return { totalRecolherMes, totalProvisao, totalRetido, baseCarga, totalApurado, cargaEfetiva, liquido };
 };
 
 // Estrutura Base dos Tributos
@@ -52,7 +148,7 @@ export const DEFAULT_TAXES_LP = [
 export const DEFAULT_TAXES_LP_COMERCIO = [
     { id: 1, tax: "PIS", base: "", rate: "0,65", apurado: "", retido: "", value: "", dueDate: "", obs: "Regime cumulativo", retidoManual: false },
     { id: 2, tax: "COFINS", base: "", rate: "3,00", apurado: "", retido: "", value: "", dueDate: "", obs: "Regime cumulativo", retidoManual: false },
-    { id: 3, tax: "ICMS", base: "", rate: "", apurado: "", retido: "", value: "", dueDate: "", obs: "Apuração por débito e crédito", retidoManual: false },
+    { id: 3, tax: "ICMS", base: "", rate: "", apurado: "", retido: "", value: "", dueDate: "", obs: "ICMS próprio apurado no SPED/EFD", retidoManual: false },
     { id: 4, tax: "IRPJ", base: "", rate: "15,00", apurado: "", retido: "", value: "", dueDate: "", obs: "Provisão mensal (Venc. Real Trimestral)", retidoManual: false },
     { id: 12, tax: "Adicional IRPJ", base: "", rate: "10,00", apurado: "", retido: "", value: "", dueDate: "", obs: "10% sobre a base que exceder R$ 20 mil/mês (R$ 60 mil/trim)", retidoManual: false },
     { id: 5, tax: "CSLL", base: "", rate: "9,00", apurado: "", retido: "", value: "", dueDate: "", obs: "Provisão mensal (Venc. Real Trimestral)", retidoManual: false },
@@ -60,46 +156,18 @@ export const DEFAULT_TAXES_LP_COMERCIO = [
     { id: 7, tax: "RAT", base: "", rate: "1,00", apurado: "", retido: "", value: "", dueDate: "", obs: "Risco Ambiental do Trabalho", retidoManual: false },
     { id: 8, tax: "Terceiros", base: "", rate: "5,80", apurado: "", retido: "", value: "", dueDate: "", obs: "SESC, SENAC, SEBRAE, etc.", retidoManual: false },
     { id: 9, tax: "FGTS", base: "", rate: "8,00", apurado: "", retido: "", value: "", dueDate: "", obs: "8% sobre a folha de salários", retidoManual: false },
-    { id: 10, tax: "Antecipação Parcial", base: "", rate: "", apurado: "", retido: "", value: "", dueDate: "", obs: "Informe o valor a recolher (se houver)", retidoManual: false },
-    { id: 11, tax: "DIFAL", base: "", rate: "", apurado: "", retido: "", value: "", dueDate: "", obs: "Informe o valor a recolher (se houver)", retidoManual: false },
 ];
+// Guias estaduais do comércio adicionadas por interruptor (valor lançado, não calculado):
+// ICMS (ST) — substituto; Antecipação Parcial e DIFAL — ICMS interestadual; FUMACOP — adicional MA.
+export const COMERCIO_GUIA_ESTADUAL = {
+    icmsST: { tax: "ICMS (ST)", obs: "ICMS-ST recolhido como substituto tributário" },
+    antecipacao: { tax: "Antecipação Parcial", obs: "Antecipação parcial de ICMS (entrada interestadual)" },
+    difal: { tax: "DIFAL", obs: "Diferencial de alíquota (compras interestaduais)" },
+    fumacop: { tax: "FUMACOP", obs: "Adicional FUMACOP — Lei 8.205/2004 (MA)" },
+};
 
 export const lpDefaults = (atividade) => (atividade === 'Comércio' || atividade === 'Indústria') ? DEFAULT_TAXES_LP_COMERCIO : DEFAULT_TAXES_LP;
 
-// Apuração estadual do comércio (LP/Real): ICMS por débito/crédito e FUMACOP (2% — Lei 8.205/2004, MA).
-// Antecipação Parcial e DIFAL não são calculados aqui — entram como valor manual na tabela.
-export const calcComercioLP = (data, totalRevenue) => {
-    const entradas = parseNumBR(data.entradasCompras);
-    const aliqInterna = parseNumBR(data.aliqIcmsSaida);
-    const aliqERaw = parseNumBR(data.aliqIcmsEntrada);
-    const aliqE = aliqERaw > 0 ? aliqERaw : aliqInterna;
-    const saldoAnterior = parseNumBR(data.saldoCredorICMS);
-    const baseFumacop = parseNumBR(data.baseFumacop);
-    // Saídas em Substituição Tributária NÃO geram débito próprio (ICMS já recolhido antes)
-    const saidasST = parseNumBR(data.saidasST);
-    const baseSaidas = Math.max(0, totalRevenue - saidasST);
-    // Débito/crédito TOTAIS informados (ajustes lançados em bloco, do livro de apuração/SPED)
-    // prevalecem sobre o cálculo por alíquota — é como o contador costuma fechar o ICMS.
-    const debManual = parseNumBR(data.icmsDebitoTotal);
-    const credManual = parseNumBR(data.icmsCreditoTotal);
-    const temManual = debManual > 0 || credManual > 0;
-
-    let icms = null;
-    if (totalRevenue > 0 && (aliqInterna > 0 || temManual)) {
-        const debito = debManual > 0 ? debManual : baseSaidas * aliqInterna / 100;
-        const credito = (credManual > 0 ? credManual : entradas * aliqE / 100) + saldoAnterior;
-        icms = { debito, credito, aliqS: aliqInterna, aliqE, saldoAnterior, saidasST, baseSaidas, manual: temManual, aPagar: Math.max(0, debito - credito), saldoCredor: Math.max(0, credito - debito) };
-    }
-    const fumacop = baseFumacop > 0 ? baseFumacop * 0.02 : 0;
-    // DIFAL e Antecipação Parcial: diferença entre a alíquota interna e a interestadual
-    const aliqInter = parseNumBR(data.aliqInterestadual) > 0 ? parseNumBR(data.aliqInterestadual) : 12;
-    const difalRate = Math.max(0, aliqInterna - aliqInter);
-    const baseDifal = parseNumBR(data.baseDifal);
-    const baseAntec = parseNumBR(data.baseAntecipacao);
-    const difal = baseDifal > 0 && difalRate > 0 ? baseDifal * difalRate / 100 : 0;
-    const antecipacao = baseAntec > 0 && difalRate > 0 ? baseAntec * difalRate / 100 : 0;
-    return { icms, fumacop, entradas, baseFumacop, aliqInterna, aliqInter, difalRate, difal, antecipacao };
-};
 
 export const DEFAULT_TAXES_SN_SERVICOS = [
     { id: 1, tax: "DAS", base: "", rate: "", apurado: "", retido: "", value: "", dueDate: "", obs: "Documento de Arrecadação do Simples", retidoManual: false },
@@ -290,14 +358,18 @@ export const getDueDate = (compMonth, compYear, taxName, irpjCsllMode) => {
     return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`;
 };
 
-export const getBasePresumidaLP = (revenue, taxName, atividade, irpjCsllMode, equiparada) => {
+export const getBasePresumidaLP = (revenue, taxName, atividade, irpjCsllMode, equiparada, nMeses = 1) => {
     const isServ = (atividade || 'Serviços') === 'Serviços';
     const eq = isServ ? Math.min(Math.max(parseNumBR(equiparada) || 0, 0), revenue) : 0;
     const norm = revenue - eq;
     const baseIRPJ = isServ ? (eq * 0.08 + norm * 0.32) : (revenue * 0.08);
     const baseCSLL = isServ ? (eq * 0.12 + norm * 0.32) : (revenue * 0.12);
     if (taxName === 'Adicional IRPJ') {
-        const limit = (irpjCsllMode === 'Trimestral (Apuração)') ? 60000 : 20000;
+        // Limite do adicional = R$ 20.000 por mês do período. Trimestral = 60.000;
+        // Estimativa Anual (base acumulada) = 20.000 × nº de meses acumulados.
+        const limit = irpjCsllMode === 'Trimestral (Apuração)' ? 60000
+            : irpjCsllMode === 'Estimativa (Anual)' ? 20000 * Math.max(1, nMeses)
+                : 20000;
         return Math.max(0, baseIRPJ - limit);
     }
     if (taxName === 'IRPJ') return baseIRPJ;
@@ -420,8 +492,7 @@ export const autoFillTaxes = (data, currentTaxes) => {
     const sujeitoFatorR = isSujeitoFatorR(data, folha12m);
     const isComercioInd = atividade === 'Comércio' || atividade === 'Indústria';
     const isLPouReal = data.regime === 'Lucro Presumido' || data.regime === 'Lucro Real';
-    const mov = (isLPouReal && isComercioInd) ? calcComercioLP(data, totalRevenue) : null;
-    const fmtPct = (n) => n.toFixed(2).replace('.', ',');
+    const comercioLP = isLPouReal && isComercioInd;
 
     return currentTaxes.map(t => {
         const updated = { ...t };
@@ -437,11 +508,13 @@ export const autoFillTaxes = (data, currentTaxes) => {
 
             if (baseFat.includes(t.tax)) {
                 if (t.tax === 'PIS' || t.tax === 'COFINS' || t.tax === 'PIS/COFINS') {
-                    // Revenda monofásica/ST: PIS/COFINS já recolhido na origem → fora da base
-                    const mono = parseNumBR(data.receitaMonofasica);
-                    const basePC = Math.max(0, totalRevenue - mono);
+                    // Receita sem incidência de PIS/COFINS (CST 04 monofásico, 05 ST, 06 alíq. zero,
+                    // 09 suspensão) sai da base cumulativa. Conceito de comércio/indústria — não abate
+                    // em serviços (onde o campo nem aparece).
+                    const semPC = isComercioInd ? parseNumBR(data.receitaMonofasica) : 0;
+                    const basePC = Math.max(0, totalRevenue - semPC);
                     updated.base = totalRevenue > 0 ? formatBRLDisplay(basePC) : "";
-                    updated.obs = mono > 0 ? 'Base sem revenda monofásica/ST (− ' + formatBRLDisplay(mono) + ')' : (updated.obs || 'Regime cumulativo');
+                    updated.obs = semPC > 0 ? 'Base sem receita CST 04/05/06/09 (− ' + formatBRLDisplay(semPC) + ')' : (updated.obs || 'Regime cumulativo');
                 } else {
                     updated.base = totalRevenue > 0 ? formatBRLDisplay(totalRevenue) : "";
                 }
@@ -449,7 +522,9 @@ export const autoFillTaxes = (data, currentTaxes) => {
                 const baseRevenueToUse = (data.irpjCsllMode === 'Trimestral (Apuração)' || data.irpjCsllMode === 'Estimativa (Anual)') && parseNumBR(data.periodRevenue) > 0
                     ? parseNumBR(data.periodRevenue)
                     : totalRevenue;
-                updated.base = baseRevenueToUse > 0 ? formatBRLDisplay(getBasePresumidaLP(baseRevenueToUse, t.tax, atividade, data.irpjCsllMode, data.equiparacaoHospitalar ? data.receitaEquiparacao : 0)) : "";
+                // Estimativa Anual: base acumulada Jan→mês → limite do adicional proporcional (nº de meses)
+                const nMesesAdic = data.irpjCsllMode === 'Estimativa (Anual)' ? (parseInt(data.compMonth) || 1) : 1;
+                updated.base = baseRevenueToUse > 0 ? formatBRLDisplay(getBasePresumidaLP(baseRevenueToUse, t.tax, atividade, data.irpjCsllMode, data.equiparacaoHospitalar ? data.receitaEquiparacao : 0, nMesesAdic)) : "";
             } else if (baseCPP.includes(t.tax)) {
                 const totalFolhaEProLabore = proLabore + folhaMensal;
                 updated.base = totalFolhaEProLabore > 0 ? formatBRLDisplay(totalFolhaEProLabore) : "";
@@ -486,12 +561,23 @@ export const autoFillTaxes = (data, currentTaxes) => {
             }
 
             if (['IRPJ', 'CSLL', 'Adicional IRPJ'].includes(t.tax) && isRegimeNormal) {
+                // Dois perfis de cliente:
+                //  · Trimestral (recolhe no fechamento): meses comuns = PROVISÃO informativa
+                //    (fora do caixa do mês); no fechamento (mar/jun/set/dez) vira guia real.
+                //  · Mensal (antecipado) / Estimativa: recolhe todo mês → guia real.
+                const mesComp = parseInt(data.compMonth);
+                const fechamentoTrim = [3, 6, 9, 12].includes(mesComp);
                 if (data.irpjCsllMode === 'Trimestral (Apuração)') {
-                    updated.obs = "Apuração definitiva do trimestre";
+                    updated.provisao = !fechamentoTrim;
+                    updated.obs = fechamentoTrim
+                        ? "Apuração do trimestre — recolher no vencimento"
+                        : "Provisão do mês — recolhe no fechamento do trimestre";
                 } else if (data.irpjCsllMode === 'Estimativa (Anual)') {
+                    updated.provisao = false;
                     updated.obs = "Estimativa mensal (Lucro Real Anual)";
                 } else {
-                    updated.obs = "Provisão mensal (Venc. Real Trimestral)";
+                    updated.provisao = false;
+                    updated.obs = "Recolhimento mensal (antecipado)";
                 }
             }
 
@@ -512,47 +598,21 @@ export const autoFillTaxes = (data, currentTaxes) => {
 
         // ===== Estaduais do comércio (LP/Real): ICMS por débito/crédito e FUMACOP (2%) =====
         // Antecipação Parcial e DIFAL são linhas de valor manual — não recalculadas aqui.
-        if (mov) {
-            if (t.tax === 'ICMS') {
-                const icmsSped = parseNumBR(data.icmsApurado);
-                if (icmsSped > 0) {
-                    // O contador fechou a EFD (SPED Fiscal): valor apurado prevalece sobre a estimativa
-                    updated.base = formatBRLDisplay(totalRevenue);
-                    updated.rate = '';
-                    updated.apurado = formatBRLDisplay(icmsSped);
-                    updated.obs = 'ICMS apurado no SPED/EFD (débito − crédito − ST − ajustes)';
-                } else if (mov.icms) {
-                    updated.base = formatBRLDisplay(mov.icms.baseSaidas);
-                    updated.rate = mov.icms.manual ? '' : fmtPct(mov.icms.aliqS);
-                    if (mov.icms.aPagar > 0) {
-                        updated.apurado = formatBRLDisplay(mov.icms.aPagar);
-                        const tail = mov.icms.manual
-                            ? ' (totais informados)'
-                            : (mov.icms.saidasST > 0 ? ` · ST fora do débito (− ${formatBRLDisplay(mov.icms.saidasST)})` : '') + ' · estimativa, confira no SPED';
-                        updated.obs = `Débito ${formatBRLDisplay(mov.icms.debito)} − créditos ${formatBRLDisplay(mov.icms.credito)}` + tail;
-                    } else {
-                        updated.apurado = "";
-                        updated.obs = mov.icms.saldoCredor > 0 ? `Saldo credor de R$ ${formatBRLDisplay(mov.icms.saldoCredor)} p/ a próxima competência` : '';
-                    }
-                } else {
-                    updated.base = ""; updated.apurado = ""; updated.obs = "Apuração por débito e crédito";
-                }
-            } else if (t.tax === 'FUMACOP') {
-                updated.base = formatBRLDisplay(mov.baseFumacop);
-                updated.rate = "2,00";
-                updated.apurado = mov.fumacop > 0 ? formatBRLDisplay(mov.fumacop) : "";
-                updated.obs = "Adicional de 2% — Lei 8.205/2004 (MA)";
-            } else if (t.tax === 'DIFAL' && mov.difal > 0) {
-                updated.base = formatBRLDisplay(parseNumBR(data.baseDifal));
-                updated.rate = mov.difalRate.toFixed(2).replace('.', ',');
-                updated.apurado = formatBRLDisplay(mov.difal);
-                updated.obs = `Alíq. interna ${mov.aliqInterna.toFixed(2).replace('.', ',')}% − interestadual ${mov.aliqInter.toFixed(2).replace('.', ',')}%`;
-            } else if (t.tax === 'Antecipação Parcial' && mov.antecipacao > 0) {
-                updated.base = formatBRLDisplay(parseNumBR(data.baseAntecipacao));
-                updated.rate = mov.difalRate.toFixed(2).replace('.', ',');
-                updated.apurado = formatBRLDisplay(mov.antecipacao);
-                updated.obs = `Alíq. interna ${mov.aliqInterna.toFixed(2).replace('.', ',')}% − interestadual ${mov.aliqInter.toFixed(2).replace('.', ',')}%`;
-            }
+        // ===== Comércio/Indústria (LP/Real): guias estaduais LANÇADAS (valor pronto, não calculado) =====
+        // ICMS próprio vem do SPED; ICMS-ST/DIFAL/Antecipação/FUMACOP são valores informados
+        // (já apurados em guia própria/GNRE). A estimativa por débito/crédito foi removida.
+        if (comercioLP) {
+            const lancar = (valorField, obs) => {
+                const v = parseNumBR(data[valorField]);
+                updated.base = ""; updated.rate = "";
+                updated.apurado = v > 0 ? formatBRLDisplay(v) : "";
+                updated.obs = obs;
+            };
+            if (t.tax === 'ICMS') lancar('icmsApurado', 'ICMS próprio apurado no SPED/EFD');
+            else if (t.tax === 'ICMS (ST)') lancar('icmsStValor', 'ICMS-ST recolhido como substituto tributário');
+            else if (t.tax === 'DIFAL') lancar('difalValor', 'Diferencial de alíquota (compras interestaduais)');
+            else if (t.tax === 'Antecipação Parcial') lancar('antecipacaoValor', 'Antecipação parcial de ICMS (entrada interestadual)');
+            else if (t.tax === 'FUMACOP') lancar('fumacopValor', 'Adicional FUMACOP — Lei 8.205/2004 (MA)');
         }
 
         if (data.regime === 'Simples Nacional') {
@@ -643,18 +703,35 @@ export const autoFillTaxes = (data, currentTaxes) => {
             }
         }
 
+        // ===== Locks manuais: respeita o que o usuário digitou na tabela =====
+        // Campos travados (base/alíq/apurado/valor) NÃO são sobrescritos pelo recálculo —
+        // some a necessidade de "apertar Recalcular". `retido` já é protegido por retidoManual.
+        // As flags são carregadas adiante para sobreviver a salvar/reabrir a competência.
+        if (t.baseManual) updated.base = t.base;
+        if (t.rateManual) updated.rate = t.rate;
+        if (t.apuradoManual) updated.apurado = t.apurado;
+        updated.baseManual = !!t.baseManual;
+        updated.rateManual = !!t.rateManual;
+        updated.apuradoManual = !!t.apuradoManual;
+        updated.valueManual = !!t.valueManual;
+
         const apurado = parseNumBR(updated.apurado);
         const retido = parseNumBR(updated.retido);
         // Tributos gerenciados pelo motor têm o valor recalculado/limpo; linhas customizadas
         // (nome livre, só "Valor" digitado) preservam o que o usuário digitou
-        const MANAGED = ['PIS', 'COFINS', 'PIS/COFINS', 'ISS', 'IRPJ', 'CSLL', 'Adicional IRPJ', 'CPP', 'CPP (Patronal)', 'RAT', 'RAT (Ajustado)', 'Terceiros', 'FGTS', 'DAS', 'INSS', 'INSS (Sócio)', 'ICMS', 'FUMACOP', 'IRRF'];
-        if (apurado > 0 || retido > 0) {
+        const MANAGED = ['PIS', 'COFINS', 'PIS/COFINS', 'ISS', 'IRPJ', 'CSLL', 'Adicional IRPJ', 'CPP', 'CPP (Patronal)', 'RAT', 'RAT (Ajustado)', 'Terceiros', 'FGTS', 'DAS', 'INSS', 'INSS (Sócio)', 'ICMS', 'ICMS (ST)', 'DIFAL', 'Antecipação Parcial', 'FUMACOP', 'IRRF'];
+        if (t.valueManual) {
+            updated.value = t.value; // "A pagar" fixado à mão
+        } else if (apurado > 0 || retido > 0) {
             updated.value = formatBRLDisplay(Math.max(0, apurado - retido));
         } else if (MANAGED.includes(t.tax)) {
             updated.value = "";
         }
 
-        if (data.compMonth && data.compYear && t.tax) {
+        // Vencimento: automático por tipo, mas EDITÁVEL — data ajustada à mão (dueDateManual)
+        // sobrevive ao recálculo (regimes especiais/TARE/GNRE fogem do dia fixo).
+        updated.dueDateManual = !!t.dueDateManual;
+        if (!t.dueDateManual && data.compMonth && data.compYear && t.tax) {
             const due = getDueDate(data.compMonth, data.compYear, t.tax, data.irpjCsllMode);
             if (due) updated.dueDate = due;
             else if (['IRPJ', 'CSLL', 'Adicional IRPJ'].includes(t.tax) && data.irpjCsllMode === 'Trimestral (Apuração)') updated.dueDate = '';
