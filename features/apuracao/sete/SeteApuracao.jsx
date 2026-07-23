@@ -1400,7 +1400,6 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
 
     const CalMonthCard = ({ mo }) => {
         const WD = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
-        const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
         const first = new Date(mo.year, mo.month - 1, 1).getDay();
         const ndays = new Date(mo.year, mo.month, 0).getDate();
         const cells = [];
@@ -1420,22 +1419,18 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
                         const items = mo.days[d];
                         if (!items) return <div key={i} className="cal-day" style={{ minHeight: 52, border: '1px solid #eef0f3', borderRadius: 8, padding: '5px 6px', background: '#fafbfc' }}><span style={{ fontSize: '11px', fontWeight: 700, color: '#7c8595' }}>{d}</span></div>;
                         const sub = items.reduce((s, t) => s + parseNum(t.value), 0);
-                        const due = new Date(mo.year, mo.month - 1, d); const diff = Math.ceil((due - hoje) / 86400000);
-                        const alert = diff <= 5;
                         return (
-                            <div key={i} className="avoid-break cal-day" style={{ minHeight: 52, border: '1px solid ' + (alert ? '#f3d6cb' : '#e2e8f0'), borderRadius: 8, padding: '5px 6px', background: alert ? '#fcf1ec' : '#fff', display: 'flex', flexDirection: 'column' }}>
+                            <div key={i} className="avoid-break cal-day" style={{ minHeight: 52, border: '1px solid #e2e8f0', borderRadius: 8, padding: '5px 6px', background: '#fff', display: 'flex', flexDirection: 'column' }}>
                                 <span style={{ fontSize: '11px', fontWeight: 700, color: '#1a2230' }}>{d}</span>
                                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3, marginTop: 4 }}>
                                     {items.map((t, j) => { const isDas = /^DAS/.test(t.tax); return <span key={j} style={{ fontSize: '7.5px', fontWeight: 700, padding: '1px 5px', borderRadius: 20, background: isDas ? '#fcefd7' : '#e7ecf3', color: isDas ? '#b06f06' : '#0a3160' }}>{t.tax}</span>; })}
                                 </div>
-                                <span style={{ marginTop: 'auto', textAlign: 'right', paddingTop: 3, fontSize: '9px', fontWeight: 800, color: alert ? '#b5402b' : '#001D3D', fontVariantNumeric: 'tabular-nums' }}>{formatCurrency(sub)}</span>
+                                <span style={{ marginTop: 'auto', textAlign: 'right', paddingTop: 3, fontSize: '9px', fontWeight: 800, color: '#001D3D', fontVariantNumeric: 'tabular-nums' }}>{formatCurrency(sub)}</span>
                             </div>
                         );
                     })}
                 </div>
                 <div className="flex items-center" style={{ gap: 16, marginTop: 14, paddingTop: 11, borderTop: '2px solid #001D3D' }}>
-                    <span className="flex items-center" style={{ gap: 6, fontSize: '10px', color: '#646d7c' }}><i style={{ width: 10, height: 10, borderRadius: 3, background: '#fcf1ec', border: '1px solid #f3d6cb', display: 'inline-block' }}></i> Vence em ≤5 dias</span>
-                    <span className="flex items-center" style={{ gap: 6, fontSize: '10px', color: '#646d7c' }}><i style={{ width: 10, height: 10, borderRadius: 3, background: '#fff', border: '1px solid #e2e8f0', display: 'inline-block' }}></i> A vencer</span>
                     <span style={{ marginLeft: 'auto', fontSize: '11px', color: '#646d7c', fontWeight: 600 }}>Total a recolher <b style={{ fontSize: '15px', color: '#001D3D', fontWeight: 800, marginLeft: 6 }}>{formatCurrency(mTotal)}</b></span>
                 </div>
             </div>
@@ -1480,15 +1475,13 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
         const datas = new Set(withDue.map(t => t.dueDate)).size;
         const maior = sortedG.reduce((m, t) => parseNum(t.value) > parseNum(m.value) ? t : m, sortedG[0]);
         const fmtD = s => { const p = s.split('/'); return p[0] + ' ' + MES_ABBR[(+p[1] || 1) - 1]; };
-        const diff = Math.ceil((parseDMY(prox.dueDate) - hojeG) / 86400000);
-        const prazo = diff < 0 ? 'vencido' : diff === 0 ? 'vence hoje' : 'vence em ' + diff + ' dia' + (diff > 1 ? 's' : '');
         const kl = { textTransform: 'uppercase', letterSpacing: '1px', fontSize: '9.5px', fontWeight: 600 };
         vencIndicadores = (
             <div className="grid grid-cols-3 gap-3 mb-4 avoid-break">
                 <div className="rounded-2xl" style={{ padding: 15, background: '#001D3D', color: '#fff' }}>
                     <div style={{ ...kl, opacity: .85 }}>Proximo vencimento</div>
                     <div style={{ fontWeight: 800, fontSize: '18px', marginTop: 6 }}>{fmtD(prox.dueDate)}</div>
-                    <div style={{ fontSize: '9.5px', marginTop: 6, opacity: .85 }}>{proxItens.map(t => t.tax).join(', ')} - {formatCurrency(proxVal)} - {prazo}</div>
+                    <div style={{ fontSize: '9.5px', marginTop: 6, opacity: .85 }}>{proxItens.map(t => t.tax).join(', ')} - {formatCurrency(proxVal)}</div>
                 </div>
                 <div className="rounded-2xl" style={{ padding: 15, background: 'linear-gradient(160deg,#F79C04,#d4830a)', color: '#fff' }}>
                     <div style={{ ...kl, opacity: .9 }}>Total a recolher</div>
