@@ -33,11 +33,26 @@ export async function updateSession(request: NextRequest) {
     },
   )
 
-  // Tenta carregar o usuário, mas não bloqueia se falhar
+  // Carrega o usuário logado (se houver sessão válida)
+  let user = null
   try {
-    await supabase.auth.getUser()
+    const { data } = await supabase.auth.getUser()
+    user = data.user
   } catch (e) {
     console.warn("Supabase middleware error:", e)
+  }
+
+  // Cadeado: sem login, o sistema só deixa acessar as rotas públicas
+  // (tela de login e o callback de confirmação de e-mail). Qualquer outra
+  // rota redireciona para /login, guardando o destino em ?redirect=.
+  const path = request.nextUrl.pathname
+  const isPublic = path.startsWith("/login") || path.startsWith("/auth")
+  if (!user && !isPublic) {
+    const redirectUrl = request.nextUrl.clone()
+    redirectUrl.pathname = "/login"
+    redirectUrl.search = ""
+    redirectUrl.searchParams.set("redirect", path)
+    return NextResponse.redirect(redirectUrl)
   }
 
   return supabaseResponse

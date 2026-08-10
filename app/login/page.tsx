@@ -238,8 +238,8 @@ export default function LoginPage() {
         </Card>
 
         <p className="text-[11px] text-center text-muted-foreground px-4">
-          Por enquanto o login é opcional — o sistema funciona sem ele. Em breve
-          ele será obrigatório pra proteger seus dados.
+          O acesso é protegido: é preciso entrar para usar o sistema. Seus dados
+          e os dos seus clientes ficam visíveis apenas para quem tem conta.
         </p>
       </div>
     </div>
