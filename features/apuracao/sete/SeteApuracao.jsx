@@ -2208,24 +2208,33 @@ const App = () => {
         if (!Array.isArray(records) || records.length === 0) { setToast({ message: 'Não há competência salva para copiar.', type: 'error' }); return; }
         const ultima = records.slice().sort((a, b) => a.compKey.localeCompare(b.compKey)).pop();
         if (!ultima || !ultima.payload || !ultima.payload.clientData) { setToast({ message: 'A última competência não tem dados salvos para copiar.', type: 'error' }); return; }
+        const src = ultima.payload.clientData;
         // Avança 1 mês a partir da compKey 'AAAA-MM'
         const [ys, ms] = ultima.compKey.split('-');
         let y = parseInt(ys, 10), m = parseInt(ms, 10) + 1;
         if (m > 12) { m = 1; y += 1; }
-        const mm = String(m).padStart(2, '0');
-        const compShort = `${mm}/${y}`;
+        const compShort = `${String(m).padStart(2, '0')}/${y}`;
+        // Faturamentos já conhecidos por mês (da evolução anterior + do histórico salvo).
+        const known = {};
+        (Array.isArray(src.evolucao) ? src.evolucao : []).forEach(e => { if (e && e.ym) known[e.ym] = parseNumBR(e.receita); });
+        (records || []).forEach(r => { if (r && r.compKey && String(r.compKey).includes('-')) { const [ry, rm] = String(r.compKey).split('-'); known[rm + '/' + ry] = parseNumBR(r.faturamento); } });
+        // Nova janela de 12 meses terminando na nova competência: mantém os meses
+        // já preenchidos e abre APENAS o mês novo (vazio, pra digitar o faturamento).
+        const evNovo = [];
+        for (let k = 11; k >= 0; k--) { let wm = m - k, wy = y; while (wm <= 0) { wm += 12; wy--; } const key = `${String(wm).padStart(2, '0')}/${wy}`; evNovo.push({ ym: key, receita: known[key] || 0 }); }
         setClientData({
-            ...ultima.payload.clientData,
+            ...src,
             clientId,
             compMonth: String(m),
             compYear: String(y),
             competenceShort: compShort,
             competence: (MONTHS[m - 1] || '') + '/' + y,
+            evolucao: evNovo,
         });
         setTaxes(Array.isArray(ultima.payload.taxes) ? ultima.payload.taxes.map(t => ({ ...t })) : DEFAULT_TAXES);
         setValidationErrors({});
         setTab('edit');
-        setToast({ message: `Mês ${compShort} preenchido com os dados de ${ultima.competenceShort}. Revise o faturamento.`, type: 'success' });
+        setToast({ message: `Mês ${compShort} preenchido com os dados de ${ultima.competenceShort}. Revise o faturamento do mês.`, type: 'success' });
     };
 
     // Ref evita closure obsoleta: o atalho sempre usa a versão atual de handlePrint (dados atuais)
