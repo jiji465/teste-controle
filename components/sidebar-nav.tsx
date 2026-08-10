@@ -38,6 +38,8 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet"
 import { ThemeToggle } from "@/components/theme-toggle"
 import { UserMenu } from "@/components/user-menu"
+import { useAuth } from "@/contexts/auth-context"
+import { VIEWER_ALLOWED_HREFS } from "@/lib/roles"
 
 export const SIDEBAR_STORAGE_KEY = "sidebar-collapsed"
 export const SIDEBAR_WIDTH = 256
@@ -146,6 +148,15 @@ function SidebarInner({
   groupId: string
 }) {
   const pathname = usePathname()
+  const { isViewer } = useAuth()
+
+  // Visualizador só enxerga Indicadores + Empresas; grupos vazios somem.
+  const groups = isViewer
+    ? NAV_GROUPS.map((g) => ({
+        ...g,
+        items: g.items.filter((i) => (VIEWER_ALLOWED_HREFS as readonly string[]).includes(i.href)),
+      })).filter((g) => g.items.length > 0)
+    : NAV_GROUPS
 
   return (
     <div className="flex h-full flex-col bg-sidebar text-sidebar-foreground">
@@ -176,7 +187,7 @@ function SidebarInner({
       {/* Navegação */}
       <LayoutGroup id={groupId}>
         <nav className="flex-1 overflow-y-auto px-2.5 py-4">
-          {NAV_GROUPS.map((group) => (
+          {groups.map((group) => (
             <div key={group.label} className="mb-4 last:mb-0">
               {!collapsed ? (
                 <p className="px-2 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60">

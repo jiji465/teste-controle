@@ -37,6 +37,7 @@ import { saveObligation } from "@/features/obligations/services"
 import { checkAndGenerateRecurrences } from "@/lib/auto-recurrence"
 import type { DashboardStats, ObligationWithDetails } from "@/lib/types"
 import { useData } from "@/contexts/data-context"
+import { useAuth } from "@/contexts/auth-context"
 import { useSelectedPeriod } from "@/hooks/use-selected-period"
 import { toast } from "sonner"
 
@@ -45,6 +46,7 @@ import { toast } from "sonner"
 
 export default function DashboardPage() {
   const { clients, taxes, obligations: rawObligations, obligationsWithDetails, installments, services, lockedPeriods, isLoading, refreshData, togglePeriodLock } = useData()
+  const { isViewer } = useAuth() // visualizador: esconde atalhos de ação (Indicadores só leitura)
   const [stats, setStats] = useState<DashboardStats | null>(null)
   const [isMounted, setIsMounted] = useState(false)
   const completeObligation = async (obl: ObligationWithDetails, e?: React.MouseEvent) => {
@@ -391,14 +393,19 @@ export default function DashboardPage() {
             )
           })()}
 
-          {/* Ações rápidas — criar (atalhos) + navegar (acesso rápido) */}
-          <QuickShortcuts />
-          <div className="flex flex-wrap items-center gap-3">
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-              Acesso rápido
-            </span>
-            <QuickAccessTabs />
-          </div>
+          {/* Ações rápidas — criar (atalhos) + navegar (acesso rápido).
+              Escondidas do visualizador (leva a criar/áreas restritas). */}
+          {!isViewer && (
+            <>
+              <QuickShortcuts />
+              <div className="flex flex-wrap items-center gap-3">
+                <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  Acesso rápido
+                </span>
+                <QuickAccessTabs />
+              </div>
+            </>
+          )}
 
           {/* Resumo Geral */}
           {stats && (

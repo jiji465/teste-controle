@@ -10,16 +10,28 @@
  */
 
 import { useEffect, useState } from "react"
-import { usePathname } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { SidebarNav, MobileSidebar, SIDEBAR_STORAGE_KEY } from "@/components/sidebar-nav"
 import { AppHeader } from "@/components/app-header"
 import { MobileBottomNav } from "@/components/mobile-bottom-nav"
+import { useAuth } from "@/contexts/auth-context"
+import { isRouteAllowedForViewer } from "@/lib/roles"
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
+  const router = useRouter()
+  const { isViewer, isLoading } = useAuth()
   const [collapsed, setCollapsed] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
+
+  // Guarda de rota: visualizador só acessa Indicadores + Empresas; qualquer
+  // outra rota volta pro Dashboard (o RLS já bloqueia dados no banco).
+  useEffect(() => {
+    if (!isLoading && isViewer && !isRouteAllowedForViewer(pathname)) {
+      router.replace("/")
+    }
+  }, [isViewer, isLoading, pathname, router])
 
   // Hidrata o estado de colapso a partir do localStorage (só no cliente).
   useEffect(() => {

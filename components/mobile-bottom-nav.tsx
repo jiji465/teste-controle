@@ -13,6 +13,8 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { LayoutDashboard, Building2, FileText, Receipt, Menu, type LucideIcon } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { useAuth } from "@/contexts/auth-context"
+import { VIEWER_ALLOWED_HREFS } from "@/lib/roles"
 
 type Item = { href: string; label: string; icon: LucideIcon }
 
@@ -43,6 +45,13 @@ function ItemContent({ icon: Icon, label, active }: { icon: LucideIcon; label: s
 
 export function MobileBottomNav({ onOpenMenu }: { onOpenMenu: () => void }) {
   const pathname = usePathname()
+  const { isViewer } = useAuth()
+
+  // Visualizador: só Início + Empresas, e sem o botão "Mais".
+  const items = isViewer
+    ? ITEMS.filter((i) => (VIEWER_ALLOWED_HREFS as readonly string[]).includes(i.href))
+    : ITEMS
+  const columns = items.length + (isViewer ? 0 : 1)
 
   return (
     <nav
@@ -50,8 +59,8 @@ export function MobileBottomNav({ onOpenMenu }: { onOpenMenu: () => void }) {
       className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-background/95 backdrop-blur-sm lg:hidden"
       style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
     >
-      <div className="grid grid-cols-5">
-        {ITEMS.map((item) => {
+      <div className="grid" style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}>
+        {items.map((item) => {
           const active = pathname === item.href
           return (
             <Link
@@ -65,14 +74,16 @@ export function MobileBottomNav({ onOpenMenu }: { onOpenMenu: () => void }) {
           )
         })}
 
-        <button
-          type="button"
-          onClick={onOpenMenu}
-          aria-label="Mais seções"
-          className="flex min-h-[3.5rem] flex-col items-center justify-center gap-1 pt-1.5 pb-1 transition-transform active:scale-95"
-        >
-          <ItemContent icon={Menu} label="Mais" active={false} />
-        </button>
+        {!isViewer && (
+          <button
+            type="button"
+            onClick={onOpenMenu}
+            aria-label="Mais seções"
+            className="flex min-h-[3.5rem] flex-col items-center justify-center gap-1 pt-1.5 pb-1 transition-transform active:scale-95"
+          >
+            <ItemContent icon={Menu} label="Mais" active={false} />
+          </button>
+        )}
       </div>
     </nav>
   )

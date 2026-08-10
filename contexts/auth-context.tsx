@@ -15,6 +15,10 @@ import { createClient } from "@/lib/supabase/client"
 
 type AuthContextValue = {
   user: User | null
+  /** Papel do usuário (app_metadata.role). null = pleno (editor). */
+  role: string | null
+  /** true quando o papel é "viewer" (somente leitura). */
+  isViewer: boolean
   isLoading: boolean
   /** Faz logout e força reload pra limpar contextos com dados antigos. */
   signOut: () => Promise<void>
@@ -67,8 +71,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (typeof window !== "undefined") window.location.reload()
   }
 
+  // Papel vem do app_metadata (definido só no servidor — o usuário não altera).
+  const role = ((user?.app_metadata as Record<string, unknown> | undefined)?.role as string | undefined) ?? null
+  const isViewer = role === "viewer"
+
   return (
-    <AuthContext.Provider value={{ user, isLoading, signOut }}>
+    <AuthContext.Provider value={{ user, role, isViewer, isLoading, signOut }}>
       {children}
     </AuthContext.Provider>
   )

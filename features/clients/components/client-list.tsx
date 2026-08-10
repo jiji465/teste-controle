@@ -28,6 +28,7 @@ import { TemplateApplyDialog } from "@/components/template-apply-dialog"
 import { type TemplateItem, type BusinessActivity, BUSINESS_ACTIVITY_LABELS } from "@/lib/obligation-templates"
 import { applyTemplateToClient, summarizeApplyResult, type CompetencyRange } from "@/lib/template-applier"
 import { useData } from "@/contexts/data-context"
+import { useAuth } from "@/contexts/auth-context"
 import { toast } from "sonner"
 import { matchesText, matchesCnpj } from "@/lib/utils"
 
@@ -38,6 +39,7 @@ type ClientListProps = {
 
 export function ClientList({ clients, onUpdate }: ClientListProps) {
   const { taxes, obligations, installments } = useData()
+  const { isViewer } = useAuth() // visualizador: só leitura (esconde criar/editar/excluir/copiar)
   const [search, setSearch] = useState("")
   const [editingClient, setEditingClient] = useState<Client | undefined>()
   const [isFormOpen, setIsFormOpen] = useState(false)
@@ -387,9 +389,11 @@ export function ClientList({ clients, onUpdate }: ClientListProps) {
             </span>
           ))}
         </div>
-        <Button onClick={() => handleOpenForm()} className="shrink-0">
-          <Plus className="mr-2 h-4 w-4" /> Nova Empresa
-        </Button>
+        {!isViewer && (
+          <Button onClick={() => handleOpenForm()} className="shrink-0">
+            <Plus className="mr-2 h-4 w-4" /> Nova Empresa
+          </Button>
+        )}
       </div>
 
       {/* Search bar + Filtros */}
@@ -461,16 +465,18 @@ export function ClientList({ clients, onUpdate }: ClientListProps) {
         />
       </FilterBar>
 
-      <BulkActionsBar
-        selectedCount={selectedIds.size}
-        onClear={clearSelection}
-        actions={[
-          { label: "Aplicar Template", icon: <Sparkles className="size-3.5" />, tone: "success", onClick: openBulkApplyTemplate, disabled: bulkLoading },
-          { label: "Ativar", icon: <CheckCircle2 className="size-3.5" />, onClick: () => handleBulkSetStatus("active"), disabled: bulkLoading },
-          { label: "Desativar", icon: <XCircle className="size-3.5" />, onClick: () => handleBulkSetStatus("inactive"), disabled: bulkLoading },
-          { label: "Excluir", icon: <Trash2 className="size-3.5" />, tone: "destructive", onClick: handleBulkDelete, disabled: bulkLoading },
-        ]}
-      />
+      {!isViewer && (
+        <BulkActionsBar
+          selectedCount={selectedIds.size}
+          onClear={clearSelection}
+          actions={[
+            { label: "Aplicar Template", icon: <Sparkles className="size-3.5" />, tone: "success", onClick: openBulkApplyTemplate, disabled: bulkLoading },
+            { label: "Ativar", icon: <CheckCircle2 className="size-3.5" />, onClick: () => handleBulkSetStatus("active"), disabled: bulkLoading },
+            { label: "Desativar", icon: <XCircle className="size-3.5" />, onClick: () => handleBulkSetStatus("inactive"), disabled: bulkLoading },
+            { label: "Excluir", icon: <Trash2 className="size-3.5" />, tone: "destructive", onClick: handleBulkDelete, disabled: bulkLoading },
+          ]}
+        />
+      )}
 
       {/* Mobile: cartões (até md) — a tabela é larga demais pro celular */}
       <div className="md:hidden space-y-2">
@@ -503,6 +509,7 @@ export function ClientList({ clients, onUpdate }: ClientListProps) {
                   <p className="font-medium truncate">{client.name}</p>
                   <p className="text-xs text-muted-foreground font-mono">{client.cnpj}</p>
                 </button>
+                {!isViewer && (
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button variant="ghost" size="icon" className="size-8 shrink-0">
@@ -542,6 +549,7 @@ export function ClientList({ clients, onUpdate }: ClientListProps) {
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
+                )}
               </div>
               <div className="flex items-center gap-2 flex-wrap ml-6">
                 {client.taxRegime && (
@@ -636,7 +644,7 @@ export function ClientList({ clients, onUpdate }: ClientListProps) {
                         ? "Tente ajustar o termo de busca."
                         : "Cadastre sua primeira empresa para começar a gerenciar suas obrigações fiscais."}
                     </p>
-                    {!search && (
+                    {!search && !isViewer && (
                       <Button onClick={() => handleOpenForm()} className="mt-4">
                         <Plus className="mr-2 h-4 w-4" /> Cadastrar Empresa
                       </Button>
@@ -725,6 +733,7 @@ export function ClientList({ clients, onUpdate }: ClientListProps) {
                     className="text-right sticky right-0 z-10 bg-background group-hover:bg-muted/50 transition-colors shadow-[-6px_0_6px_-6px_rgba(0,0,0,0.12)]"
                     onClick={(e) => e.stopPropagation()}
                   >
+                    {!isViewer && (
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <Button variant="ghost" className="h-8 w-8 p-0">
@@ -769,6 +778,7 @@ export function ClientList({ clients, onUpdate }: ClientListProps) {
                         </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
+                    )}
                   </TableCell>
                 </TableRow>
               ))
@@ -790,7 +800,7 @@ export function ClientList({ clients, onUpdate }: ClientListProps) {
           client={viewingClient}
           open={isDetailsOpen}
           onOpenChange={setIsDetailsOpen}
-          onEdit={(c) => handleOpenForm(c)}
+          onEdit={isViewer ? undefined : (c) => handleOpenForm(c)}
         />
       )}
 
