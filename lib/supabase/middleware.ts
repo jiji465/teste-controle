@@ -46,7 +46,8 @@ export async function updateSession(request: NextRequest) {
   // (tela de login e o callback de confirmação de e-mail). Qualquer outra
   // rota redireciona para /login, guardando o destino em ?redirect=.
   const path = request.nextUrl.pathname
-  const isPublic = path.startsWith("/login") || path.startsWith("/auth")
+  // Rotas públicas: login, callback de auth e o painel público (só dados anônimos).
+  const isPublic = path.startsWith("/login") || path.startsWith("/auth") || path.startsWith("/publico")
   if (!user && !isPublic) {
     const redirectUrl = request.nextUrl.clone()
     redirectUrl.pathname = "/login"

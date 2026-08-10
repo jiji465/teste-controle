@@ -114,6 +114,14 @@ export default function LoginPage() {
           </CardContent>
         </Card>
 
+        <div className="text-center">
+          <Link href="/publico">
+            <Button variant="ghost" size="sm" className="text-muted-foreground">
+              Acessar como visitante (só indicadores)
+            </Button>
+          </Link>
+        </div>
+
         <p className="text-[11px] text-center text-muted-foreground px-4">
           O cadastro de novas contas é feito apenas pelo administrador. Se você
           precisa de acesso, fale com o responsável pelo sistema.

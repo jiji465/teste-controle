@@ -53,9 +53,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     })
   }
 
-  // Telas de autenticação ocupam a tela inteira, sem sidebar/header.
-  const isAuthRoute = pathname?.startsWith("/login") || pathname?.startsWith("/auth")
-  if (isAuthRoute) {
+  // Telas de auth e o painel público ocupam a tela inteira, sem sidebar/header.
+  const isBareRoute =
+    pathname?.startsWith("/login") || pathname?.startsWith("/auth") || pathname?.startsWith("/publico")
+  if (isBareRoute) {
     return <div className="min-h-screen bg-background">{children}</div>
   }
 
