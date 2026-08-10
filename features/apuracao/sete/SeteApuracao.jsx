@@ -2200,6 +2200,34 @@ const App = () => {
         setTab('edit');
     };
 
+    // Inicia o PRÓXIMO mês a partir da última competência salva: copia todos os
+    // dados (regime, folha, pró-labore, evolução, alíquotas, tributos…) e avança
+    // a competência em 1 mês. O contador só revisa e ajusta o faturamento do mês.
+    const novoMesDaUltima = () => {
+        if (!clientId) { setToast({ message: 'Selecione a empresa primeiro.', type: 'error' }); return; }
+        if (!Array.isArray(records) || records.length === 0) { setToast({ message: 'Não há competência salva para copiar.', type: 'error' }); return; }
+        const ultima = records.slice().sort((a, b) => a.compKey.localeCompare(b.compKey)).pop();
+        if (!ultima || !ultima.payload || !ultima.payload.clientData) { setToast({ message: 'A última competência não tem dados salvos para copiar.', type: 'error' }); return; }
+        // Avança 1 mês a partir da compKey 'AAAA-MM'
+        const [ys, ms] = ultima.compKey.split('-');
+        let y = parseInt(ys, 10), m = parseInt(ms, 10) + 1;
+        if (m > 12) { m = 1; y += 1; }
+        const mm = String(m).padStart(2, '0');
+        const compShort = `${mm}/${y}`;
+        setClientData({
+            ...ultima.payload.clientData,
+            clientId,
+            compMonth: String(m),
+            compYear: String(y),
+            competenceShort: compShort,
+            competence: (MONTHS[m - 1] || '') + '/' + y,
+        });
+        setTaxes(Array.isArray(ultima.payload.taxes) ? ultima.payload.taxes.map(t => ({ ...t })) : DEFAULT_TAXES);
+        setValidationErrors({});
+        setTab('edit');
+        setToast({ message: `Mês ${compShort} preenchido com os dados de ${ultima.competenceShort}. Revise o faturamento.`, type: 'success' });
+    };
+
     // Ref evita closure obsoleta: o atalho sempre usa a versão atual de handlePrint (dados atuais)
     const handlePrintRef = React.useRef(() => { });
     React.useEffect(() => {
@@ -2350,7 +2378,14 @@ const App = () => {
                         </div>
                         {clientId && (
                             <div className="mt-4 pt-4 border-t">
-                                <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground mb-2">Competências salvas</p>
+                                <div className="flex items-center justify-between gap-2 mb-2">
+                                    <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Competências salvas</p>
+                                    {records.length > 0 && (
+                                        <Button variant="outline" size="sm" className="h-7 gap-1.5 text-xs" onClick={novoMesDaUltima} title="Copia a última competência salva e avança 1 mês">
+                                            <Calendar className="h-3.5 w-3.5" /> Iniciar próximo mês
+                                        </Button>
+                                    )}
+                                </div>
                                 {records.length === 0 ? (
                                     <p className="text-xs text-muted-foreground">Nenhuma competência salva para esta empresa ainda.</p>
                                 ) : (
