@@ -141,6 +141,7 @@ export const DEFAULT_TAXES_LP = [
     { id: 7, tax: "RAT", base: "", rate: "1,00", apurado: "", retido: "", value: "", dueDate: "", obs: "Risco Ambiental do Trabalho", retidoManual: false },
     { id: 8, tax: "Terceiros", base: "", rate: "5,80", apurado: "", retido: "", value: "", dueDate: "", obs: "SESC, SENAC, SEBRAE, etc.", retidoManual: false },
     { id: 9, tax: "FGTS", base: "", rate: "8,00", apurado: "", retido: "", value: "", dueDate: "", obs: "8% sobre a folha de salários", retidoManual: false },
+    { id: 13, tax: "INSS (Empregados)", base: "", rate: "", apurado: "", retido: "", value: "", dueDate: "", obs: "Retenção do empregado (tabela progressiva 7,5%–14%, teto R$ 8.475,55) — informe o valor da folha", retidoManual: false },
 ];
 
 // Comércio/Indústria no LP: ICMS por débito e crédito no lugar do ISS.
@@ -156,6 +157,7 @@ export const DEFAULT_TAXES_LP_COMERCIO = [
     { id: 7, tax: "RAT", base: "", rate: "1,00", apurado: "", retido: "", value: "", dueDate: "", obs: "Risco Ambiental do Trabalho", retidoManual: false },
     { id: 8, tax: "Terceiros", base: "", rate: "5,80", apurado: "", retido: "", value: "", dueDate: "", obs: "SESC, SENAC, SEBRAE, etc.", retidoManual: false },
     { id: 9, tax: "FGTS", base: "", rate: "8,00", apurado: "", retido: "", value: "", dueDate: "", obs: "8% sobre a folha de salários", retidoManual: false },
+    { id: 13, tax: "INSS (Empregados)", base: "", rate: "", apurado: "", retido: "", value: "", dueDate: "", obs: "Retenção do empregado (tabela progressiva 7,5%–14%, teto R$ 8.475,55) — informe o valor da folha", retidoManual: false },
 ];
 // Guias estaduais do comércio adicionadas por interruptor (valor lançado, não calculado):
 // ICMS (ST) — substituto; Antecipação Parcial e DIFAL — ICMS interestadual; FUMACOP — adicional MA.
@@ -202,6 +204,7 @@ export const GLOSSARY = [
     { acronym: "RAT", full: "Riscos Ambientais do Trabalho", icon: "Scale", matchTaxes: ["RAT", "RAT (Ajustado)"], desc: "Contribuição previdenciária patronal para financiamento de aposentadoria especial e benefícios por acidentes." },
     { acronym: "Terceiros", full: "Outras Entidades e Fundos", icon: "Building2", matchTaxes: ["Terceiros"], desc: "Contribuição destinada a outras entidades e fundos (Sistema S: SESC, SENAC, SEBRAE, etc.)." },
     { acronym: "INSS (Sócio)", full: "Contribuição do Segurado", icon: "Scale", matchTaxes: ["INSS (Sócio)"], desc: "Retenção previdenciária de 11% obrigatória sobre a retirada de pró-labore do sócio." },
+    { acronym: "INSS (Empregados)", full: "Contribuição do Segurado (Empregados)", icon: "Scale", matchTaxes: ["INSS (Empregados)"], desc: "Retenção previdenciária descontada dos empregados pela tabela progressiva (7,5% a 14%, teto R$ 8.475,55 em 2026), recolhida junto com a contribuição patronal." },
     { acronym: "INSS (Retenção)", full: "Retenção Previdenciária", icon: "Receipt", matchTaxes: ["INSS (retido)"], desc: "Retenção de INSS na fonte referente à prestação de serviços." },
     { acronym: "FGTS", full: "Fundo de Garantia do Tempo de Serviço", icon: "Landmark", matchTaxes: ["FGTS"], desc: "Depósito equivalente a 8% da remuneração de cada trabalhador na folha de salários." },
     { acronym: "DAS", full: "Documento de Arrecadação do Simples Nacional", icon: "Receipt", matchTaxes: ["DAS", "DAS-MEI"], desc: "Guia única de recolhimento do Simples Nacional que unifica diversos tributos em uma alíquota." },
@@ -339,7 +342,7 @@ export const getDueDate = (compMonth, compYear, taxName, irpjCsllMode) => {
     const dueDateMap = {
         'PIS': 25, 'COFINS': 25, 'PIS/COFINS': 25, 'ISS': 15, 'ISS (retido)': 15,
         'CPP': 20, 'CPP (Patronal)': 20, 'RAT': 20, 'RAT (Ajustado)': 20, 'Terceiros': 20,
-        'INSS': 20, 'INSS (retido)': 20, 'INSS (Sócio)': 20, 'FGTS': 20,
+        'INSS': 20, 'INSS (retido)': 20, 'INSS (Sócio)': 20, 'INSS (Empregados)': 20, 'FGTS': 20,
         'DAS': 20, 'DAS-MEI': 20, 'ICMS (ST)': 10, 'DIFAL': 10,
         'ICMS': 20, 'Antecipação Parcial': 20, 'FUMACOP': 20,
         'IRRF': 20,
@@ -352,7 +355,7 @@ export const getDueDate = (compMonth, compYear, taxName, irpjCsllMode) => {
     const dia = dueDateMap[taxName];
     if (!dia) return '';
     // Dia não útil: tributos federais de folha e PIS/COFINS ANTECIPAM; DAS, ISS e guias estaduais POSTERGAM
-    const antecipa = ['PIS', 'COFINS', 'PIS/COFINS', 'CPP', 'CPP (Patronal)', 'RAT', 'RAT (Ajustado)', 'Terceiros', 'INSS', 'INSS (retido)', 'INSS (Sócio)', 'FGTS', 'IRRF'].includes(taxName);
+    const antecipa = ['PIS', 'COFINS', 'PIS/COFINS', 'CPP', 'CPP (Patronal)', 'RAT', 'RAT (Ajustado)', 'Terceiros', 'INSS', 'INSS (retido)', 'INSS (Sócio)', 'INSS (Empregados)', 'FGTS', 'IRRF'].includes(taxName);
     const d = new Date(nextY, nextM - 1, dia);
     while (!isDiaUtil(d)) d.setDate(d.getDate() + (antecipa ? -1 : 1));
     return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`;

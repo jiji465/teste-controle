@@ -102,6 +102,16 @@ exports[`autoFillTaxes — Lucro Presumido / Comércio (lançamento guiado) > sn
     "tax": "FGTS",
     "value": "1.200,00",
   },
+  {
+    "apurado": "",
+    "base": "",
+    "dueDate": "19/06/2026",
+    "provisao": undefined,
+    "rate": "",
+    "retido": "",
+    "tax": "INSS (Empregados)",
+    "value": "",
+  },
 ]
 `;
 
@@ -206,6 +216,16 @@ exports[`autoFillTaxes — Lucro Presumido / Serviços > snapshot completo (LP S
     "retido": "",
     "tax": "FGTS",
     "value": "1.600,00",
+  },
+  {
+    "apurado": "",
+    "base": "",
+    "dueDate": "19/06/2026",
+    "provisao": undefined,
+    "rate": "",
+    "retido": "",
+    "tax": "INSS (Empregados)",
+    "value": "",
   },
 ]
 `;
