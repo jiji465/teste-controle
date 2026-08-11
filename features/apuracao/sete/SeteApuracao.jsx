@@ -375,6 +375,26 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
                 baseTaxes = baseTaxes.filter(t => t.tax !== 'RAT');
             }
 
+            // Simples com empregados: FGTS (8%) e INSS retido dos empregados são devidos
+            // À PARTE do DAS. Entram/saem conforme houver folha mensal de empregados.
+            // (A CPP patronal fica dentro do DAS — exceto Anexo IV, tratado acima.)
+            if (data.regime === 'Simples Nacional') {
+                const folhaMens = parseNumBR(data.folhaMensal !== undefined ? data.folhaMensal : data.folha);
+                const temFolha = folhaMens > 0;
+                const idxFGTS = baseTaxes.findIndex(t => t.tax === 'FGTS');
+                if (temFolha && idxFGTS === -1) {
+                    baseTaxes = [...baseTaxes, { id: Date.now() + 230, tax: 'FGTS', base: '', rate: '8,00', apurado: '', retido: '', value: '', dueDate: '', obs: '8% sobre a folha de salários', retidoManual: false }];
+                } else if (!temFolha && idxFGTS !== -1) {
+                    baseTaxes = baseTaxes.filter(t => t.tax !== 'FGTS');
+                }
+                const idxINSSemp = baseTaxes.findIndex(t => t.tax === 'INSS (Empregados)');
+                if (temFolha && idxINSSemp === -1) {
+                    baseTaxes = [...baseTaxes, { id: Date.now() + 231, tax: 'INSS (Empregados)', base: '', rate: '', apurado: '', retido: '', value: '', dueDate: '', obs: 'Retenção do empregado (tabela progressiva 7,5%–14%, teto R$ 8.475,55) — informe o valor da folha', retidoManual: false }];
+                } else if (!temFolha && idxINSSemp !== -1) {
+                    baseTaxes = baseTaxes.filter(t => t.tax !== 'INSS (Empregados)');
+                }
+            }
+
             return autoFillTaxes(data, baseTaxes);
         });
     };

@@ -52,6 +52,12 @@ describe("calcAliquotaEfetivaSN — tabelas do Simples", () => {
     // (500000*0.135 - 17640)/500000*100 = 9,972%
     expect(r.rate).toBeCloseTo(9.972, 3)
   })
+  it("RBT12 = 0 (empresa nova sem histórico) → 1ª faixa, efetiva = nominal", () => {
+    const r = calcAliquotaEfetivaSN(0, "Anexo III")
+    expect(r.faixa).toBe(1)
+    expect(r.nominal).toBe(6)
+    expect(r.rate).toBeCloseTo(6, 5)
+  })
 })
 
 describe("getBasePresumidaLP — bases presumidas", () => {
@@ -241,6 +247,50 @@ describe("autoFillTaxes — Simples Nacional / Serviços", () => {
   })
   it("snapshot completo (SN Serviços)", () => {
     expect(project(out)).toMatchSnapshot()
+  })
+})
+
+describe("autoFillTaxes — Simples / empresa nova sem RBT12 (caso Cionê)", () => {
+  // PGDAS-D 07/2026 Cionê: Anexo III, RBT12 = 0 (meses anteriores zerados),
+  // RPA 15.960,95 → DAS 957,66 (6% exatos). Antes ficava em branco.
+  const data = {
+    regime: "Simples Nacional",
+    atividade: "Serviços",
+    anexo: "Anexo III",
+    revenue: "15.960,95",
+    rbt12: "0",
+    compMonth: "7",
+    compYear: "2026",
+  }
+  const out = autoFillTaxes(data, DEFAULT_TAXES_SN_SERVICOS.map((t, i) => ({ ...t, id: i + 1 })))
+
+  it("DAS = 6% (1ª faixa) da receita, batendo com o PGDAS-D", () => {
+    expect(parseNumBR(byTax(out, "DAS").rate)).toBeCloseTo(6, 4)
+    expect(parseNumBR(byTax(out, "DAS").apurado)).toBeCloseTo(957.66, 2)
+  })
+})
+
+describe("autoFillTaxes — Simples com folha: FGTS 8%", () => {
+  const data = {
+    regime: "Simples Nacional",
+    atividade: "Serviços",
+    anexo: "Anexo III",
+    revenue: "50.000,00",
+    rbt12: "500.000,00",
+    folhaMensal: "10.000,00",
+    compMonth: "5",
+    compYear: "2026",
+  }
+  // FGTS entra pela reconciliação da tela; aqui simulamos a linha já presente.
+  const taxes = [
+    ...DEFAULT_TAXES_SN_SERVICOS,
+    { id: 90, tax: "FGTS", base: "", rate: "8,00", apurado: "", retido: "", value: "", dueDate: "", obs: "", retidoManual: false },
+  ].map((t, i) => ({ ...t, id: i + 1 }))
+  const out = autoFillTaxes(data, taxes)
+
+  it("FGTS = 8% da folha mensal", () => {
+    expect(parseNumBR(byTax(out, "FGTS").apurado)).toBeCloseTo(800, 2)
+    expect(parseNumBR(byTax(out, "FGTS").value)).toBeCloseTo(800, 2)
   })
 })
 

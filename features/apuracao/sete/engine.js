@@ -224,7 +224,15 @@ export const SN_TABLES = {
 
 export const calcAliquotaEfetivaSN = (rbt12, anexo) => {
     const table = SN_TABLES[anexo];
-    if (!table || rbt12 <= 0) return { rate: 0, nominal: 0, deduction: 0, faixa: 0 };
+    if (!table) return { rate: 0, nominal: 0, deduction: 0, faixa: 0 };
+    // Sem RBT12 (início de atividade sem histórico de receita): a média das receitas
+    // dos meses anteriores é 0 → 1ª faixa (Resolução CGSN 140/2018, art. 21). Como a
+    // dedução da 1ª faixa é 0, a alíquota efetiva = nominal da faixa 1 (Anexo III = 6%).
+    // Bate com o PGDAS-D de empresas novas cujos meses anteriores foram zerados.
+    if (rbt12 <= 0) {
+        const f = table[0];
+        return { rate: f.rate, nominal: f.rate, deduction: 0, faixa: 1 };
+    }
     const faixa = table.find(f => rbt12 <= f.limit) || table[table.length - 1];
     const faixaIdx = table.indexOf(faixa) + 1;
     const effective = ((rbt12 * (faixa.rate / 100)) - faixa.deduction) / rbt12 * 100;
@@ -632,7 +640,10 @@ export const autoFillTaxes = (data, currentTaxes) => {
                     // base V — o valor em si é o declarado, fonte da verdade.
                     const anexoEfDAS = data.anexo ? getAnexoEfetivo(data.anexo, calcFatorR(folha12m, rbt12), sujeitoFatorR) : '';
                     updated.obs = 'Importado do PGDAS-D — valor declarado' + (anexoEfDAS ? ' · ' + anexoEfDAS : '');
-                } else if (totalRevenue > 0 && rbtAliq > 0 && data.anexo) {
+                } else if (totalRevenue > 0 && data.anexo) {
+                    // rbtAliq pode ser 0 (empresa nova sem RBT12): cai na 1ª faixa (ver
+                    // calcAliquotaEfetivaSN). Sem este caminho o DAS ficava em branco —
+                    // "não gera imposto" no relatório de empresas recém-abertas.
                     const fR = calcFatorR(folha12m, rbt12);
                     const anexoEf = getAnexoEfetivo(data.anexo, fR, sujeitoFatorR);
                     const res = calcAliquotaEfetivaSN(rbtAliq, anexoEf);
@@ -643,7 +654,8 @@ export const autoFillTaxes = (data, currentTaxes) => {
                     const apuradoDAS = totalRevenue * res.rate / 100;
                     updated.apurado = formatBRLDisplay(apuradoDAS);
                     let obsDAS = `${anexoEf} (Faixa ${res.faixa}) — Alíq. Nom. ${res.nominal.toFixed(2).replace('.', ',')}%`;
-                    if (parseNumBR(data.rbt12p) > 0) obsDAS += ' · sobre RBT12p (proporcionalizado)';
+                    if (rbtAliq <= 0) obsDAS += ' · sem RBT12 (início de atividade) — 1ª faixa. Importe o PGDAS-D para o valor exato.';
+                    else if (parseNumBR(data.rbt12p) > 0) obsDAS += ' · sobre RBT12p (proporcionalizado)';
                     if (rbt12 > LIMITE_SN) obsDAS += ' · ATENÇÃO: RBT12 acima do limite do Simples (R$ 4,8 mi)';
                     else if (rbt12 > SUBLIMITE_SN) obsDAS += ' · RBT12 acima do sublimite: ICMS/ISS fora do DAS';
                     // ISS retido na fonte (linha 'ISS (retido)') abate o DAS — a parcela de ISS
@@ -659,6 +671,15 @@ export const autoFillTaxes = (data, currentTaxes) => {
                     updated.base = ""; updated.apurado = ""; updated.obs = "";
                 }
             }
+        }
+
+        // FGTS no Simples (Anexo III/V): 8% sobre a folha de empregados, devido à parte
+        // (o DAS não inclui FGTS). Anexo IV e LP/Real já caem no ramo baseFolhaEmp acima.
+        if (t.tax === 'FGTS' && data.regime === 'Simples Nacional' && !isAnexoIV) {
+            const r = parseNumBR(updated.rate) || 8;
+            if (!(parseNumBR(updated.rate) > 0)) updated.rate = '8,00';
+            updated.base = folhaMensal > 0 ? formatBRLDisplay(folhaMensal) : '';
+            updated.apurado = folhaMensal > 0 ? formatBRLDisplay(folhaMensal * r / 100) : '';
         }
 
         if (t.tax === 'INSS' || t.tax === 'INSS (Sócio)') {
