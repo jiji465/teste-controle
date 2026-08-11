@@ -11,6 +11,7 @@ import {
   DEFAULT_TAXES_SN_COMERCIO,
   DEFAULT_TAXES_MEI_SERVICOS,
   calcAliquotaEfetivaSN,
+  parsePGDASD,
   getBasePresumidaLP,
   getDueDate,
   parseNumBR,
@@ -247,6 +248,36 @@ describe("autoFillTaxes — Simples Nacional / Serviços", () => {
   })
   it("snapshot completo (SN Serviços)", () => {
     expect(project(out)).toMatchSnapshot()
+  })
+})
+
+describe("parsePGDASD — anexo na descrição e DAS pela repartição", () => {
+  // Layout do PGDAS-D da Cionê: anexo só aparece em "tributados pelo Anexo III"
+  // e o total declarado fica separado do rótulo (capturado pela soma da repartição).
+  const T = [
+    "Documento de Arrecadação do Simples Nacional",
+    "Período de Apuração: 01/07/2026 a 31/07/2026",
+    "CNPJ Matriz: 62.078.830/0001-99",
+    "Nome empresarial: CIONE TERRA & GESTAO LTDA Data de abertura no CNPJ: 05/08/2025",
+    "RPA) - Competência 15.960,95",
+    "(RBT12) 0,00",
+    "Fator r = Não se aplica",
+    "Prestação de Serviços, exceto para o exterior - Não sujeitos ao fator r e tributados pelo Anexo III, sem retenção",
+    "Município: BALSAS UF: MA",
+    "IRPJ CSLL COFINS PIS/Pasep INSS/CPP ICMS IPI ISS Total 38,31 33,52 122,77 26,62 415,62 0,00 0,00 320,82 957,66",
+  ].join("\n")
+  const r = parsePGDASD(T)
+
+  it("captura Anexo III da descrição da atividade", () => {
+    expect(r.anexo).toBe("Anexo III")
+    expect(r.sujeitoFatorR).toBe(false)
+  })
+  it("usa a soma da repartição como valor declarado do DAS", () => {
+    expect(parseNumBR(r.das)).toBeCloseTo(957.66, 2)
+  })
+  it("lê RPA e RBT12 = 0", () => {
+    expect(parseNumBR(r.rpa)).toBeCloseTo(15960.95, 2)
+    expect(parseNumBR(r.rbt12)).toBe(0)
   })
 })
 

@@ -423,6 +423,10 @@ export function parsePGDASD(T) {
     const rbt12p = g(/\(RBT12p\)[^\d]*?([\d.]+,\d{2})/);
     const folha = g(/Total\s+de\s+Folhas\s+de\s+Sal[áa]rios\s+Anteriores[\s\S]*?R\$\s*([\d.]+,\d{2})/i);
     const anexoSuj = g(/Sujeitos?\s+ao\s+Anexo\s+([IVX]+)/i);
+    // Alguns PGDAS trazem o anexo só na descrição da atividade ("...tributados pelo
+    // Anexo III...") — sem isso, empresas do Anexo III por natureza importavam sem anexo
+    // e o DAS não calculava. Cobre "tributad(o/a)s pelo Anexo X" e "Anexo X" avulso.
+    const anexoTrib = g(/tributad[oa]s?\s+pel[oa]\s+Anexo\s+([IVX]+)/i) || g(/\bAnexo\s+(I{1,3}|IV|V)\b/i);
     const fator = g(/Fator\s+r\s*=\s*(N[ãa]o\s+se\s+aplica|[\d,]+)(?:\s*[-–—]\s*(Anexo\s+[IVX]+))?/i);
     // Repartição por tributo (segregação): IRPJ CSLL COFINS PIS/Pasep INSS/CPP ICMS IPI ISS Total
     const repM = g(/IRPJ\s+CSLL\s+COFINS\s+PIS\/Pasep\s+INSS\/CPP\s+ICMS\s+IPI\s+ISS\s+Total\s+([\d.]+,\d{2})\s+([\d.]+,\d{2})\s+([\d.]+,\d{2})\s+([\d.]+,\d{2})\s+([\d.]+,\d{2})\s+([\d.]+,\d{2})\s+([\d.]+,\d{2})\s+([\d.]+,\d{2})\s+([\d.]+,\d{2})/i);
@@ -438,6 +442,7 @@ export function parsePGDASD(T) {
     if (folha) res.folha12m = folha[1];
     if (fator) { res.fatorR = fator[1].replace(/\s+/g, ' ').trim(); if (fator[2]) res.anexo = fator[2].replace(/\s+/g, ' ').trim(); }
     if (!res.anexo && anexoSuj) res.anexo = 'Anexo ' + anexoSuj[1].toUpperCase();
+    if (!res.anexo && anexoTrib) res.anexo = 'Anexo ' + anexoTrib[1].toUpperCase();
     // Sujeito ao Fator R: o PGDAS traz um Fator r NUMÉRICO (não "Não se aplica")
     // ou classifica a atividade no Anexo V. Nesses casos o anexo-BASE é o V; a
     // migração para o III é DERIVADA quando o Fator R ≥ 28% — não gravamos o III
@@ -454,6 +459,10 @@ export function parsePGDASD(T) {
     if (das) res.das = das[2] || das[1];
     if (mun) res.municipio = mun[1].trim() + '/' + mun[2];
     if (repM) res.repart = { IRPJ: pgNum(repM[1]), CSLL: pgNum(repM[2]), COFINS: pgNum(repM[3]), PIS: pgNum(repM[4]), CPP: pgNum(repM[5]), ICMS: pgNum(repM[6]), IPI: pgNum(repM[7]), ISS: pgNum(repM[8]), total: pgNum(repM[9]) };
+    // Em alguns layouts o "Valor Total do Débito Declarado" fica em página/linha separada
+    // do rótulo e o regex direto não casa. A soma da repartição por tributo é o mesmo
+    // valor DECLARADO (fonte da verdade) — usa como DAS quando o campo direto falhar.
+    if (!res.das && res.repart && res.repart.total > 0) res.das = res.repart.total.toFixed(2).replace('.', ',');
     // Folha de Salários Anteriores (12m) — soma dos meses quando houver (senão "Nenhuma")
     const folhaBlock = T.match(/2\.3\)[^]*?(?:2\.4\)|2\.5\)|$)/);
     if (!res.folha12m && folhaBlock && !/Nenhuma/i.test(folhaBlock[0])) {
