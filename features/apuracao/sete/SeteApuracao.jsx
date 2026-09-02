@@ -1348,7 +1348,7 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
     // No cabeçalho escuro, o wordmark vai em creme; o símbolo mantém o laranja do topo.
     const Lock = () => (
         <div className="flex items-center">
-            <BrandLockup height={44} symbol="#F5A012" word="#F4E9D2" />
+            <BrandLockup height={76} symbol="#F5A012" word="#F4E9D2" />
         </div>
     );
 
