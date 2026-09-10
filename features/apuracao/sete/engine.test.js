@@ -463,6 +463,23 @@ describe("resumoApuracao — fonte única de totais", () => {
   })
 })
 
+describe("resumoApuracao — parcelamento soma no caixa, fora da alíquota", () => {
+  // Parcelamento entra como linha foraAliquota=true: recolhe no mês (caixa) mas
+  // NÃO é imposto sobre a receita, então não compõe a carga efetiva.
+  const taxes = [
+    { tax: "DAS", apurado: "957,66", retido: "", value: "957,66" },
+    { tax: "Parcelamento — Simples", apurado: "", retido: "", value: "500,00", foraAliquota: true },
+  ]
+  const R = resumoApuracao(taxes, 15960.95)
+  it("totalRecolherMes inclui a parcela (957,66 + 500)", () => {
+    expect(R.totalRecolherMes).toBeCloseTo(1457.66, 2)
+  })
+  it("baseCarga/cargaEfetiva ignoram o parcelamento (só o DAS conta)", () => {
+    expect(R.baseCarga).toBeCloseTo(957.66, 2)
+    expect(R.cargaEfetiva).toBeCloseTo(6.0, 3)
+  })
+})
+
 describe("Locks manuais preservam edições no recálculo (Fase 2)", () => {
   const data = { regime: "Lucro Presumido", atividade: "Serviços", revenueNonRetained: "100.000,00", compMonth: "5", compYear: "2026", irpjCsllMode: "Mensal (Provisão)" }
   const fresh = () => autoFillTaxes(data, lpDefaults("Serviços").map((t, i) => ({ ...t, id: i + 1 })))

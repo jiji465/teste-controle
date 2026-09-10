@@ -390,6 +390,37 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
                 }
             }
 
+            // Parcelamentos: cada dívida parcelada ativa vira uma linha de guia a recolher
+            // (valor fixo, FORA da alíquota efetiva — não é imposto sobre a receita), com
+            // vencimento no dia informado, mês seguinte à competência. Entra sozinho no
+            // total a recolher e no calendário. Marcada com isParcelamento p/ o relatório
+            // separar dos tributos do mês.
+            const parcels = (Array.isArray(data.parcelamentos) ? data.parcelamentos : []).filter(p => p && parseNumBR(p.valor) > 0);
+            baseTaxes = baseTaxes.filter(t => !t.isParcelamento || parcels.some(p => String(p.id) === String(t.parcelamentoId)));
+            const parcelaDue = (dia) => {
+                const m = parseInt(data.compMonth), y = parseInt(data.compYear), d = parseInt(dia);
+                if (!m || !y || !d) return '';
+                let nm = m + 1, ny = y; if (nm > 12) { nm = 1; ny++; }
+                const last = new Date(ny, nm, 0).getDate();
+                const dd = Math.min(Math.max(d, 1), last);
+                return String(dd).padStart(2, '0') + '/' + String(nm).padStart(2, '0') + '/' + ny;
+            };
+            parcels.forEach(p => {
+                const nome = 'Parcelamento' + (p.descricao ? ' — ' + p.descricao : '');
+                const at = parseInt(p.parcelaAtual), tot = parseInt(p.parcelasTotal);
+                const obs = (at && tot) ? `Parcela ${at} de ${tot}` : 'Parcelamento em curso';
+                const linha = {
+                    tax: nome, base: '', rate: '', apurado: '', retido: '',
+                    value: formatBRLDisplay(parseNumBR(p.valor)), dueDate: parcelaDue(p.vencDia), obs,
+                    retidoManual: false, isParcelamento: true, parcelamentoId: p.id,
+                    parcelaAtual: p.parcelaAtual, parcelasTotal: p.parcelasTotal,
+                    foraAliquota: true, valueManual: true, dueDateManual: true,
+                };
+                const idx = baseTaxes.findIndex(t => t.isParcelamento && String(t.parcelamentoId) === String(p.id));
+                if (idx === -1) baseTaxes = [...baseTaxes, { id: Date.now() + 300 + Math.floor(Math.random() * 1000), ...linha }];
+                else baseTaxes = baseTaxes.map((t, j) => j === idx ? { ...t, ...linha } : t);
+            });
+
             return autoFillTaxes(data, baseTaxes);
         });
     };
@@ -406,6 +437,7 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
         clientData.revenueNonRetained,
         clientData.proLabore,
         clientData.socios,
+        clientData.parcelamentos,
         clientData.fap,
         clientData.folhaMensal,
         clientData.folha12m,
@@ -517,6 +549,14 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
     const updSocio = (i, field, val) => setSocios(socios.map((s, j) => j === i ? { ...s, [field]: val } : s));
     const addSocio = () => setSocios([...socios, { nome: '', valor: '' }]);
     const rmSocio = (i) => setSocios(socios.filter((_, j) => j !== i));
+
+    // ---- Parcelamentos (dívidas parceladas: Simples, RFB, PGFN, estadual…) ----
+    // Cada um vira uma guia a recolher no mês (fora da alíquota efetiva).
+    const parcelamentos = Array.isArray(clientData.parcelamentos) ? clientData.parcelamentos : [];
+    const setParcelamentos = (next) => updateClient('parcelamentos', next);
+    const updParcel = (i, field, val) => setParcelamentos(parcelamentos.map((p, j) => j === i ? { ...p, [field]: val } : p));
+    const addParcel = () => setParcelamentos([...parcelamentos, { id: Date.now() + Math.floor(Math.random() * 1000), descricao: '', valor: '', parcelaAtual: '', parcelasTotal: '', vencDia: '' }]);
+    const rmParcel = (i) => setParcelamentos(parcelamentos.filter((_, j) => j !== i));
 
     const showFatorR = clientData.regime === 'Simples Nacional' && (clientData.anexo === 'Anexo V' || clientData.anexo === 'Anexo III') && parseNumBR(clientData.rbt12) > 0;
     const totalRevenue = calculateTotalRevenue(clientData);
@@ -1062,6 +1102,36 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
                             </Section>
                         );
                     })()}
+
+                    {/* Parcelamentos — vale para qualquer regime (dívida parcelada) */}
+                    <Section title="Parcelamentos" icon={Landmark} defaultOpen={false}
+                        summary={parcelamentos.filter(p => parseNumBR(p.valor) > 0).length
+                            ? `${parcelamentos.filter(p => parseNumBR(p.valor) > 0).length} ativo(s) · ${formatCurrency(parcelamentos.reduce((s, p) => s + parseNumBR(p.valor), 0))}/mês`
+                            : 'nenhum'}>
+                        <div className="col-span-2">
+                            <div className="flex items-center justify-between mb-1.5">
+                                <label className="field-label !mb-0">Parcelamentos ativos</label>
+                                <button type="button" onClick={addParcel} className="text-[11px] font-bold text-navy hover:underline flex items-center gap-1"><Plus className="w-3 h-3" /> Adicionar parcelamento</button>
+                            </div>
+                            {parcelamentos.length === 0 && <p className="text-[11px] text-slate-400">Nenhum parcelamento. Adicione se a empresa tiver dívida parcelada (Simples, RFB, PGFN, estadual…).</p>}
+                            <div className="space-y-2">
+                                {parcelamentos.map((p, i) => (
+                                    <div key={p.id || i} className="flex items-center gap-2 flex-wrap">
+                                        <input className="field-input flex-1 min-w-[150px]" value={p.descricao || ''} onChange={e => updParcel(i, 'descricao', e.target.value)} placeholder="Órgão/descrição (ex.: Simples, RFB, PGFN)" />
+                                        <input className="field-input w-28" inputMode="decimal" value={p.valor || ''} onChange={e => updParcel(i, 'valor', parseBRL(e.target.value))} placeholder="Parcela R$" title="Valor da parcela mensal" />
+                                        <div className="flex items-center gap-1">
+                                            <input className="field-input w-14" inputMode="numeric" value={p.parcelaAtual || ''} onChange={e => updParcel(i, 'parcelaAtual', e.target.value.replace(/\D/g, ''))} placeholder="atual" title="Parcela atual" />
+                                            <span className="text-slate-400 text-xs">de</span>
+                                            <input className="field-input w-14" inputMode="numeric" value={p.parcelasTotal || ''} onChange={e => updParcel(i, 'parcelasTotal', e.target.value.replace(/\D/g, ''))} placeholder="total" title="Total de parcelas" />
+                                        </div>
+                                        <input className="field-input w-20" inputMode="numeric" value={p.vencDia || ''} onChange={e => updParcel(i, 'vencDia', e.target.value.replace(/\D/g, '').slice(0, 2))} placeholder="dia venc." title="Dia do vencimento" />
+                                        <button type="button" onClick={() => rmParcel(i)} aria-label="Remover parcelamento" className="text-slate-300 hover:text-red-500 transition-colors p-1"><Trash2 className="w-4 h-4" /></button>
+                                    </div>
+                                ))}
+                            </div>
+                            <p className="text-[10px] text-slate-400 mt-1.5">A parcela do mês entra no total a recolher e no calendário de vencimentos, destacada como parcelamento (fora da alíquota efetiva).</p>
+                        </div>
+                    </Section>
                 </div>
             </div>
 
@@ -1290,8 +1360,15 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
             ];
 
     // Impostos
-    let taxRows = taxes.filter(t => t.tax && !ehRetido(t) && parseNum(t.value) > 0);
-    if (taxRows.length === 0) taxRows = taxes.filter(t => t.tax && !ehRetido(t));
+    // Parcelamentos: linhas isParcelamento entram no total e no calendário, mas ficam
+    // FORA da tabela de "impostos apurados" (têm bloco próprio, separadas dos tributos).
+    const parcelamentoLines = taxes.filter(t => t.isParcelamento && parseNum(t.value) > 0);
+    const totalParcelamentos = parcelamentoLines.reduce((s, t) => s + parseNum(t.value), 0);
+    let taxRows = taxes.filter(t => t.tax && !ehRetido(t) && !t.isParcelamento && parseNum(t.value) > 0);
+    if (taxRows.length === 0) taxRows = taxes.filter(t => t.tax && !ehRetido(t) && !t.isParcelamento);
+    // Totais restritos aos tributos do mês (excluem parcelamento) — usados na tabela de composição.
+    const totalTributosMes = totalTributos - totalParcelamentos;
+    const totalApuradoTributos = totalApurado - totalParcelamentos;
 
     // Vencimentos — uma guia por linha (detalhado, sem agrupar)
     const MES_ABBR = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
@@ -1631,7 +1708,8 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
         );
     })() : null;
     const estImpostosMM = 14 + taxRows.length * 6.6 + 8;
-    const estResumoBaseMM = 26 + 15 + 21 + 12 + (hasRetentions ? 32 + estImpostosMM : Math.max(34, estImpostosMM)) + ((clientData.irpjCsllMode === 'Trimestral (Apuração)' || clientData.irpjCsllMode === 'Estimativa (Anual)') && parseNum(clientData.periodRevenue) > 0 ? 8 : 0) + (hasFolhaPL ? 34 : 0);
+    const estParcelMM = parcelamentoLines.length > 0 ? 22 + parcelamentoLines.length * 11 : 0;
+    const estResumoBaseMM = 26 + 15 + 21 + 12 + (hasRetentions ? 32 + estImpostosMM : Math.max(34, estImpostosMM)) + ((clientData.irpjCsllMode === 'Trimestral (Apuração)' || clientData.irpjCsllMode === 'Estimativa (Anual)') && parseNum(clientData.periodRevenue) > 0 ? 8 : 0) + (hasFolhaPL ? 34 : 0) + estParcelMM;
     const evolucaoSeparada = !!evolucaoCard && (estResumoBaseMM + 46 > PAGE_BUDGET_MM);
 
     return (
@@ -1657,7 +1735,7 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
 
                     <div className="grid grid-cols-4 gap-3 mb-4 avoid-break">
                         <KpiCard cls="navy" label="Faturamento" value={fmtKpi(revenue)} foot="Receita bruta do mês" />
-                        <KpiCard cls="w" label="Total a pagar" value={fmtKpi(totalTributos)} foot={hasRetentions ? 'guias do mês · líquido após retenção' : (totalProvisao > 0 ? `guias do mês · + ${formatCurrency(totalProvisao)} provisão` : 'guias a recolher no mês')} />
+                        <KpiCard cls="w" label="Total a pagar" value={fmtKpi(totalTributos)} foot={totalParcelamentos > 0 ? `inclui ${formatCurrency(totalParcelamentos)} de parcelamento` : (hasRetentions ? 'guias do mês · líquido após retenção' : (totalProvisao > 0 ? `guias do mês · + ${formatCurrency(totalProvisao)} provisão` : 'guias a recolher no mês'))} />
                         <KpiCard cls={kpi3.cls} label={kpi3.label} value={kpi3.value} foot={kpi3.foot} />
                         <KpiCard cls={kpi4.cls} label={kpi4.label} value={kpi4.value} foot={kpi4.foot} />
                     </div>
@@ -1707,7 +1785,7 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
                                                 <td style={{ ...cellR, ...(i < taxRows.length - 1 ? rowBorder : {}), ...(t.provisao ? { color: '#9aa2af' } : {}) }}>{formatCurrency(parseNum(t.value))}</td>
                                             </tr>
                                         ))}
-                                        <tr><td style={totL}>Total a recolher</td><td style={totR}>{formatCurrency(totalTributos)}</td></tr>
+                                        <tr><td style={totL}>Total a recolher</td><td style={totR}>{formatCurrency(totalTributosMes)}</td></tr>
                                         {totalProvisao > 0 && <tr><td style={{ ...cellL, color: '#9aa2af', fontSize: '10px' }}>Provisão do mês (recolhe no fechamento do trimestre)</td><td style={{ ...cellR, color: '#9aa2af', fontSize: '10px' }}>{formatCurrency(totalProvisao)}</td></tr>}
                                     </tbody>
                                 </table>
@@ -1755,9 +1833,9 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
                                     <tfoot>
                                         <tr>
                                             <td style={totL}>Total</td>
-                                            <td style={totR}>{formatCurrency(totalApurado)}</td>
+                                            <td style={totR}>{formatCurrency(totalApuradoTributos)}</td>
                                             <td style={{ ...totR, color: '#1f7a4d' }}>{totalRetido > 0 ? '− ' + formatCurrency(totalRetido) : '—'}</td>
-                                            <td style={totR}>{formatCurrency(totalTributos)}</td>
+                                            <td style={totR}>{formatCurrency(totalTributosMes)}</td>
                                         </tr>
                                     </tfoot>
                                 </table>
@@ -1796,6 +1874,43 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
                             </div>
                         );
                     })()}
+
+                    {/* Parcelamentos ativos — dívida parcelada; a parcela do mês já entra no
+                        total a recolher e no calendário, aqui mostra progresso e vencimento. */}
+                    {parcelamentoLines.length > 0 && (
+                        <div className={card + ' mb-4 avoid-break'} style={cardPad}>
+                            <SectionTitle right={`${parcelamentoLines.length} ativo${parcelamentoLines.length > 1 ? 's' : ''}`}>Parcelamentos</SectionTitle>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                                {parcelamentoLines.map((t, i) => {
+                                    const at = parseInt(t.parcelaAtual), tot = parseInt(t.parcelasTotal);
+                                    const pct = (at && tot) ? Math.min(100, Math.round(at / tot * 100)) : 0;
+                                    const nome = String(t.tax).replace(/^Parcelamento\s*—\s*/, '') || 'Parcelamento';
+                                    return (
+                                        <div key={i}>
+                                            <div className="flex items-center justify-between" style={{ marginBottom: 4 }}>
+                                                <span style={{ fontSize: '11.5px', fontWeight: 700, color: '#001D3D' }}>{nome}</span>
+                                                <span style={{ fontSize: '12px', fontWeight: 800, color: '#001D3D', fontVariantNumeric: 'tabular-nums' }}>{formatCurrency(parseNum(t.value))}</span>
+                                            </div>
+                                            <div className="flex items-center justify-between" style={{ fontSize: '9px', color: '#7c8595', marginBottom: 5 }}>
+                                                <span>{(at && tot) ? `Parcela ${at} de ${tot}` : 'Em curso'}{t.dueDate ? ' · vence ' + t.dueDate : ''}</span>
+                                                {(at && tot) ? <span>{pct}%</span> : null}
+                                            </div>
+                                            {(at && tot) ? (
+                                                <div style={{ height: 5, borderRadius: 999, background: '#eee7d6', overflow: 'hidden' }}>
+                                                    <div style={{ height: '100%', width: pct + '%', borderRadius: 999, background: 'linear-gradient(90deg,#F5A012,#d4830a)' }} />
+                                                </div>
+                                            ) : null}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                            <div className="flex justify-between items-center" style={{ marginTop: 11, paddingTop: 9, borderTop: '2px solid #001D3D' }}>
+                                <span style={{ fontSize: '11px', fontWeight: 700, color: '#1a2230' }}>Total das parcelas no mês</span>
+                                <span style={{ fontSize: '13px', fontWeight: 800, color: '#001D3D', fontVariantNumeric: 'tabular-nums' }}>{formatCurrency(totalParcelamentos)}</span>
+                            </div>
+                            <div style={{ fontSize: '9.5px', color: '#646d7c', lineHeight: 1.45, marginTop: 9 }}>Parcelas de dívidas parceladas, já somadas ao total a recolher e ao calendário de vencimentos. Não compõem a alíquota efetiva (não são imposto sobre a receita do mês).</div>
+                        </div>
+                    )}
 
                     {!evolucaoSeparada && evolucaoCard}
 
@@ -2235,6 +2350,10 @@ const App = () => {
         // já preenchidos e abre APENAS o mês novo (vazio, pra digitar o faturamento).
         const evNovo = [];
         for (let k = 11; k >= 0; k--) { let wm = m - k, wy = y; while (wm <= 0) { wm += 12; wy--; } const key = `${String(wm).padStart(2, '0')}/${wy}`; evNovo.push({ ym: key, receita: known[key] || 0 }); }
+        // Parcelamentos avançam 1 parcela; os que chegaram ao fim (atual > total) saem.
+        const parcelNovo = (Array.isArray(src.parcelamentos) ? src.parcelamentos : [])
+            .map(p => { const at = parseInt(p.parcelaAtual); return at ? { ...p, parcelaAtual: String(at + 1) } : { ...p }; })
+            .filter(p => { const at = parseInt(p.parcelaAtual), tot = parseInt(p.parcelasTotal); return !(at && tot && at > tot); });
         setClientData({
             ...src,
             clientId,
@@ -2243,6 +2362,7 @@ const App = () => {
             competenceShort: compShort,
             competence: (MONTHS[m - 1] || '') + '/' + y,
             evolucao: evNovo,
+            parcelamentos: parcelNovo,
         });
         setTaxes(Array.isArray(ultima.payload.taxes) ? ultima.payload.taxes.map(t => ({ ...t })) : DEFAULT_TAXES);
         setValidationErrors({});
