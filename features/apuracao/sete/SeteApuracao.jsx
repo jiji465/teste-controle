@@ -2437,32 +2437,19 @@ const App = () => {
     handlePrintRef.current = handlePrint;
 
     const handleWhatsAppCopy = () => {
-        // Só guias a recolher com data de vencimento válida (dd/mm/aaaa). Exclui
-        // linhas informativas (retido) — não são guia a pagar.
-        const validDue = s => /^\d{2}\/\d{2}\/\d{4}$/.test(String(s || ''));
-        const parseDMY = s => { const p = String(s).split('/'); return new Date(+p[2], +p[1] - 1, +p[0]); };
-        const guias = taxes.filter(t => t.tax && !ehRetido(t) && parseNumBR(t.value) > 0 && validDue(t.dueDate));
+        // Guias a recolher: um tributo por linha, sem data. Exclui linhas informativas
+        // (retido) e provisões (IRPJ/CSLL do trimestre) — não são guia a pagar no mês.
+        const guias = taxes.filter(t => t.tax && !ehRetido(t) && !t.provisao && parseNumBR(t.value) > 0);
         if (guias.length === 0) {
-            setToast({ message: 'Nenhuma guia com vencimento para copiar.', type: 'warning' });
+            setToast({ message: 'Nenhum valor a pagar para copiar.', type: 'warning' });
             return;
         }
-
-        // Agrupa por data e ordena cronologicamente; subtotal por data (quando > 1 guia).
-        const byDate = {};
-        guias.forEach(t => { (byDate[t.dueDate] = byDate[t.dueDate] || []).push(t); });
-        const datas = Object.keys(byDate).sort((a, b) => parseDMY(a) - parseDMY(b));
-        const blocos = datas.map(d => {
-            const itens = byDate[d];
-            const linhas = itens.map(t => `• ${t.tax} — ${formatCurrency(t.value)}`).join('\n');
-            const sub = itens.reduce((s, t) => s + parseNumBR(t.value), 0);
-            const subLinha = itens.length > 1 ? `\n_Subtotal: ${formatCurrency(sub)}_` : '';
-            return `*${d}*\n${linhas}${subLinha}`;
-        }).join('\n\n');
+        const lista = guias.map(t => `• ${t.tax} — ${formatCurrency(t.value)}`).join('\n');
         const total = guias.reduce((s, t) => s + parseNumBR(t.value), 0);
 
         const comp = clientData.competence || clientData.competenceShort || '—';
-        const saud = `Olá! Seguem os vencimentos da apuração de *${comp}*${clientData.clientName ? ` — ${clientData.clientName}` : ''}:`;
-        const text = `${saud}\n\n${blocos}\n\n*TOTAL A PAGAR: ${formatCurrency(total)}*`;
+        const saud = `Segue a apuração fiscal referente *${comp}*${clientData.clientName ? ` - ${clientData.clientName}` : ''}`;
+        const text = `${saud}\n\n${lista}\n\n*TOTAL A PAGAR: ${formatCurrency(total)}*`;
 
         if (!navigator.clipboard) {
             setToast({ message: 'Navegador sem suporte a copiar — use HTTPS ou copie manualmente', type: 'warning' });
