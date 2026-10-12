@@ -11,10 +11,30 @@ export const TETO_INSS = 8475.55;        // 2026 — Portaria MPS/MF nº 13/2026
 export const SUBLIMITE_SN = 3600000;     // sublimite do Simples: acima, ICMS/ISS fora do DAS
 export const LIMITE_SN = 4800000;        // teto do Simples Nacional
 
+// Converte texto monetário em número. Aceita o formato BR ("1.234,56", "R$ 1.000,50"),
+// ponto decimal ("1234.56", "1.5" — dados importados/colados), formato US
+// ("1,234.56") e negativo contábil "(1.000,00)". Só ponto em grupos de 3 dígitos
+// ("1.234", "1.234.567") é milhar BR. NaN/Infinity/vazio → 0.
 export const parseNumBR = (v) => {
-    if (typeof v === 'number') return v;
-    if (!v) return 0;
-    return parseFloat(String(v).replace(/[^\d.,-]/g, '').replace(/\./g, '').replace(',', '.')) || 0;
+    if (typeof v === 'number') return Number.isFinite(v) ? v : 0;
+    if (v === null || v === undefined) return 0;
+    let s = String(v).trim();
+    if (!s) return 0;
+    let neg = false;
+    if (/^\(.*\)$/.test(s)) { neg = true; s = s.slice(1, -1); }
+    s = s.replace(/[^\d.,-]/g, '');
+    if (s.startsWith('-')) neg = !neg;
+    s = s.replace(/-/g, '');
+    if (!/\d/.test(s)) return 0;
+    const lastComma = s.lastIndexOf(','), lastDot = s.lastIndexOf('.');
+    if (lastComma >= 0 && lastDot > lastComma) s = s.replace(/,/g, '');                 // US
+    else if (lastComma >= 0) s = s.replace(/\./g, '').replace(/,/g, '.');             // BR
+    else if (lastDot >= 0) {
+        if (/^\d{1,3}(\.\d{3})+$/.test(s)) s = s.replace(/\./g, '');                  // milhar BR
+        else s = s.slice(0, lastDot).replace(/\./g, '') + '.' + s.slice(lastDot + 1);  // decimal
+    }
+    const n = parseFloat(s);
+    return Number.isFinite(n) ? (neg ? -n : n) : 0;
 };
 
 export const formatCurrency = (val) => {
@@ -74,6 +94,8 @@ export const avisosApuracao = (taxes) => {
         if (ret > 0 && ap > 0 && ret > ap + 0.005) {
             avisos.push({ tax: t.tax, nivel: 'erro', msg: `retido (${formatCurrency(ret)}) maior que o apurado (${formatCurrency(ap)})` });
         }
+        // FAP fora da faixa legal (0,5–2,0) foi limitado pelo motor
+        if (/FAP .*fora da faixa/i.test(t.obs || '')) avisos.push({ tax: t.tax, nivel: 'aviso', msg: 'FAP fora da faixa 0,5–2,0 — confira o valor informado' });
         // Alíquota acima de 100%
         if (rate > 100) avisos.push({ tax: t.tax, nivel: 'erro', msg: `alíquota ${rate.toFixed(2).replace('.', ',')}% acima de 100%` });
         // Alíquota fora da faixa usual do tributo
@@ -102,15 +124,21 @@ export const acumuladoPeriodo = (data, records) => {
     if (mode === 'Trimestral (Apuração)') startM = Math.floor((m - 1) / 3) * 3 + 1;
     else if (mode === 'Estimativa (Anual)') startM = 1;
     else return null;
-    let total = 0, salvos = 0, faltando = 0;
+    // Receita COM retenção do período: as retenções de IRPJ/CSLL de todos os meses do
+    // trimestre compensam o DARF trimestral (Lei 9.430, art. 64; Lei 10.833, arts. 30 e 36).
+    const retidaDe = (d) => (d && (d.regime === 'Lucro Presumido' || d.regime === 'Lucro Real') && (d.atividade || 'Serviços') === 'Serviços')
+        ? parseNumBR(d.revenueRetained) : 0;
+    let total = 0, totalRetido = 0, salvos = 0, faltando = 0;
     for (let mm = startM; mm <= m; mm++) {
-        if (mm === m) { total += calculateTotalRevenue(data); continue; }
+        if (mm === m) { total += calculateTotalRevenue(data); totalRetido += retidaDe(data); continue; }
         const key = y + '-' + String(mm).padStart(2, '0');
         const rec = (records || []).find(r => r && r.compKey === key);
         const fat = rec ? parseNumBR(rec.faturamento) : 0;
         if (fat > 0) { total += fat; salvos++; } else faltando++;
+        const cd = rec && rec.payload && rec.payload.clientData;
+        if (cd) totalRetido += retidaDe({ regime: cd.regime || data.regime, atividade: cd.atividade || data.atividade, revenueRetained: cd.revenueRetained });
     }
-    return { total, salvos, faltando, meses: m - startM + 1 };
+    return { total, totalRetido, salvos, faltando, meses: m - startM + 1 };
 };
 
 export const resumoApuracao = (taxes, revenue) => {
@@ -123,7 +151,9 @@ export const resumoApuracao = (taxes, revenue) => {
         const apur = parseNumBR(t.apurado) || val;
         if (ehProvisao(t)) totalProvisao += val; else totalRecolherMes += val;
         totalApurado += apur;
-        if (entraNaAliquota(t)) baseCarga += apur;
+        // `cargaMes`: no fechamento do LP trimestral o apurado é do TRIMESTRE inteiro;
+        // a carga mostrada é só a parcela do mês (igual à provisão dos meses comuns).
+        if (entraNaAliquota(t)) baseCarga += (t.cargaMes !== undefined && t.cargaMes !== '') ? parseNumBR(t.cargaMes) : apur;
     });
     const cargaEfetiva = rev > 0 ? (baseCarga / rev) * 100 : 0;
     const liquido = rev - baseCarga;
@@ -170,6 +200,25 @@ export const COMERCIO_GUIA_ESTADUAL = {
 };
 
 export const lpDefaults = (atividade) => (atividade === 'Comércio' || atividade === 'Indústria') ? DEFAULT_TAXES_LP_COMERCIO : DEFAULT_TAXES_LP;
+
+// Lucro Real: PIS/COFINS NÃO cumulativos — 1,65% / 7,6% (Leis 10.637/02 e 10.833/03).
+// Sem os créditos informados, o motor apura sobre a receita bruta (valor máximo) e avisa;
+// o apurado líquido de créditos vai em pisApurado/cofinsApurado.
+export const OBS_NAO_CUMULATIVO = 'Não cumulativo (1,65% / 7,6%) sem créditos — informe o apurado líquido';
+const toLucroReal = (list) => list.map(t =>
+    t.tax === 'PIS' ? { ...t, rate: '1,65', obs: OBS_NAO_CUMULATIVO }
+        : t.tax === 'COFINS' ? { ...t, rate: '7,60', obs: OBS_NAO_CUMULATIVO }
+            : (t.tax === 'IRPJ' || t.tax === 'CSLL') ? { ...t, obs: 'Estimativa mensal (Lucro Real)' }
+                : t);
+export const DEFAULT_TAXES_LR = toLucroReal(DEFAULT_TAXES_LP);
+export const DEFAULT_TAXES_LR_COMERCIO = toLucroReal(DEFAULT_TAXES_LP_COMERCIO);
+
+/** Tributos padrão do regime normal (LP ou Real) conforme a atividade. */
+export const regimeDefaults = (regime, atividade) => {
+    const comInd = atividade === 'Comércio' || atividade === 'Indústria';
+    if (regime === 'Lucro Real') return comInd ? DEFAULT_TAXES_LR_COMERCIO : DEFAULT_TAXES_LR;
+    return lpDefaults(atividade);
+};
 
 
 export const DEFAULT_TAXES_SN_SERVICOS = [
@@ -242,7 +291,9 @@ export const calcAliquotaEfetivaSN = (rbt12, anexo) => {
 
 export const calcFatorR = (folha12m, rbt12) => {
     if (!rbt12 || rbt12 <= 0) return 0;
-    return (folha12m / rbt12) * 100;
+    // Arredonda a 6 casas: sem isso 135.114,28 / 482.551,00 dava 27,999999999999996%
+    // e uma empresa com Fator R de exatamente 28% caía no Anexo V.
+    return Math.round((folha12m / rbt12) * 100 * 1e6) / 1e6;
 };
 
 // A migração Anexo III ↔ V pelo Fator R só vale para atividades sujeitas a ele (LC 123, art. 18, §5º-I/J).
@@ -254,10 +305,11 @@ export const getAnexoEfetivo = (anexo, fatorR, sujeitoFatorR = true) => {
     return anexo;
 };
 
-// Sem flag explícita, deriva: Anexo V implica atividade de Fator R; Anexo III só se há folha informada
-// (preserva o comportamento de rascunhos antigos, que não têm o campo sujeitoFatorR).
-export const isSujeitoFatorR = (data, folha12m) =>
-    data.sujeitoFatorR !== undefined ? !!data.sujeitoFatorR : (data.anexo === 'Anexo V' || (folha12m || 0) > 0);
+// Sem flag explícita, só o Anexo V implica atividade de Fator R. Anexo III NÃO é presumido
+// sujeito só por ter folha: contabilidade, escolas etc. são III por natureza e, antes,
+// migravam indevidamente para o V (15,5%) quando a folha ficava abaixo de 28%.
+export const isSujeitoFatorR = (data) =>
+    data.sujeitoFatorR !== undefined ? !!data.sujeitoFatorR : data.anexo === 'Anexo V';
 
 // ===== IRRF sobre o pró-labore (tabela progressiva mensal) =====
 // Tabela 2026 (faixas mantidas de 2025) + redutor mensal da Lei 15.270/2025
@@ -313,6 +365,40 @@ export const lastBusinessDay = (month, year) => {
     let d = new Date(year, month - 1, lastDay);
     while (!isDiaUtil(d)) d.setDate(d.getDate() - 1);
     return d.getDate();
+};
+
+// "MM/AAAA" ou "DD/MM/AAAA" → { m, y }
+const parseMesAno = (s) => {
+    const mt = String(s || '').match(/(\d{1,2})\/(\d{4})\s*$/);
+    if (!mt) return null;
+    const m = parseInt(mt[1]), y = parseInt(mt[2]);
+    return m >= 1 && m <= 12 ? { m, y } : null;
+};
+
+/**
+ * RBT12 proporcionalizada de empresa em início de atividade (Res. CGSN 140/2018, art. 22):
+ *  · no mês de início: receita do mês (RPA) × 12;
+ *  · nos 11 meses seguintes: média aritmética da receita dos meses anteriores
+ *    (desde o início; meses sem receita contam como 0) × 12.
+ * Retorna null sem data de abertura ou com 12+ meses de atividade — aí vale a RBT12
+ * normal (inclusive 0 para empresa inativa, que fica na 1ª faixa, como no PGDAS-D).
+ */
+export const rbt12InicioAtividade = (data) => {
+    const ab = parseMesAno(data && data.dataAbertura);
+    const m = parseInt(data && data.compMonth), y = parseInt(data && data.compYear);
+    if (!ab || !m || !y) return null;
+    const idxComp = y * 12 + (m - 1), idxAb = ab.y * 12 + (ab.m - 1);
+    const meses = idxComp - idxAb;
+    if (meses < 0 || meses > 11) return null;
+    if (meses === 0) return calculateTotalRevenue(data) * 12;
+    const ev = Array.isArray(data.evolucao) ? data.evolucao : [];
+    let soma = 0;
+    for (let k = idxAb; k < idxComp; k++) {
+        const key = pad2((k % 12) + 1) + '/' + Math.floor(k / 12);
+        const e = ev.find(x => x && x.ym === key);
+        soma += e ? parseNumBR(e.receita) : 0;
+    }
+    return (soma / meses) * 12;
 };
 
 export const getDueDate = (compMonth, compYear, taxName, irpjCsllMode) => {
@@ -391,7 +477,9 @@ export function parsePGDASD(T) {
     const g = (re) => { const m = T.match(re); return m; };
     const cnpj = g(/CNPJ\s+Matriz:\s*([\d.]+\/\d{4}-\d{2})/i);
     const nome = g(/Nome\s+empresarial:\s*([\s\S]*?)\s*Data\s+de\s+abertura/i);
-    const comp = g(/Per[ií]odo\s+de\s+Apura[çc][ãa]o:\s*\d{2}\/(\d{2})\/(\d{4})/i);
+    // "Período de Apuração: 01/07/2026 a 31/07/2026" ou "Período de Apuração (PA): 12/2025"
+    const comp = g(/Per[ií]odo\s+de\s+Apura[çc][ãa]o(?:\s*\(PA\))?:\s*(?:\d{2}\/)?(\d{2})\/(\d{4})/i);
+    const abertura = g(/Data\s+de\s+abertura(?:\s+no\s+CNPJ)?:\s*\d{2}\/(\d{2})\/(\d{4})/i);
     const rpa = g(/RPA\)[\s\S]*?Compet[êe]ncia\s*([\d.]+,\d{2})/i);
     const rbt12 = g(/\(RBT12\)[^\d]*?([\d.]+,\d{2})/);
     const rbt12p = g(/\(RBT12p\)[^\d]*?([\d.]+,\d{2})/);
@@ -404,7 +492,17 @@ export function parsePGDASD(T) {
     const fator = g(/Fator\s+r\s*=\s*(N[ãa]o\s+se\s+aplica|[\d,]+)(?:\s*[-–—]\s*(Anexo\s+[IVX]+))?/i);
     // Repartição por tributo (segregação): IRPJ CSLL COFINS PIS/Pasep INSS/CPP ICMS IPI ISS Total
     const repM = g(/IRPJ\s+CSLL\s+COFINS\s+PIS\/Pasep\s+INSS\/CPP\s+ICMS\s+IPI\s+ISS\s+Total\s+([\d.]+,\d{2})\s+([\d.]+,\d{2})\s+([\d.]+,\d{2})\s+([\d.]+,\d{2})\s+([\d.]+,\d{2})\s+([\d.]+,\d{2})\s+([\d.]+,\d{2})\s+([\d.]+,\d{2})\s+([\d.]+,\d{2})/i);
-    const das = g(/Valor\s+Total\s+do\s+D[ée]bito\s+Declarado[^\d]*([\d.]+,\d{2})(?:\D{0,40}([\d.]+,\d{2}))?/i);
+    // DAS declarado: o 1º valor após o rótulo. Se o trecho detalhar Principal/Multa/Juros,
+    // usa o valor rotulado "Total" — nunca o de multa/juros (antes pegava o 2º número
+    // do trecho, que podia ser os juros).
+    const dasSeg = g(/Valor\s+Total\s+do\s+D[ée]bito\s+Declarado([\s\S]{0,140})/i);
+    let dasVal = null;
+    if (dasSeg) {
+        const seg = dasSeg[1];
+        const tot = /Multa|Juros/i.test(seg) && seg.match(/Total[^\d]{0,20}([\d.]+,\d{2})/i);
+        const first = seg.match(/^[^\d]*([\d.]+,\d{2})/);
+        dasVal = tot ? tot[1] : (first ? first[1] : null);
+    }
     const mun = g(/Munic[íi]pio:\s*([A-Za-zÀ-ú][A-Za-zÀ-ú .]*?)\s*UF:\s*([A-Z]{2})/i);
 
     if (cnpj) res.cnpj = cnpj[1];
@@ -430,7 +528,8 @@ export function parsePGDASD(T) {
     } else if (res.anexo) {
         res.sujeitoFatorR = false; // Anexo III por natureza (contabilidade, escola…) — não migra
     }
-    if (das) res.das = das[2] || das[1];
+    if (dasVal) res.das = dasVal;
+    if (abertura) res.dataAbertura = abertura[1] + '/' + abertura[2];
     if (mun) res.municipio = mun[1].trim() + '/' + mun[2];
     if (repM) res.repart = { IRPJ: pgNum(repM[1]), CSLL: pgNum(repM[2]), COFINS: pgNum(repM[3]), PIS: pgNum(repM[4]), CPP: pgNum(repM[5]), ICMS: pgNum(repM[6]), IPI: pgNum(repM[7]), ISS: pgNum(repM[8]), total: pgNum(repM[9]) };
     // Em alguns layouts o "Valor Total do Débito Declarado" fica em página/linha separada
@@ -484,6 +583,24 @@ export const autoFillTaxes = (data, currentTaxes) => {
     const folhaMensal = parseNumBR(data.folhaMensal !== undefined ? data.folhaMensal : data.folha);
     const atividade = data.atividade || 'Serviços';
     const sujeitoFatorR = isSujeitoFatorR(data, folha12m);
+    // ===== IRPJ/CSLL: perfil de apuração =====
+    //  · Mensal (antecipado) e Estimativa (Lucro Real anual): base = receita do MÊS
+    //    (Lei 9.430, art. 2º) e adicional sobre o que passar de R$ 20 mil.
+    //  · Trimestral (LP): meses comuns = provisão sobre a receita do mês; no fechamento
+    //    (mar/jun/set/dez) o DARF usa a receita acumulada do trimestre (periodRevenue)
+    //    e abate as retenções do trimestre inteiro (periodRevenueRetained).
+    //  · Trimestral no Lucro Real: o IRPJ/CSLL sai do lucro real (contábil ajustado),
+    //    não de presunção — só usa o valor informado (irpjRealApurado/csllRealApurado).
+    const irpjMode = data.irpjCsllMode;
+    const mesComp = parseInt(data.compMonth);
+    const isTrimestral = irpjMode === 'Trimestral (Apuração)';
+    const fechamentoTrim = isTrimestral && [3, 6, 9, 12].includes(mesComp);
+    const realTrimestral = data.regime === 'Lucro Real' && isTrimestral;
+    const periodoRevenue = parseNumBR(data.periodRevenue);
+    const usaAcumulado = fechamentoTrim && !realTrimestral && periodoRevenue > 0;
+    const periodoRetido = parseNumBR(data.periodRevenueRetained);
+    const baseRetIRCS = fechamentoTrim && periodoRetido > 0 ? periodoRetido : revComRetencao;
+    const receitaEquip = data.equiparacaoHospitalar ? data.receitaEquiparacao : 0;
     const isComercioInd = atividade === 'Comércio' || atividade === 'Indústria';
     const isLPouReal = data.regime === 'Lucro Presumido' || data.regime === 'Lucro Real';
     const comercioLP = isLPouReal && isComercioInd;
@@ -513,12 +630,12 @@ export const autoFillTaxes = (data, currentTaxes) => {
                     updated.base = totalRevenue > 0 ? formatBRLDisplay(totalRevenue) : "";
                 }
             } else if (basePres.includes(t.tax) && isRegimeNormal) {
-                const baseRevenueToUse = (data.irpjCsllMode === 'Trimestral (Apuração)' || data.irpjCsllMode === 'Estimativa (Anual)') && parseNumBR(data.periodRevenue) > 0
-                    ? parseNumBR(data.periodRevenue)
-                    : totalRevenue;
-                // Estimativa Anual: base acumulada Jan→mês → limite do adicional proporcional (nº de meses)
-                const nMesesAdic = data.irpjCsllMode === 'Estimativa (Anual)' ? (parseInt(data.compMonth) || 1) : 1;
-                updated.base = baseRevenueToUse > 0 ? formatBRLDisplay(getBasePresumidaLP(baseRevenueToUse, t.tax, atividade, data.irpjCsllMode, data.equiparacaoHospitalar ? data.receitaEquiparacao : 0, nMesesAdic)) : "";
+                if (realTrimestral) {
+                    updated.base = "";
+                } else {
+                    const baseRevenueToUse = usaAcumulado ? periodoRevenue : totalRevenue;
+                    updated.base = baseRevenueToUse > 0 ? formatBRLDisplay(getBasePresumidaLP(baseRevenueToUse, t.tax, atividade, irpjMode, receitaEquip)) : "";
+                }
             } else if (baseCPP.includes(t.tax)) {
                 const totalFolhaEProLabore = proLabore + folhaMensal;
                 updated.base = totalFolhaEProLabore > 0 ? formatBRLDisplay(totalFolhaEProLabore) : "";
@@ -526,6 +643,11 @@ export const autoFillTaxes = (data, currentTaxes) => {
                 updated.base = folhaMensal > 0 ? formatBRLDisplay(folhaMensal) : "";
             }
             
+            if (data.regime === 'Lucro Real' && !t.rateManual) {
+                if (t.tax === 'PIS' && updated.rate === '0,65') { updated.rate = '1,65'; updated.obs = OBS_NAO_CUMULATIVO; }
+                if (t.tax === 'COFINS' && updated.rate === '3,00') { updated.rate = '7,60'; updated.obs = OBS_NAO_CUMULATIVO; }
+            }
+
             const b = parseNumBR(updated.base);
             const r = parseNumBR(updated.rate);
             
@@ -535,12 +657,32 @@ export const autoFillTaxes = (data, currentTaxes) => {
                 updated.apurado = "";
             }
 
-            // FAP (Fator Acidentário de Prevenção) multiplica o RAT: RAT Ajustado = RAT × FAP (0,5 a 2,0)
+            // Fechamento do trimestre: apurado = trimestre inteiro, mas a carga do mês
+            // considera só a receita do mês (mesma conta da provisão dos meses comuns).
+            updated.cargaMes = undefined;
+            if (basePres.includes(t.tax) && isRegimeNormal && usaAcumulado) {
+                const baseMes = totalRevenue > 0 ? getBasePresumidaLP(totalRevenue, t.tax, atividade, irpjMode, receitaEquip) : 0;
+                updated.cargaMes = formatBRLDisplay(baseMes * r / 100);
+            }
+            if (basePres.includes(t.tax) && realTrimestral) {
+                const informado = t.tax === 'IRPJ' ? parseNumBR(data.irpjRealApurado)
+                    : t.tax === 'CSLL' ? parseNumBR(data.csllRealApurado) : 0;
+                updated.apurado = informado > 0 ? formatBRLDisplay(informado) : "";
+            }
+
+            // FAP (Fator Acidentário de Prevenção) multiplica o RAT: RAT Ajustado = RAT × FAP.
+            // Faixa legal 0,5–2,0 (Decreto 3.048/99, art. 202-A): fora dela é erro de digitação
+            // (ex.: "1.2345" virando 12345) — limita e sinaliza.
             if (t.tax === 'RAT' || t.tax === 'RAT (Ajustado)') {
-                const fap = parseNumBR(data.fap);
-                if (fap > 0 && fap !== 1 && b > 0 && r > 0) {
-                    updated.apurado = formatBRLDisplay(b * (r * fap) / 100);
-                    updated.obs = 'RAT ' + r.toFixed(2).replace('.', ',') + '% × FAP ' + fap.toFixed(4).replace('.', ',');
+                const fapInf = parseNumBR(data.fap);
+                if (fapInf > 0 && b > 0 && r > 0) {
+                    const fap = Math.min(2, Math.max(0.5, fapInf));
+                    const fora = fap !== fapInf;
+                    if (fap !== 1 || fora) {
+                        updated.apurado = formatBRLDisplay(b * (r * fap) / 100);
+                        updated.obs = 'RAT ' + r.toFixed(2).replace('.', ',') + '% × FAP ' + fap.toFixed(4).replace('.', ',')
+                            + (fora ? ' · FAP informado (' + String(data.fap) + ') fora da faixa 0,5–2,0 — limitado' : '');
+                    }
                 }
             }
 
@@ -559,12 +701,17 @@ export const autoFillTaxes = (data, currentTaxes) => {
                 //  · Trimestral (recolhe no fechamento): meses comuns = PROVISÃO informativa
                 //    (fora do caixa do mês); no fechamento (mar/jun/set/dez) vira guia real.
                 //  · Mensal (antecipado) / Estimativa: recolhe todo mês → guia real.
-                const mesComp = parseInt(data.compMonth);
-                const fechamentoTrim = [3, 6, 9, 12].includes(mesComp);
-                if (data.irpjCsllMode === 'Trimestral (Apuração)') {
+                if (realTrimestral) {
+                    updated.provisao = !fechamentoTrim;
+                    updated.obs = t.tax === 'Adicional IRPJ'
+                        ? "Lucro Real trimestral: incluído no IRPJ apurado informado"
+                        : parseNumBR(updated.apurado) > 0
+                            ? "Lucro Real trimestral — valor apurado sobre o lucro real (informado)"
+                            : "Lucro Real trimestral: informe o IRPJ/CSLL apurado sobre o lucro real (a presunção não se aplica)";
+                } else if (isTrimestral) {
                     updated.provisao = !fechamentoTrim;
                     updated.obs = fechamentoTrim
-                        ? "Apuração do trimestre — recolher no vencimento"
+                        ? (usaAcumulado ? "Apuração do trimestre (receita acumulada) — recolher no vencimento" : "Apuração do trimestre — recolher no vencimento")
                         : "Provisão do mês — recolhe no fechamento do trimestre";
                 } else if (data.irpjCsllMode === 'Estimativa (Anual)') {
                     updated.provisao = false;
@@ -575,16 +722,16 @@ export const autoFillTaxes = (data, currentTaxes) => {
                 }
             }
 
-            if (isRegimeNormal && atividade === 'Serviços' && revComRetencao > 0) {
-                if (!t.retidoManual) {
+            if (isRegimeNormal && atividade === 'Serviços' && !t.retidoManual) {
+                // IRPJ (1,5%) e CSLL (1%) retidos no TRIMESTRE abatem o DARF do fechamento;
+                // PIS/COFINS/ISS retidos compensam a guia do próprio mês.
+                if (t.tax === 'CSLL') updated.retido = baseRetIRCS > 0 ? formatBRLDisplay(baseRetIRCS * 0.01) : "";
+                else if (t.tax === 'IRPJ') updated.retido = baseRetIRCS > 0 ? formatBRLDisplay(baseRetIRCS * 0.015) : "";
+                else if (revComRetencao > 0) {
                     if (t.tax === 'PIS') updated.retido = formatBRLDisplay(revComRetencao * 0.0065);
                     else if (t.tax === 'COFINS') updated.retido = formatBRLDisplay(revComRetencao * 0.03);
-                    else if (t.tax === 'CSLL') updated.retido = formatBRLDisplay(revComRetencao * 0.01);
-                    else if (t.tax === 'IRPJ') updated.retido = formatBRLDisplay(revComRetencao * 0.015);
                     else if (t.tax === 'ISS') updated.retido = formatBRLDisplay(revComRetencao * (parseNumBR(t.rate) / 100));
-                }
-            } else if (isRegimeNormal && atividade === 'Serviços' && revComRetencao === 0) {
-                if (!t.retidoManual) {
+                } else {
                     updated.retido = "";
                 }
             }
@@ -612,8 +759,11 @@ export const autoFillTaxes = (data, currentTaxes) => {
         if (data.regime === 'Simples Nacional') {
             if (t.tax === 'DAS') {
                 const dasOficial = parseNumBR(data.dasOfficial);
-                // RBT12 proporcionalizada (empresa < 12 meses) manda na alíquota, quando informada
-                const rbtAliq = parseNumBR(data.rbt12p) > 0 ? parseNumBR(data.rbt12p) : rbt12;
+                // RBT12 proporcionalizada (empresa < 12 meses) manda na alíquota E no Fator R:
+                // a informada (PGDAS-D) ou, sem ela, a calculada pelo art. 22 da Res. CGSN 140.
+                const rbt12pInf = parseNumBR(data.rbt12p);
+                const rbtInicio = rbt12 <= 0 && !(rbt12pInf > 0) ? rbt12InicioAtividade(data) : null;
+                const rbtAliq = rbt12pInf > 0 ? rbt12pInf : (rbtInicio !== null ? rbtInicio : rbt12);
                 if (dasOficial > 0) {
                     // Importado do PGDAS-D: o valor DECLARADO é a fonte da verdade — não recalcula
                     updated.base = formatBRLDisplay(totalRevenue);
@@ -621,13 +771,13 @@ export const autoFillTaxes = (data, currentTaxes) => {
                     updated.apurado = formatBRLDisplay(dasOficial);
                     // Mostra o anexo EFETIVO (III quando o Fator R ≥ 28%), não o
                     // base V — o valor em si é o declarado, fonte da verdade.
-                    const anexoEfDAS = data.anexo ? getAnexoEfetivo(data.anexo, calcFatorR(folha12m, rbt12), sujeitoFatorR) : '';
+                    const anexoEfDAS = data.anexo ? getAnexoEfetivo(data.anexo, calcFatorR(folha12m, rbtAliq), sujeitoFatorR) : '';
                     updated.obs = 'Importado do PGDAS-D — valor declarado' + (anexoEfDAS ? ' · ' + anexoEfDAS : '');
                 } else if (totalRevenue > 0 && data.anexo) {
                     // rbtAliq pode ser 0 (empresa nova sem RBT12): cai na 1ª faixa (ver
                     // calcAliquotaEfetivaSN). Sem este caminho o DAS ficava em branco —
                     // "não gera imposto" no relatório de empresas recém-abertas.
-                    const fR = calcFatorR(folha12m, rbt12);
+                    const fR = calcFatorR(folha12m, rbtAliq);
                     const anexoEf = getAnexoEfetivo(data.anexo, fR, sujeitoFatorR);
                     const res = calcAliquotaEfetivaSN(rbtAliq, anexoEf);
 
@@ -637,8 +787,9 @@ export const autoFillTaxes = (data, currentTaxes) => {
                     const apuradoDAS = totalRevenue * res.rate / 100;
                     updated.apurado = formatBRLDisplay(apuradoDAS);
                     let obsDAS = `${anexoEf} (Faixa ${res.faixa}) — Alíq. Nom. ${res.nominal.toFixed(2).replace('.', ',')}%`;
-                    if (rbtAliq <= 0) obsDAS += ' · sem RBT12 (início de atividade) — 1ª faixa. Importe o PGDAS-D para o valor exato.';
-                    else if (parseNumBR(data.rbt12p) > 0) obsDAS += ' · sobre RBT12p (proporcionalizado)';
+                    if (rbtAliq <= 0) obsDAS += ' · sem RBT12 — 1ª faixa. Importe o PGDAS-D para o valor exato.';
+                    else if (rbt12pInf > 0) obsDAS += ' · sobre RBT12p (proporcionalizado)';
+                    else if (rbtInicio !== null) obsDAS += ' · início de atividade: RBT12p ' + formatBRLDisplay(rbtInicio) + ' (Res. CGSN 140, art. 22)';
                     if (rbt12 > LIMITE_SN) obsDAS += ' · ATENÇÃO: RBT12 acima do limite do Simples (R$ 4,8 mi)';
                     else if (rbt12 > SUBLIMITE_SN) obsDAS += ' · RBT12 acima do sublimite: ICMS/ISS fora do DAS';
                     // ISS retido na fonte (linha 'ISS (retido)') abate o DAS — a parcela de ISS
