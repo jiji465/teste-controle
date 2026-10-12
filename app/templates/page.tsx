@@ -17,8 +17,6 @@ import {
   Layers,
   RotateCcw,
   Copy,
-  Database,
-  Eraser,
   Search,
   Filter,
 } from "lucide-react"
@@ -32,7 +30,6 @@ import {
 } from "@/lib/obligation-templates"
 import { getCustomTemplatesAsync, deleteCustomTemplateAsync } from "@/features/templates/services"
 import { TAX_REGIME_LABELS, TAX_REGIME_COLORS, type TaxRegime } from "@/lib/types"
-import { seedDemoData, clearAllData } from "@/lib/seed-demo"
 import { toast } from "sonner"
 import { TemplatePackageForm } from "@/features/templates/components/template-package-form"
 import { BulkAddItemToTemplatesDialog } from "@/features/templates/components/bulk-add-item-to-templates-dialog"
@@ -189,38 +186,6 @@ export default function TemplatesPage() {
     } finally {
       setBulkLoading(false)
     }
-  }
-
-  // ─── Ferramentas de teste ───────────────────────────────────────────────────
-  const handleSeedDemo = () => {
-    setConfirmState({
-      title: "Carregar dados de exemplo",
-      description:
-        "Adiciona 30 empresas + impostos + ~150 obrigações + ~18 parcelamentos para testar com volume. Seus dados existentes NÃO serão apagados.",
-      confirmLabel: "Carregar",
-      onConfirm: () => {
-        const res = seedDemoData()
-        toast.success(
-          `Carregados: ${res.clients} empresas, ${res.taxes} impostos, ${res.obligations} obrigações, ${res.installments} parcelamentos. Recarregando…`,
-        )
-        setTimeout(() => window.location.reload(), 1500)
-      },
-    })
-  }
-
-  const handleClearAll = () => {
-    setConfirmState({
-      title: "Apagar TODOS os dados",
-      description:
-        "Apaga todas as empresas, impostos, obrigações e parcelamentos do sistema. Os templates NÃO são apagados. Esta ação não pode ser desfeita.",
-      confirmLabel: "Apagar tudo",
-      destructive: true,
-      onConfirm: () => {
-        clearAllData()
-        toast.success("Todos os dados apagados. Recarregando…")
-        setTimeout(() => window.location.reload(), 1200)
-      },
-    })
   }
 
   const handleRestoreDefaults = () => {
@@ -463,7 +428,7 @@ export default function TemplatesPage() {
                     <Button
                       variant="outline"
                       title="Excluir template"
-                      className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                      className="text-destructive hover:text-destructive hover:bg-destructive/10"
                       onClick={() => handleDelete(pkg.id)}
                     >
                       <Trash2 className="size-4" />
@@ -474,32 +439,6 @@ export default function TemplatesPage() {
             })}
           </div>
         )}
-
-        {/* Ferramentas de teste */}
-        <div className="mt-10 border-t pt-6">
-          <div className="space-y-1 mb-4">
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-              Ferramentas de teste
-            </h2>
-            <p className="text-xs text-muted-foreground">
-              Use para simular o sistema com volume de dados ou zerar tudo. Só afeta o armazenamento local.
-            </p>
-          </div>
-          <div className="flex gap-2 flex-wrap">
-            <Button variant="outline" onClick={handleSeedDemo} className="gap-2">
-              <Database className="size-4" />
-              Carregar 30 empresas de exemplo
-            </Button>
-            <Button
-              variant="outline"
-              onClick={handleClearAll}
-              className="gap-2 text-red-600 hover:text-red-700 hover:bg-red-50"
-            >
-              <Eraser className="size-4" />
-              Apagar todos os dados
-            </Button>
-          </div>
-        </div>
       </div>
 
       <TemplatePackageForm

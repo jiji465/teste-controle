@@ -23,7 +23,7 @@ import {
  */
 
 /** Passo em meses de cada tipo de recorrência. */
-function stepMonths(recurrence: RecurrenceType, interval?: number): number {
+export function stepMonths(recurrence: RecurrenceType, interval?: number): number {
   switch (recurrence) {
     case "monthly":
       return Math.max(1, interval ?? 1)
@@ -45,62 +45,65 @@ function stepMonths(recurrence: RecurrenceType, interval?: number): number {
 /** Guarda de segurança: nunca gera mais que isso, mesmo com datas absurdas. */
 const MAX_OCCURRENCES = 240
 
+/** "YYYY-MM" + n meses → "YYYY-MM". */
+export function addMonthsToPeriod(period: string, months: number): string {
+  const [y, m] = period.split("-").map(Number)
+  const idx = y * 12 + (m - 1) + months
+  return `${Math.floor(idx / 12)}-${String((idx % 12) + 1).padStart(2, "0")}`
+}
+
+/**
+ * Competências de uma série recorrente APÓS a base: base+passo, base+2·passo…
+ * até `untilPeriod` (inclusive). Ex: trimestral a partir de 2026-01 até
+ * 2026-12 → 2026-04, 2026-07, 2026-10.
+ */
+export function recurringPeriods(
+  basePeriod: string,
+  recurrence: RecurrenceType,
+  untilPeriod: string,
+  interval?: number,
+): string[] {
+  const step = stepMonths(recurrence, interval)
+  const out: string[] = []
+  for (let k = 1; k <= MAX_OCCURRENCES; k++) {
+    const period = addMonthsToPeriod(basePeriod, step * k)
+    if (period > untilPeriod) break
+    out.push(period)
+  }
+  return out
+}
+
 /** "YYYY-MM-DD" a partir de um Date local (sem shift de timezone). */
 function toYmd(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
 }
 
-/**
- * Gera as ocorrências de uma OBRIGAÇÃO recorrente da competência base até o
- * mês da data final. Não inclui a própria obrigação base (essa já é salva à
- * parte). Retorna [] se não houver recorrência ou data final.
- */
-export function buildRecurringObligations(master: Obligation): Obligation[] {
+type RecurringMaster = {
+  recurrence?: RecurrenceType
+  recurrenceEndDate?: string
+  recurrenceInterval?: number
+  competencyMonth?: string
+}
+
+/** Ocorrências de uma série (obrigação ou guia) da competência base até o mês
+ *  da data final. Não inclui o item base (salvo à parte). */
+function buildRecurring<T extends RecurringMaster>(master: T, generate: (m: T, period: string) => T): T[] {
   if (!master.recurrence || !master.recurrenceEndDate) return []
   const basePeriod = master.competencyMonth || getCurrentPeriod()
   const endPeriod = master.recurrenceEndDate.slice(0, 7) // "YYYY-MM"
-  const step = stepMonths(master.recurrence, master.recurrenceInterval)
-
-  const out: Obligation[] = []
-  let [year, month] = basePeriod.split("-").map(Number)
-  let guard = 0
-  while (guard++ < MAX_OCCURRENCES) {
-    month += step
-    while (month > 12) {
-      month -= 12
-      year += 1
-    }
-    const period = `${year}-${String(month).padStart(2, "0")}`
-    if (period > endPeriod) break
-    out.push(generateObligationForPeriod(master, period))
-  }
-  return out
+  return recurringPeriods(basePeriod, master.recurrence, endPeriod, master.recurrenceInterval).map((p) =>
+    generate(master, p),
+  )
 }
 
-/**
- * Gera as ocorrências de uma GUIA (Tax) recorrente da competência base até o
- * mês da data final. Não inclui a guia base.
- */
-export function buildRecurringTaxes(master: Tax): Tax[] {
-  if (!master.recurrence || !master.recurrenceEndDate) return []
-  const basePeriod = master.competencyMonth || getCurrentPeriod()
-  const endPeriod = master.recurrenceEndDate.slice(0, 7)
-  const step = stepMonths(master.recurrence, master.recurrenceInterval)
+/** Ocorrências de uma OBRIGAÇÃO recorrente (sem a base). */
+export function buildRecurringObligations(master: Obligation): Obligation[] {
+  return buildRecurring(master, generateObligationForPeriod)
+}
 
-  const out: Tax[] = []
-  let [year, month] = basePeriod.split("-").map(Number)
-  let guard = 0
-  while (guard++ < MAX_OCCURRENCES) {
-    month += step
-    while (month > 12) {
-      month -= 12
-      year += 1
-    }
-    const period = `${year}-${String(month).padStart(2, "0")}`
-    if (period > endPeriod) break
-    out.push(generateTaxForPeriod(master, period))
-  }
-  return out
+/** Ocorrências de uma GUIA (Tax) recorrente (sem a base). */
+export function buildRecurringTaxes(master: Tax): Tax[] {
+  return buildRecurring(master, generateTaxForPeriod)
 }
 
 /**

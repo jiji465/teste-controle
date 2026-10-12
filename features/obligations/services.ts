@@ -1,5 +1,5 @@
 import type { Obligation } from "@/lib/types"
-import { hasSupabaseConfig, getSupabaseClient, local } from "@/lib/supabase/core"
+import { hasSupabaseConfig, getSupabaseClient, fetchAll, local, toDbError } from "@/lib/supabase/core"
 
 function mapObligationToDb(obligation: Obligation) {
   return {
@@ -74,22 +74,20 @@ function mapDbToObligation(row: any): Obligation {
 
 export async function getObligations(): Promise<Obligation[]> {
   if (!hasSupabaseConfig()) return local.getObligations()
-  const supabase = getSupabaseClient()
-  const { data, error } = await supabase.from("obligations").select("*").order("due_day")
-  if (error) { console.error("[db] Error fetching obligations:", error); return local.getObligations() }
-  return data.map(mapDbToObligation)
+  const rows = await fetchAll("obligations", "due_day")
+  return rows.map(mapDbToObligation)
 }
 
 export async function saveObligation(obligation: Obligation): Promise<void> {
   if (!hasSupabaseConfig()) { local.saveObligation(obligation); return }
   const supabase = getSupabaseClient()
   const { error } = await supabase.from("obligations").upsert(mapObligationToDb(obligation))
-  if (error) { console.error("[db] Error saving obligation:", error); throw error }
+  if (error) { console.error("[db] Error saving obligation:", error); throw toDbError(error) }
 }
 
 export async function deleteObligation(id: string): Promise<void> {
   if (!hasSupabaseConfig()) { local.deleteObligation(id); return }
   const supabase = getSupabaseClient()
   const { error } = await supabase.from("obligations").delete().eq("id", id)
-  if (error) { console.error("[db] Error deleting obligation:", error); throw error }
+  if (error) { console.error("[db] Error deleting obligation:", error); throw toDbError(error) }
 }

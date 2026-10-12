@@ -1,5 +1,6 @@
 import type { Client } from "@/lib/types"
-import { hasSupabaseConfig, getSupabaseClient, local } from "@/lib/supabase/core"
+import { normalizeCnpj } from "@/lib/cnpj-validation"
+import { hasSupabaseConfig, getSupabaseClient, fetchAll, local, toDbError } from "@/lib/supabase/core"
 
 function mapClientToDb(client: Client) {
   return {
@@ -47,13 +48,10 @@ function mapDbToClient(row: any): Client {
 
 export async function getClients(): Promise<Client[]> {
   if (!hasSupabaseConfig()) return local.getClients()
-  const supabase = getSupabaseClient()
-  const { data, error } = await supabase.from("clients").select("*").order("name")
-  if (error) { console.error("[db] Error fetching clients:", error); return local.getClients() }
-  return data.map(mapDbToClient)
+  const rows = await fetchAll("clients", "name")
+  return rows.map(mapDbToClient)
 }
 
-const normalizeCnpj = (cnpj: string | undefined | null) => (cnpj ?? "").replace(/\D/g, "")
 
 export class DuplicateClientError extends Error {
   constructor(public readonly existingName: string) {
@@ -94,14 +92,14 @@ export async function saveClient(client: Client): Promise<void> {
   }
 
   const { error } = await supabase.from("clients").upsert(mapClientToDb(client))
-  if (error) { console.error("[db] Error saving client:", error); throw error }
+  if (error) { console.error("[db] Error saving client:", error); throw toDbError(error) }
 }
 
 export async function deleteClient(id: string): Promise<void> {
   if (!hasSupabaseConfig()) { local.deleteClient(id); return }
   const supabase = getSupabaseClient()
   const { error } = await supabase.from("clients").delete().eq("id", id)
-  if (error) { console.error("[db] Error deleting client:", error); throw error }
+  if (error) { console.error("[db] Error deleting client:", error); throw toDbError(error) }
 }
 
 export type ArchiveClientResult = {
@@ -182,7 +180,7 @@ export async function archiveClient(id: string): Promise<ArchiveClientResult> {
     const { error } = await supabase.from("obligations").delete().in("id", obrigToDelete)
     if (error) {
       console.error("[archive] Error deleting obligations:", error)
-      throw error
+      throw toDbError(error)
     }
     result.obrigacoesDeleted = obrigToDelete.length
   }
@@ -201,7 +199,7 @@ export async function archiveClient(id: string): Promise<ArchiveClientResult> {
     const { error } = await supabase.from("taxes").delete().in("id", taxToDelete)
     if (error) {
       console.error("[archive] Error deleting taxes:", error)
-      throw error
+      throw toDbError(error)
     }
     result.guiasDeleted = taxToDelete.length
   }
@@ -214,9 +212,12 @@ export async function archiveClient(id: string): Promise<ArchiveClientResult> {
   const instToDelete: string[] = []
   for (const r of (instRows as Array<{
     id: string
-    paid_installments: Array<{ paidAt?: string; sentAt?: string }> | null
+    paid_installments: Array<{ paid_at?: string; sent_at?: string; paidAt?: string; sentAt?: string }> | null
   }> | null) ?? []) {
-    const hasPayment = (r.paid_installments ?? []).some((p) => p.paidAt || p.sentAt)
+    // O banco grava snake_case (ver installments/services.ts); camelCase cobre linhas antigas.
+    const hasPayment = (r.paid_installments ?? []).some(
+      (p) => p.paid_at || p.sent_at || p.paidAt || p.sentAt,
+    )
     if (hasPayment) result.preservedCount++
     else instToDelete.push(r.id)
   }
@@ -224,7 +225,7 @@ export async function archiveClient(id: string): Promise<ArchiveClientResult> {
     const { error } = await supabase.from("installments").delete().in("id", instToDelete)
     if (error) {
       console.error("[archive] Error deleting installments:", error)
-      throw error
+      throw toDbError(error)
     }
     result.parcelasDeleted = instToDelete.length
   }
@@ -236,7 +237,7 @@ export async function archiveClient(id: string): Promise<ArchiveClientResult> {
     .eq("id", id)
   if (clientErr) {
     console.error("[archive] Error updating client status:", clientErr)
-    throw clientErr
+    throw toDbError(clientErr)
   }
 
   return result
@@ -256,6 +257,6 @@ export async function reactivateClient(id: string): Promise<void> {
   const { error } = await supabase.from("clients").update({ status: "active" }).eq("id", id)
   if (error) {
     console.error("[db] Error reactivating client:", error)
-    throw error
+    throw toDbError(error)
   }
 }

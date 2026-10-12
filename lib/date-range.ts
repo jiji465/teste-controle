@@ -2,7 +2,7 @@
  * Helpers de date range pra filtros mais flexíveis (substitui o select
  * fechado "este mês / mês passado / trimestre / ano" por algo livre).
  */
-import { buildSafeDate, toLocalDateString } from "./date-utils"
+import { buildSafeDate, parseLocalDate, toLocalDateString } from "./date-utils"
 
 export type DateRange = {
   /** ISO "YYYY-MM-DD" — null = sem limite inferior */
@@ -96,7 +96,7 @@ export function rangeFromPreset(preset: DateRangePreset, ref: Date = new Date())
 export function dateInRange(date: Date | string | null | undefined, range: DateRange): boolean {
   if (!date) return true
   if (!range.from && !range.to) return true
-  const d = typeof date === "string" ? new Date(date) : date
+  const d = parseLocalDate(date)
   if (Number.isNaN(d.getTime())) return true
   const iso = toLocalDateString(d)
   if (range.from && iso < range.from) return false
@@ -108,8 +108,8 @@ export function dateInRange(date: Date | string | null | undefined, range: DateR
  *  (ex: "comparado aos últimos 30 dias do período imediatamente anterior"). */
 export function previousRange(range: DateRange): DateRange | null {
   if (!range.from || !range.to) return null
-  const from = new Date(range.from)
-  const to = new Date(range.to)
+  const from = parseLocalDate(range.from)
+  const to = parseLocalDate(range.to)
   const days = Math.round((to.getTime() - from.getTime()) / (1000 * 60 * 60 * 24)) + 1
   const prevTo = new Date(from)
   prevTo.setDate(from.getDate() - 1)
@@ -123,9 +123,9 @@ export function previousRange(range: DateRange): DateRange | null {
 export function yoyRange(range: DateRange): DateRange | null {
   if (!range.from || !range.to) return null
   const shift = (iso: string) => {
-    const d = new Date(iso)
-    d.setFullYear(d.getFullYear() - 1)
-    return toLocalDateString(d)
+    const d = parseLocalDate(iso)
+    // 29/02 → 28/02 no ano anterior (não pula pra 01/03)
+    return toLocalDateString(buildSafeDate(d.getFullYear() - 1, d.getMonth(), d.getDate()))
   }
   return { from: shift(range.from), to: shift(range.to) }
 }
@@ -134,10 +134,10 @@ export function yoyRange(range: DateRange): DateRange | null {
 export function formatRange(range: DateRange): string {
   if (!range.from && !range.to) return "Todos os períodos"
   if (range.from === range.to && range.from) {
-    return new Date(range.from).toLocaleDateString("pt-BR")
+    return parseLocalDate(range.from).toLocaleDateString("pt-BR")
   }
-  const f = range.from ? new Date(range.from).toLocaleDateString("pt-BR") : "início"
-  const t = range.to ? new Date(range.to).toLocaleDateString("pt-BR") : "hoje"
+  const f = range.from ? parseLocalDate(range.from).toLocaleDateString("pt-BR") : "início"
+  const t = range.to ? parseLocalDate(range.to).toLocaleDateString("pt-BR") : "hoje"
   return `${f} → ${t}`
 }
 

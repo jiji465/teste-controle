@@ -1,6 +1,3 @@
-import * as XLSX from "xlsx"
-import { jsPDF } from "jspdf"
-import autoTable from "jspdf-autotable"
 
 export type ExportColumn<T> = {
   header: string
@@ -10,81 +7,73 @@ export type ExportColumn<T> = {
   accessor: (row: T) => string | number | Date | null | undefined
 }
 
+/** Dispara o download de um Blob no navegador. */
+function downloadBlob(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement("a")
+  link.href = url
+  link.download = filename
+  link.click()
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
+
 /**
- * Exporta uma lista de objetos para .xlsx usando SheetJS.
- * Faz download direto no browser.
+ * Exporta uma lista de objetos para .xlsx (ExcelJS — a mesma lib dos
+ * relatórios; a antiga `xlsx` do npm tinha vulnerabilidades sem correção).
+ * ExcelJS é carregado sob demanda: não pesa no carregamento das páginas.
  */
-export function exportToXlsx<T>(opts: {
+export async function exportToXlsx<T>(opts: {
   filename: string
   sheetName?: string
   columns: ExportColumn<T>[]
   rows: T[]
-}): void {
+}): Promise<void> {
   const { filename, sheetName = "Dados", columns, rows } = opts
-  const headerRow = columns.map((c) => c.header)
-  const dataRows = rows.map((row) =>
-    columns.map((col) => {
-      const v = col.accessor(row)
-      if (v === null || v === undefined) return ""
-      if (v instanceof Date) return v
-      return v
-    }),
-  )
-  const ws = XLSX.utils.aoa_to_sheet([headerRow, ...dataRows])
-  // Larguras de coluna (Excel)
-  ws["!cols"] = columns.map((c) => ({ wch: c.width ?? Math.max(c.header.length + 2, 12) }))
-  const wb = XLSX.utils.book_new()
-  XLSX.utils.book_append_sheet(wb, ws, sheetName)
-  XLSX.writeFile(wb, ensureExt(filename, "xlsx"))
-}
-
-/**
- * Exporta MÚLTIPLAS abas para um único arquivo .xlsx.
- * Útil pra relatórios consolidados (Resumo + Por Cliente + Por Imposto…).
- */
-export function exportMultiSheetXlsx(opts: {
-  filename: string
-  sheets: Array<{
-    name: string
-    columns: ExportColumn<any>[]
-    rows: any[]
-  }>
-}): void {
-  const { filename, sheets } = opts
-  const wb = XLSX.utils.book_new()
-  for (const sheet of sheets) {
-    const headerRow = sheet.columns.map((c) => c.header)
-    const dataRows = sheet.rows.map((row) =>
-      sheet.columns.map((col) => {
+  const ExcelJS = (await import("exceljs")).default
+  const wb = new ExcelJS.Workbook()
+  // Limita nome a 31 chars (limite do Excel) e remove caracteres proibidos
+  const ws = wb.addWorksheet(sheetName.replace(/[\\/?*[\]:]/g, " ").slice(0, 31) || "Dados")
+  ws.columns = columns.map((c) => ({
+    header: c.header,
+    width: c.width ?? Math.max(c.header.length + 2, 12),
+  }))
+  for (const row of rows) {
+    ws.addRow(
+      columns.map((col) => {
         const v = col.accessor(row)
-        if (v === null || v === undefined) return ""
-        if (v instanceof Date) return v
-        return v
+        return v === null || v === undefined ? "" : v
       }),
     )
-    const ws = XLSX.utils.aoa_to_sheet([headerRow, ...dataRows])
-    ws["!cols"] = sheet.columns.map((c) => ({
-      wch: c.width ?? Math.max(c.header.length + 2, 12),
-    }))
-    // Limita nome a 31 chars (limite do Excel)
-    const safeName = sheet.name.length > 31 ? sheet.name.slice(0, 31) : sheet.name
-    XLSX.utils.book_append_sheet(wb, ws, safeName)
   }
-  XLSX.writeFile(wb, ensureExt(filename, "xlsx"))
+  const header = ws.getRow(1)
+  header.font = { bold: true }
+  ws.views = [{ state: "frozen", ySplit: 1 }]
+  columns.forEach((col, i) => {
+    // Datas no formato brasileiro
+    if (rows.some((r) => col.accessor(r) instanceof Date)) ws.getColumn(i + 1).numFmt = "dd/mm/yyyy"
+  })
+  const buffer = await wb.xlsx.writeBuffer()
+  downloadBlob(
+    new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),
+    ensureExt(filename, "xlsx"),
+  )
 }
 
 /**
  * Exporta uma lista para PDF tabelar usando jsPDF + autoTable.
  * Inclui título, subtitle (filtros) e contagem.
  */
-export function exportToPdf<T>(opts: {
+export async function exportToPdf<T>(opts: {
   filename: string
   title: string
   subtitle?: string
   columns: ExportColumn<T>[]
   rows: T[]
-}): void {
+}): Promise<void> {
   const { filename, title, subtitle, columns, rows } = opts
+  // jsPDF carregado sob demanda (só quem exporta paga o custo)
+  const { jsPDF } = await import("jspdf")
+  const autoTable = (await import("jspdf-autotable")).default
   const doc = new jsPDF({ orientation: "landscape", unit: "pt", format: "a4" })
   const pageWidth = doc.internal.pageSize.getWidth()
 
@@ -120,7 +109,7 @@ export function exportToPdf<T>(opts: {
     headStyles: { fillColor: [37, 99, 235], textColor: 255, fontStyle: "bold" },
     alternateRowStyles: { fillColor: [248, 250, 252] },
     margin: { left: 40, right: 40 },
-    didDrawPage: (data) => {
+    didDrawPage: () => {
       // Footer com paginação
       const str = `Página ${doc.getNumberOfPages()}`
       doc.setFontSize(8)

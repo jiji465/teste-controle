@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server"
 import { NextResponse, type NextRequest } from "next/server"
+import { safeRedirect } from "@/lib/safe-redirect"
 
 /**
  * Callback após o usuário clicar no link de confirmação enviado por e-mail.
@@ -9,7 +10,7 @@ import { NextResponse, type NextRequest } from "next/server"
 export async function GET(request: NextRequest) {
   const url = new URL(request.url)
   const code = url.searchParams.get("code")
-  const redirectTo = url.searchParams.get("redirect") || "/"
+  const redirectTo = safeRedirect(url.searchParams.get("redirect"))
 
   if (code) {
     try {

@@ -15,8 +15,7 @@ import type { ObligationWithDetails, Tax, Installment, Service } from "@/lib/typ
 import {
   adjustForWeekend,
   buildSafeDate,
-  calculateDueDateFromCompetency,
-} from "@/lib/date-utils"
+  calculateDueDateFromCompetency, parseLocalDate } from "@/lib/date-utils"
 
 type Props = {
   obligations: ObligationWithDetails[]
@@ -85,7 +84,7 @@ export function UpcomingForecast({ obligations, taxes, installments, services = 
     let svcs = 0
 
     for (const o of obligations) {
-      const d = new Date(o.calculatedDueDate)
+      const d = parseLocalDate(o.calculatedDueDate)
       if (matches(d)) obs++
     }
     for (const t of taxes) {
@@ -93,7 +92,7 @@ export function UpcomingForecast({ obligations, taxes, installments, services = 
       if (d && matches(d)) txs++
     }
     for (const i of installments) {
-      const firstDue = new Date(i.firstDueDate)
+      const firstDue = parseLocalDate(i.firstDueDate)
       const monthsToAdd = i.currentInstallment - 1
       const d = adjustForWeekend(
         buildSafeDate(firstDue.getFullYear(), firstDue.getMonth() + monthsToAdd, i.dueDay),
@@ -102,7 +101,7 @@ export function UpcomingForecast({ obligations, taxes, installments, services = 
       if (matches(d)) parcs++
     }
     for (const sv of services) {
-      const d = new Date(sv.dueDate)
+      const d = parseLocalDate(sv.dueDate)
       if (!Number.isNaN(d.getTime()) && matches(d)) svcs++
     }
 

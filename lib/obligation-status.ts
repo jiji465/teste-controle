@@ -9,7 +9,7 @@
  * Centraliza isso aqui.
  */
 
-import { isOverdue } from "./date-utils"
+import { isOverdue, parseLocalDate } from "./date-utils"
 
 type Statusable = {
   status: string
@@ -26,9 +26,10 @@ type Statusable = {
  * Ex: status="pending" e dueDate=hoje → "pending" (vence hoje, mas não passou)
  */
 export function effectiveStatus<T extends Statusable>(item: T): T["status"] {
-  if (item.status !== "pending") return item.status
+  // "Em andamento" também atrasa: começar a tarefa não suspende o prazo.
+  if (item.status !== "pending" && item.status !== "in_progress") return item.status
   if (!item.calculatedDueDate) return item.status
-  return isOverdue(item.calculatedDueDate) ? "overdue" : "pending"
+  return isOverdue(item.calculatedDueDate) ? "overdue" : item.status
 }
 
 /**
@@ -41,7 +42,7 @@ export function isCriticalNow<T extends Statusable>(item: T): boolean {
   if (item.status === "overdue") return true
   if (!item.calculatedDueDate) return false
   // Compara dia inteiro: vence hoje OU já passou
-  const due = new Date(item.calculatedDueDate)
+  const due = parseLocalDate(item.calculatedDueDate)
   due.setHours(0, 0, 0, 0)
   const today = new Date()
   today.setHours(0, 0, 0, 0)

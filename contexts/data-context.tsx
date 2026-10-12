@@ -1,10 +1,15 @@
 "use client"
 
-import React, { createContext, useContext, useState, useEffect, useMemo, ReactNode } from "react"
+import React, { createContext, useCallback, useContext, useState, useEffect, useMemo, useRef, ReactNode } from "react"
+import { toast } from "sonner"
 import type { Client, Tax, Obligation, Installment, Service, ObligationWithDetails } from "@/lib/types"
 import { getClients, getTaxes, getObligations, getInstallments } from "@/lib/supabase/database"
 import { getServices } from "@/features/services/services"
+import { getLockedPeriods, lockPeriod, unlockPeriod, type LockedPeriod } from "@/features/periods/services"
 import { getObligationsWithDetails } from "@/lib/dashboard-utils"
+import { setExtraHolidays } from "@/lib/date-utils"
+import { getOfficeHolidays } from "@/features/settings/services"
+import { useAuth } from "@/contexts/auth-context"
 // seedDefaultTemplates foi movido pra rodar SÓ na página /templates pra
 // evitar duas chamadas concorrentes (era chamado aqui E lá, gerando race
 // conditions com o sync do Supabase).
@@ -19,83 +24,130 @@ interface DataContextType {
   obligationsWithDetails: ObligationWithDetails[]
   installments: Installment[]
   services: Service[]
+  /** Competências fechadas ("YYYY-MM") */
   lockedPeriods: string[]
+  /** Detalhes do fechamento (quem/quando) por competência */
+  lockedPeriodInfo: LockedPeriod[]
   isLoading: boolean
   isRefreshing: boolean
   lastRefreshAt: number | null
+  /** Mensagem da última falha de carga (null = ok) */
+  loadError: string | null
   refreshData: () => Promise<void>
   togglePeriodLock: (period: string) => Promise<void>
+  isPeriodLocked: (period: string | undefined | null) => boolean
 }
 
 const DataContext = createContext<DataContextType | undefined>(undefined)
 
 export function DataProvider({ children }: { children: ReactNode }) {
+  const { user } = useAuth()
   const [clients, setClients] = useState<Client[]>([])
   const [taxes, setTaxes] = useState<Tax[]>([])
   const [obligations, setObligations] = useState<Obligation[]>([])
   const [installments, setInstallments] = useState<Installment[]>([])
   const [services, setServices] = useState<Service[]>([])
-  const [lockedPeriods, setLockedPeriods] = useState<string[]>([])
+  const [lockedPeriodInfo, setLockedPeriodInfo] = useState<LockedPeriod[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [lastRefreshAt, setLastRefreshAt] = useState<number | null>(null)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [isMounted, setIsMounted] = useState(false)
+  // Cada refresh ganha um número; só a resposta do MAIS RECENTE é aplicada
+  // (evita uma resposta antiga sobrescrever uma nova quando dois refreshes
+  // se sobrepõem — ex.: salvar + voltar à aba).
+  const requestSeq = useRef(0)
+  const loadedOnce = useRef(false)
+  const retryRef = useRef<() => Promise<void>>(async () => {})
 
-  const refreshData = async () => {
-    // Primeira carga marca isLoading; refreshes seguintes só marcam isRefreshing
+  const refreshData = useCallback(async () => {
+    const seq = ++requestSeq.current
     setIsRefreshing(true)
-    if (lastRefreshAt === null) setIsLoading(true)
+    if (!loadedOnce.current) setIsLoading(true)
     try {
-      const { getLockedPeriods } = await import("@/lib/supabase/database")
-      const [cls, txs, obs, insts, svcs, lps] = await Promise.all([
+      const [cls, txs, obs, insts, svcs, lps, holidays] = await Promise.all([
         getClients(),
         getTaxes(),
         getObligations(),
         getInstallments(),
-        // Services: nova entidade. Se a tabela ainda não foi criada no
-        // Supabase (migration 012 não rodada), getServices retorna [] sem
-        // quebrar o app.
-        getServices().catch((e) => {
-          console.warn("[data] getServices falhou (rode migration 012?):", e)
+        getServices(),
+        getLockedPeriods(),
+        // Feriados locais: falha aqui não derruba a carga (só ficam os nacionais)
+        getOfficeHolidays().catch((e) => {
+          console.warn("[data] Feriados locais indisponíveis:", e)
           return []
         }),
-        getLockedPeriods(),
-        // Templates: força ler do Supabase e atualizar localStorage
+        // Templates: força ler do Supabase e atualizar o cache local
         getCustomTemplatesAsync().catch((e) => {
           console.error("[data] Erro ao buscar templates:", e)
           return []
         }),
       ])
+      if (seq !== requestSeq.current) return
+      // Antes de publicar os dados: todo cálculo de vencimento já usa os feriados locais
+      setExtraHolidays(holidays)
       setClients(cls)
       setTaxes(txs)
       setObligations(obs)
       setInstallments(insts)
       setServices(svcs)
-      setLockedPeriods(lps)
+      setLockedPeriodInfo(lps)
       setLastRefreshAt(Date.now())
+      setLoadError(null)
+      loadedOnce.current = true
     } catch (error) {
+      if (seq !== requestSeq.current) return
+      const msg = error instanceof Error ? error.message : String(error)
       console.error("Error fetching data:", error)
+      setLoadError(msg)
+      toast.error("Não foi possível carregar os dados", {
+        id: "data-load-error",
+        description: `${msg}. Os dados exibidos podem estar desatualizados.`,
+        action: { label: "Tentar de novo", onClick: () => void retryRef.current() },
+        duration: 15_000,
+      })
     } finally {
-      setIsLoading(false)
-      setIsRefreshing(false)
+      if (seq === requestSeq.current) {
+        setIsLoading(false)
+        setIsRefreshing(false)
+      }
     }
-  }
+  }, [])
 
-  const togglePeriodLock = async (period: string) => {
-    const { getLockedPeriods, lockPeriod, unlockPeriod } = await import("@/lib/supabase/database")
-    const periods = getLockedPeriods()
-    if (periods.includes(period)) {
-      unlockPeriod(period)
-    } else {
-      lockPeriod(period)
-    }
-    await refreshData()
-  }
+  useEffect(() => {
+    retryRef.current = refreshData
+  }, [refreshData])
+
+  const lockedPeriods = useMemo(() => lockedPeriodInfo.map((p) => p.period), [lockedPeriodInfo])
+
+  const isPeriodLocked = useCallback(
+    (period: string | undefined | null) => !!period && lockedPeriods.includes(period.slice(0, 7)),
+    [lockedPeriods],
+  )
+
+  const togglePeriodLock = useCallback(
+    async (period: string) => {
+      const who = (user?.user_metadata?.name as string | undefined) ?? user?.email ?? undefined
+      try {
+        if (lockedPeriods.includes(period)) await unlockPeriod(period)
+        else await lockPeriod(period, who)
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : "Falha ao alterar o fechamento")
+        return
+      }
+      await refreshData()
+    },
+    [lockedPeriods, user, refreshData],
+  )
 
   useEffect(() => {
     setIsMounted(true)
-    refreshData()
   }, [])
+
+  // Recarrega quando a sessão muda (login/logout/troca de usuário)
+  useEffect(() => {
+    void refreshData()
+  }, [user?.id, refreshData])
 
   // Auto-refresh ao voltar para a aba (sem polling). Só dispara se passou
   // mais de 10s desde o último refresh, pra não martelar o banco.
@@ -105,12 +157,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
       if (document.visibilityState !== "visible") return
       const elapsed = lastRefreshAt ? Date.now() - lastRefreshAt : Infinity
       if (elapsed > 10_000) {
-        refreshData()
+        void refreshData()
       }
     }
     document.addEventListener("visibilitychange", onVisibilityChange)
     return () => document.removeEventListener("visibilitychange", onVisibilityChange)
-  }, [isMounted, lastRefreshAt])
+  }, [isMounted, lastRefreshAt, refreshData])
 
   // Memoiza obligationsWithDetails — evita 4 páginas chamarem a função O(n*m)
   // separadamente em cada render. Recalcula só quando dados base mudam.
@@ -120,9 +172,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
   )
 
   // Expose empty arrays during SSR to prevent hydration mismatch
-  const value = isMounted
-    ? { clients, taxes, obligations, obligationsWithDetails, installments, services, lockedPeriods, isLoading, isRefreshing, lastRefreshAt, refreshData, togglePeriodLock }
-    : { clients: [], taxes: [], obligations: [], obligationsWithDetails: [], installments: [], services: [], lockedPeriods: [], isLoading: true, isRefreshing: false, lastRefreshAt: null, refreshData, togglePeriodLock }
+  const value: DataContextType = isMounted
+    ? { clients, taxes, obligations, obligationsWithDetails, installments, services, lockedPeriods, lockedPeriodInfo, isLoading, isRefreshing, lastRefreshAt, loadError, refreshData, togglePeriodLock, isPeriodLocked }
+    : { clients: [], taxes: [], obligations: [], obligationsWithDetails: [], installments: [], services: [], lockedPeriods: [], lockedPeriodInfo: [], isLoading: true, isRefreshing: false, lastRefreshAt: null, loadError: null, refreshData, togglePeriodLock, isPeriodLocked: () => false }
 
   return (
     <DataContext.Provider value={value}>

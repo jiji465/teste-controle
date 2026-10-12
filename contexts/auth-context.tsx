@@ -17,6 +17,8 @@ type AuthContextValue = {
   user: User | null
   /** Papel do usuário (app_metadata.role). null = pleno (editor). */
   role: string | null
+  /** Nome para autoria (nome do perfil ou e-mail) */
+  userName: string
   /** true quando o papel é "viewer" (somente leitura). */
   isViewer: boolean
   isLoading: boolean
@@ -74,9 +76,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Papel vem do app_metadata (definido só no servidor — o usuário não altera).
   const role = ((user?.app_metadata as Record<string, unknown> | undefined)?.role as string | undefined) ?? null
   const isViewer = role === "viewer"
+  // Nome exibido em "concluído por" / histórico: nome do perfil ou e-mail.
+  const userName = ((user?.user_metadata as Record<string, unknown> | undefined)?.name as string | undefined) ?? user?.email ?? "Usuário"
 
   return (
-    <AuthContext.Provider value={{ user, role, isViewer, isLoading, signOut }}>
+    <AuthContext.Provider value={{ user, role, isViewer, userName, isLoading, signOut }}>
       {children}
     </AuthContext.Provider>
   )

@@ -22,8 +22,7 @@ import {
   adjustForWeekend,
   buildSafeDate,
   calculateDueDateFromCompetency,
-  isOverdue,
-} from "@/lib/date-utils"
+  isOverdue, parseLocalDate } from "@/lib/date-utils"
 
 type Props = {
   obligations: ObligationWithDetails[]
@@ -76,7 +75,7 @@ function computeStats(
   }
 
   for (const o of obligations) {
-    tally(o.status, o.completedAt, new Date(o.calculatedDueDate))
+    tally(o.status, o.completedAt, parseLocalDate(o.calculatedDueDate))
   }
   for (const t of taxes) {
     const d = calculateDueDateFromCompetency(t.competencyMonth, t.dueDay, t.weekendRule, t.dueMonth)
@@ -84,7 +83,7 @@ function computeStats(
     tally(t.status, t.completedAt, d)
   }
   for (const i of installments) {
-    const firstDue = new Date(i.firstDueDate)
+    const firstDue = parseLocalDate(i.firstDueDate)
     const monthsToAdd = i.currentInstallment - 1
     const d = adjustForWeekend(
       buildSafeDate(firstDue.getFullYear(), firstDue.getMonth() + monthsToAdd, i.dueDay),

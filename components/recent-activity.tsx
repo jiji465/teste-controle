@@ -29,8 +29,7 @@ import { effectiveStatus } from "@/lib/obligation-status"
 import {
   adjustForWeekend,
   buildSafeDate,
-  calculateDueDateFromCompetency,
-} from "@/lib/date-utils"
+  calculateDueDateFromCompetency, parseLocalDate } from "@/lib/date-utils"
 
 type ItemType = "obrigacao" | "guia" | "parcela" | "servico"
 
@@ -145,7 +144,7 @@ export function RecentActivity({
           href: `/obrigacoes?clientId=${o.clientId}&obligationId=${o.id}`,
           type: "obrigacao",
           action: "overdue",
-          timestamp: new Date(o.calculatedDueDate),
+          timestamp: parseLocalDate(o.calculatedDueDate),
         })
       }
     }
@@ -179,7 +178,7 @@ export function RecentActivity({
     }
 
     for (const i of installments) {
-      const firstDue = new Date(i.firstDueDate)
+      const firstDue = parseLocalDate(i.firstDueDate)
       const monthsToAdd = i.currentInstallment - 1
       const due = adjustForWeekend(
         buildSafeDate(firstDue.getFullYear(), firstDue.getMonth() + monthsToAdd, i.dueDay),
@@ -233,7 +232,7 @@ export function RecentActivity({
           href: `/servicos?clientId=${s.clientId}`,
           type: "servico",
           action: "overdue",
-          timestamp: new Date(s.dueDate),
+          timestamp: parseLocalDate(s.dueDate),
         })
       }
     }

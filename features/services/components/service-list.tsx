@@ -1,5 +1,7 @@
 "use client"
 
+import { usePagination } from "@/hooks/use-pagination"
+import { ListPagination } from "@/components/list-pagination"
 import { forwardRef, useImperativeHandle, useMemo, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -33,10 +35,11 @@ import {
 import type { Service, Client, Priority, ServiceCategory, WeekendRule } from "@/lib/types"
 import { SERVICE_CATEGORY_LABELS, SERVICE_CATEGORY_COLORS } from "@/lib/types"
 import { saveService, deleteService } from "@/features/services/services"
-import { adjustForWeekend, buildSafeDate, formatDate, isOverdue } from "@/lib/date-utils"
+import { adjustForWeekend, buildSafeDate, formatDate, isOverdue, parseLocalDate } from "@/lib/date-utils"
 import { StatusBadge, type TaskStatus } from "@/components/status-badge"
-import { matchesText } from "@/lib/utils"
+import { matchesText , errorMessage} from "@/lib/utils"
 import { toast } from "sonner"
+import { useAuth } from "@/contexts/auth-context"
 
 type ServiceListProps = {
   services: Service[]
@@ -81,6 +84,7 @@ export const ServiceList = forwardRef<ServiceListHandle, ServiceListProps>(funct
   { services, clients, onUpdate }: ServiceListProps,
   ref,
 ) {
+  const { userName } = useAuth()
   const [search, setSearch] = useState("")
   const [clientFilter, setClientFilter] = useState<string>("all")
   const [categoryFilter, setCategoryFilter] = useState<string>("all")
@@ -129,7 +133,7 @@ export const ServiceList = forwardRef<ServiceListHandle, ServiceListProps>(funct
     return [...filteredServices].sort((a, b) => {
       let comparison = 0
       if (sortBy === "dueDate") {
-        comparison = new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime()
+        comparison = parseLocalDate(a.dueDate).getTime() - parseLocalDate(b.dueDate).getTime()
       } else if (sortBy === "client") {
         const an = getClient(a.clientId)?.name ?? ""
         const bn = getClient(b.clientId)?.name ?? ""
@@ -158,7 +162,7 @@ export const ServiceList = forwardRef<ServiceListHandle, ServiceListProps>(funct
           toast.success("Serviço excluído")
           onUpdate()
         } catch (error) {
-          toast.error("Erro ao excluir serviço")
+          toast.error(errorMessage(error, "Erro ao excluir serviço"))
           console.error("[services] delete error:", error)
         }
       },
@@ -199,7 +203,7 @@ export const ServiceList = forwardRef<ServiceListHandle, ServiceListProps>(funct
                   ...s,
                   status: "completed",
                   completedAt: now,
-                  completedBy: "Contador",
+                  completedBy: userName,
                   history: [
                     ...(s.history || []),
                     { id: crypto.randomUUID(), action: "completed", description: "Concluído via ação em lote", timestamp: now },
@@ -373,7 +377,7 @@ export const ServiceList = forwardRef<ServiceListHandle, ServiceListProps>(funct
       ...service,
       status: "completed",
       completedAt: completedDate,
-      completedBy: "Contador",
+      completedBy: userName,
       history: [
         ...(service.history || []),
         {
@@ -390,7 +394,7 @@ export const ServiceList = forwardRef<ServiceListHandle, ServiceListProps>(funct
       onUpdate()
     } catch (error) {
       console.error("[services] complete error:", error)
-      toast.error("Erro ao concluir serviço")
+      toast.error(errorMessage(error, "Erro ao concluir serviço"))
     }
   }
 
@@ -413,7 +417,7 @@ export const ServiceList = forwardRef<ServiceListHandle, ServiceListProps>(funct
       onUpdate()
     } catch (error) {
       console.error("[services] start error:", error)
-      toast.error("Erro ao iniciar serviço")
+      toast.error(errorMessage(error, "Erro ao iniciar serviço"))
     }
   }
 
@@ -446,7 +450,7 @@ export const ServiceList = forwardRef<ServiceListHandle, ServiceListProps>(funct
       onUpdate()
     } catch (error) {
       console.error("[services] duplicate error:", error)
-      toast.error("Erro ao duplicar serviço")
+      toast.error(errorMessage(error, "Erro ao duplicar serviço"))
     }
   }
 
@@ -458,7 +462,7 @@ export const ServiceList = forwardRef<ServiceListHandle, ServiceListProps>(funct
   useImperativeHandle(ref, () => ({ openNewForm: handleNew }), [])
 
   const getRelativeDate = (dateString: string) => {
-    const date = new Date(dateString)
+    const date = parseLocalDate(dateString)
     const today = new Date()
     today.setHours(0, 0, 0, 0)
     const targetDate = new Date(date)
@@ -520,6 +524,9 @@ export const ServiceList = forwardRef<ServiceListHandle, ServiceListProps>(funct
       </div>
     )
   }
+
+  // Paginação: renderiza 50 linhas por vez (listas com centenas de itens travavam)
+  const pagination = usePagination(sortedServices)
 
   return (
     <div className="space-y-4">
@@ -609,7 +616,7 @@ export const ServiceList = forwardRef<ServiceListHandle, ServiceListProps>(funct
             </p>
           </div>
         ) : (
-          sortedServices.map((service) => {
+          pagination.items.map((service) => {
             const overdue = isOverdue(service.dueDate) && service.status !== "completed"
             const client = getClient(service.clientId)
             return (
@@ -647,7 +654,7 @@ export const ServiceList = forwardRef<ServiceListHandle, ServiceListProps>(funct
                   </div>
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="icon" className="size-7">
+                      <Button variant="ghost" size="icon" className="size-7" aria-label="Mais ações">
                         <MoreVertical className="size-4" />
                       </Button>
                     </DropdownMenuTrigger>
@@ -757,7 +764,7 @@ export const ServiceList = forwardRef<ServiceListHandle, ServiceListProps>(funct
                 </TableCell>
               </TableRow>
             ) : (
-              sortedServices.map((service) => {
+              pagination.items.map((service) => {
                 const overdue = isOverdue(service.dueDate) && service.status !== "completed"
                 const client = getClient(service.clientId)
                 return (
@@ -830,7 +837,7 @@ export const ServiceList = forwardRef<ServiceListHandle, ServiceListProps>(funct
                     <TableCell className="sticky right-0 z-10 bg-background group-hover:bg-muted/50 transition-colors shadow-[-6px_0_6px_-6px_rgba(0,0,0,0.12)]">
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon">
+                          <Button variant="ghost" size="icon" aria-label="Mais ações">
                             <MoreVertical className="size-4" />
                           </Button>
                         </DropdownMenuTrigger>
@@ -871,6 +878,7 @@ export const ServiceList = forwardRef<ServiceListHandle, ServiceListProps>(funct
           </TableBody>
         </Table>
       </div>
+      <ListPagination pagination={pagination} />
 
       <ServiceForm
         service={editing}

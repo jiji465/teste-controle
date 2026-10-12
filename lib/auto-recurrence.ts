@@ -8,13 +8,16 @@ import {
   saveObligation,
   saveTax,
 } from "./supabase/database"
+import { getLockedPeriods } from "@/features/periods/services"
 import {
   getCurrentPeriod,
   generateObligationForPeriod,
   generateTaxForPeriod,
   deterministicAutoId,
 } from "./recurrence-engine"
-import { buildSafeDate, toLocalDateString } from "./date-utils"
+import { recurringPeriods } from "./recurrence-generate"
+import { toLocalDateString } from "./date-utils"
+import type { Obligation, Tax } from "./types"
 
 // Lock in-memory: evita que duas chamadas do mesmo browser (ex: duas abas
 // abertas, ou múltiplos useEffect disparando) entrem na seção crítica ao
@@ -22,6 +25,9 @@ import { buildSafeDate, toLocalDateString } from "./date-utils"
 // determinísticos em generateObligationForPeriod/generateTaxForPeriod
 // garantem idempotência via upsert do Supabase.
 let runningPromise: Promise<void> | null = null
+
+/** No máximo quantas competências pra trás o gap-fill recupera de uma vez. */
+const MAX_BACKFILL = 24
 
 /**
  * @param force pula a checagem "já rodou hoje". Use depois de marcar uma
@@ -34,6 +40,27 @@ export async function checkAndGenerateRecurrences(force = false): Promise<void> 
     runningPromise = null
   })
   return runningPromise
+}
+
+/** Competência base de uma série: a competência do item original (não a
+ *  data de criação — criar em março a guia de janeiro não pode pular fev). */
+function basePeriodOf(item: Pick<Obligation, "competencyMonth" | "createdAt"> & { generatedFor?: string }): string {
+  if (item.competencyMonth && /^\d{4}-\d{2}/.test(item.competencyMonth)) return item.competencyMonth.slice(0, 7)
+  if (item.generatedFor && /^\d{4}-\d{2}/.test(item.generatedFor)) return item.generatedFor.slice(0, 7)
+  return toLocalDateString(new Date(item.createdAt)).slice(0, 7)
+}
+
+/**
+ * Competências que a série deveria ter até o mês atual (respeitando o passo
+ * da periodicidade — trimestral gera a cada 3 meses, não todo mês — e a data
+ * final escolhida pelo usuário). Limita o gap-fill às últimas MAX_BACKFILL.
+ */
+function duePeriodsFor(master: Obligation | Tax, currentPeriod: string): string[] {
+  if (!master.recurrence) return []
+  const endPeriod = master.recurrenceEndDate ? master.recurrenceEndDate.slice(0, 7) : null
+  const until = endPeriod && endPeriod < currentPeriod ? endPeriod : currentPeriod
+  const all = recurringPeriods(basePeriodOf(master), master.recurrence, until, master.recurrenceInterval)
+  return all.slice(-MAX_BACKFILL)
 }
 
 async function checkAndGenerateRecurrencesInner(force: boolean): Promise<void> {
@@ -55,126 +82,58 @@ async function checkAndGenerateRecurrencesInner(force: boolean): Promise<void> {
   setLastRecurrenceCheck(today)
 
   try {
-    const { calculateNextDueDate } = await import("./recurrence-utils")
-    
-    // Gerar obrigações recorrentes
+    // Competências fechadas não recebem itens novos (o banco recusaria).
+    const locked = new Set((await getLockedPeriods()).map((p) => p.period))
+
+    // ─── Obrigações ───────────────────────────────────────────────────────
     const obligations = await getObligations()
-    const obligationsToGenerate = obligations.filter(
-      (o) =>
-        o.autoGenerate &&
-        !o.parentObligationId, // Apenas obrigações originais (clones têm parentObligationId)
+    const obligationIds = new Set(obligations.map((o) => o.id))
+    const obligationKeys = new Set(
+      obligations.map((o) => `${o.clientId}|${o.name}|${o.competencyMonth ?? o.generatedFor ?? ""}`),
     )
+    const masters = obligations.filter((o) => o.autoGenerate && !o.parentObligationId)
 
-    // Cap de segurança: nunca gera mais que 12 meses adiante do mês atual,
-    // mesmo que recurrenceEndDate seja distante. Evita explodir o banco com
-    // obrigações futuras que ainda nem foram revisadas.
-    const MAX_MONTHS_AHEAD = 12
-    const horizon = new Date(now.getFullYear(), now.getMonth() + MAX_MONTHS_AHEAD, 1)
-
-    for (const obligation of obligationsToGenerate) {
-      // Cap explícito definido pelo usuário no formulário
-      const userEndDate = obligation.recurrenceEndDate
-        ? new Date(obligation.recurrenceEndDate)
-        : null
-
-      // Find all generated instances for this obligation
-      const instances = obligations.filter(
-        (o) => o.parentObligationId === obligation.id || o.id === obligation.id,
-      )
-
-      // Find the latest due date among all instances
-      let latestDueDate = new Date(0)
-      for (const inst of instances) {
-        const period =
-          inst.generatedFor ||
-          `${new Date(inst.createdAt).getFullYear()}-${String(
-            new Date(inst.createdAt).getMonth() + 1,
-          ).padStart(2, "0")}`
-        const [year, month] = period.split("-").map(Number)
-        const dueDate = buildSafeDate(year, month - 1, inst.dueDay || 1)
-        if (dueDate > latestDueDate) {
-          latestDueDate = dueDate
-        }
-      }
-
-      // Gap-fill: gera TODAS as instâncias faltantes entre a última existente
-      // e o mês atual em um único run. Antes era um if simples, então um app
-      // sem uso por N meses só recuperava 1 mês por execução diária — levava
-      // dias pra ficar em dia.
-      // Cap de segurança: máx. 24 iterações pra evitar loop infinito se o
-      // calculateNextDueDate retornar a mesma data por bug.
-      let cursor = latestDueDate
-      let guard = 0
-      while (guard++ < 24) {
-        const nextDate = calculateNextDueDate(obligation, cursor)
-        if (nextDate <= cursor) break // sanity: nunca avançou, sai
-        if (userEndDate && nextDate > userEndDate) break
-        if (nextDate > horizon) break
-
-        const nextPeriod = `${nextDate.getFullYear()}-${String(
-          nextDate.getMonth() + 1,
-        ).padStart(2, "0")}`
-        if (nextPeriod > currentPeriod) break // só gera até o mês atual
-
-        const alreadyGenerated = obligations.some(
-          (o) => o.parentObligationId === obligation.id && o.generatedFor === nextPeriod,
-        )
-        if (!alreadyGenerated) {
-          const newObligation = generateObligationForPeriod(obligation, nextPeriod)
-          await saveObligation(newObligation)
-        }
-        cursor = nextDate
+    for (const master of masters) {
+      for (const period of duePeriodsFor(master, currentPeriod)) {
+        if (locked.has(period)) continue
+        const already =
+          obligationIds.has(deterministicAutoId(master.id, period)) ||
+          obligations.some((o) => o.parentObligationId === master.id && o.generatedFor === period) ||
+          obligationKeys.has(`${master.clientId}|${master.name}|${period}`)
+        if (already) continue
+        const generated = generateObligationForPeriod(master, period)
+        await saveObligation(generated)
+        obligationIds.add(generated.id)
+        obligationKeys.add(`${master.clientId}|${master.name}|${period}`)
       }
     }
 
-    // Gerar impostos recorrentes — só clona guias explicitamente marcadas
-    // com autoGenerate=true. Guias criadas via template já vêm com todas as
-    // competências do range pré-geradas (autoGenerate=false), então não
-    // precisam passar por aqui. Sem esse filtro, o motor clonava TODA guia
-    // todo mês, gerando duplicatas em massa.
+    // ─── Guias ────────────────────────────────────────────────────────────
+    // Só clona guias marcadas com autoGenerate=true. Guias criadas via
+    // template já vêm com todas as competências pré-geradas
+    // (autoGenerate=false). Cópias geradas também recebem autoGenerate=false
+    // (vide generateTaxForPeriod), então não há cascata.
     const taxes = await getTaxes()
-    const [curYear, curMonth] = currentPeriod.split("-").map(Number)
-    const currentPeriodStart = buildSafeDate(curYear, curMonth - 1, 1)
-    const taxesToGenerate = taxes.filter((t) => {
-      if (!t.autoGenerate) return false
-      if (t.dueDay === undefined) return false
-      // Guias anuais têm regra própria (dueMonth fixo) — geração mensal não se aplica.
-      if (!t.recurrence || t.recurrence === "annual") return false
-      if (t.recurrenceEndDate && new Date(t.recurrenceEndDate) < currentPeriodStart) return false
-      // Cópias geradas pelo motor recebem autoGenerate=false (vide
-      // generateTaxForPeriod), então o filtro `!t.autoGenerate` acima já as
-      // exclui — não geram clones em cascata. Sem necessidade de marcador no id.
-      return true
-    })
+    const taxIds = new Set(taxes.map((t) => t.id))
+    const taxKeys = new Set(taxes.map((t) => `${t.clientId}|${t.name}|${t.competencyMonth ?? ""}`))
+    const taxMasters = taxes.filter((t) => t.autoGenerate && t.dueDay !== undefined && t.recurrence)
 
-    for (const tax of taxesToGenerate) {
-      // Dedup duplo: por (clientId + name + competencyMonth=período) ou
-      // pelo id determinístico que generateTaxForPeriod usa. Qualquer um
-      // que case → já existe.
-      const expectedId = deterministicAutoId(tax.id, currentPeriod)
-      const alreadyGenerated = taxes.some(
-        (t) =>
-          t.id === expectedId ||
-          (t.clientId === tax.clientId && t.name === tax.name && t.competencyMonth === currentPeriod),
-      )
-      if (!alreadyGenerated) {
-        const newTax = generateTaxForPeriod(tax, currentPeriod)
-        await saveTax(newTax)
+    for (const tax of taxMasters) {
+      for (const period of duePeriodsFor(tax, currentPeriod)) {
+        if (locked.has(period)) continue
+        const already =
+          taxIds.has(deterministicAutoId(tax.id, period)) ||
+          taxKeys.has(`${tax.clientId}|${tax.name}|${period}`)
+        if (already) continue
+        const generated = generateTaxForPeriod(tax, period)
+        await saveTax(generated)
+        taxIds.add(generated.id)
+        taxKeys.add(`${tax.clientId}|${tax.name}|${period}`)
       }
     }
 
-    // NOTA: A geração automática de PARCELAMENTOS foi removida intencionalmente.
-    //
-    // No modelo atual, um parcelamento é UM ÚNICO registro com contador interno
-    // (currentInstallment / installmentCount). A próxima data de vencimento é
-    // calculada dinamicamente como `firstDueDate + (currentInstallment - 1) meses`.
-    // Quando o usuário marca a parcela atual como paga (via payCurrentInstallment),
-    // o contador avança e a próxima parcela "aparece" automaticamente — sem precisar
-    // duplicar registros no banco.
-    //
-    // O código antigo aqui clonava o registro com currentInstallment+1 todo dia 1
-    // do mês, gerando duplicatas infinitas. Bug corrigido.
-
+    // Parcelamentos não passam por aqui: são UM registro com contador interno
+    // (currentInstallment), avançado por features/installments/actions.ts.
   } catch (error) {
     console.error("Erro ao gerar recorrências:", error)
     // Se algo deu errado, libera pra tentar novamente no próximo carregamento.
@@ -182,13 +141,11 @@ async function checkAndGenerateRecurrencesInner(force: boolean): Promise<void> {
   }
 }
 
-// Hook para executar a verificação quando o app carrega
-export function initializeAutoRecurrence(): void {
-  if (typeof window !== "undefined") {
-    // Executa imediatamente
-    checkAndGenerateRecurrences()
-
-    // Configura verificação diária (a cada 24 horas)
-    setInterval(checkAndGenerateRecurrences, 24 * 60 * 60 * 1000)
-  }
+/** Roda a verificação ao carregar e a cada 24h. Retorna a função de limpeza
+ *  (pro useEffect desmontar o intervalo — antes ele vazava). */
+export function initializeAutoRecurrence(): () => void {
+  if (typeof window === "undefined") return () => {}
+  void checkAndGenerateRecurrences()
+  const id = window.setInterval(() => void checkAndGenerateRecurrences(), 24 * 60 * 60 * 1000)
+  return () => window.clearInterval(id)
 }

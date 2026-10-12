@@ -1,5 +1,5 @@
 import type { Installment } from "@/lib/types"
-import { hasSupabaseConfig, getSupabaseClient, local } from "@/lib/supabase/core"
+import { hasSupabaseConfig, getSupabaseClient, fetchAll, local, toDbError } from "@/lib/supabase/core"
 
 function mapInstallmentToDb(installment: Installment) {
   return {
@@ -81,22 +81,20 @@ function mapDbToInstallment(row: any): Installment {
 
 export async function getInstallments(): Promise<Installment[]> {
   if (!hasSupabaseConfig()) return local.getInstallments()
-  const supabase = getSupabaseClient()
-  const { data, error } = await supabase.from("installments").select("*").order("due_day")
-  if (error) { console.error("[db] Error fetching installments:", error); return local.getInstallments() }
-  return data.map(mapDbToInstallment)
+  const rows = await fetchAll("installments", "due_day")
+  return rows.map(mapDbToInstallment)
 }
 
 export async function saveInstallment(installment: Installment): Promise<void> {
   if (!hasSupabaseConfig()) { local.saveInstallment(installment); return }
   const supabase = getSupabaseClient()
   const { error } = await supabase.from("installments").upsert(mapInstallmentToDb(installment))
-  if (error) { console.error("[db] Error saving installment:", error); throw error }
+  if (error) { console.error("[db] Error saving installment:", error); throw toDbError(error) }
 }
 
 export async function deleteInstallment(id: string): Promise<void> {
   if (!hasSupabaseConfig()) { local.deleteInstallment(id); return }
   const supabase = getSupabaseClient()
   const { error } = await supabase.from("installments").delete().eq("id", id)
-  if (error) { console.error("[db] Error deleting installment:", error); throw error }
+  if (error) { console.error("[db] Error deleting installment:", error); throw toDbError(error) }
 }

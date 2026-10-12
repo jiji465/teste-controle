@@ -21,7 +21,7 @@ import {
   EyeOff,
 } from "lucide-react"
 import type { Client, Tax, ObligationWithDetails, InstallmentWithDetails } from "@/lib/types"
-import { adjustForWeekend, buildSafeDate, isHoliday, isWeekend, calculateDueDateFromCompetency, getHolidayName } from "@/lib/date-utils"
+import { adjustForWeekend, buildSafeDate, isHoliday, isWeekend, calculateDueDateFromCompetency, getHolidayName, parseLocalDate } from "@/lib/date-utils"
 import { useSelectedPeriod } from "@/hooks/use-selected-period"
 
 type CalendarItemKind = "obligation" | "tax" | "installment"
@@ -115,7 +115,7 @@ export function FiscalCalendar({ obligations, taxes = [], installments = [], cli
         name: o.name,
         clientId: o.clientId,
         clientName: o.client.name,
-        dueDate: new Date(o.calculatedDueDate),
+        dueDate: parseLocalDate(o.calculatedDueDate),
         status: o.status,
         description: o.description,
         meta: o.tax?.name,
@@ -146,7 +146,7 @@ export function FiscalCalendar({ obligations, taxes = [], installments = [], cli
     }
 
     for (const i of installments) {
-      const firstDue = new Date(i.firstDueDate)
+      const firstDue = parseLocalDate(i.firstDueDate)
       const monthsToAdd = i.currentInstallment - 1
       const rawDate = buildSafeDate(
         firstDue.getFullYear(),

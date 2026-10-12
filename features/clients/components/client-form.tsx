@@ -1,5 +1,6 @@
 "use client"
 
+import { normalizeCnpj } from "@/lib/cnpj-validation"
 import type React from "react"
 import { useEffect, useState } from "react"
 import { useForm } from "react-hook-form"
@@ -36,14 +37,16 @@ import { inferBusinessActivityFromCNAE } from "@/lib/cnae-mapping"
 import { Search, Loader2 } from "lucide-react"
 import { toast } from "sonner"
 
+/** Máscara 00.000.000/0000-00 aceitando letras nas 12 primeiras posições
+ *  (CNPJ alfanumérico, em vigor desde jul/2026). */
 const formatCNPJ = (value: string) => {
-  const digits = value.replace(/\D/g, "")
-  return digits
-    .replace(/^(\d{2})(\d)/, "$1.$2")
-    .replace(/^(\d{2})\.(\d{3})(\d)/, "$1.$2.$3")
-    .replace(/\.(\d{3})(\d)/, ".$1/$2")
-    .replace(/(\d{4})(\d)/, "$1-$2")
-    .slice(0, 18)
+  const v = normalizeCnpj(value).slice(0, 14)
+  let out = v.slice(0, 2)
+  if (v.length > 2) out += "." + v.slice(2, 5)
+  if (v.length > 5) out += "." + v.slice(5, 8)
+  if (v.length > 8) out += "/" + v.slice(8, 12)
+  if (v.length > 12) out += "-" + v.slice(12)
+  return out
 }
 
 type ClientFormProps = {
@@ -239,7 +242,8 @@ export function ClientForm({ client, open, onOpenChange, onSave, onObligationsCr
                         variant="secondary"
                         size="icon"
                         className="shrink-0"
-                        disabled={isSearching || (field.value ?? "").replace(/\D/g, '').length !== 14}
+                        disabled={isSearching || normalizeCnpj(field.value).length !== 14}
+                        aria-label="Buscar dados do CNPJ na Receita"
                         onClick={async () => {
                           setIsSearching(true)
                           try {

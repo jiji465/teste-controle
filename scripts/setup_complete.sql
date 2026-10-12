@@ -148,23 +148,28 @@ ALTER TABLE public.history ENABLE ROW LEVEL SECURITY;
 
 -- Clients
 DROP POLICY IF EXISTS "Allow public access to clients" ON public.clients;
-CREATE POLICY "Allow public access to clients" ON public.clients FOR ALL USING (true) WITH CHECK (true);
+-- [019] política pública removida — acesso controlado pelo 017/019 (só usuários logados).
+DROP POLICY IF EXISTS "Allow public access to clients" ON public.clients;
 
 -- Taxes
 DROP POLICY IF EXISTS "Allow public access to taxes" ON public.taxes;
-CREATE POLICY "Allow public access to taxes" ON public.taxes FOR ALL USING (true) WITH CHECK (true);
+-- [019] política pública removida — acesso controlado pelo 017/019 (só usuários logados).
+DROP POLICY IF EXISTS "Allow public access to taxes" ON public.taxes;
 
 -- Obligations
 DROP POLICY IF EXISTS "Allow public access to obligations" ON public.obligations;
-CREATE POLICY "Allow public access to obligations" ON public.obligations FOR ALL USING (true) WITH CHECK (true);
+-- [019] política pública removida — acesso controlado pelo 017/019 (só usuários logados).
+DROP POLICY IF EXISTS "Allow public access to obligations" ON public.obligations;
 
 -- Installments
 DROP POLICY IF EXISTS "Allow public access to installments" ON public.installments;
-CREATE POLICY "Allow public access to installments" ON public.installments FOR ALL USING (true) WITH CHECK (true);
+-- [019] política pública removida — acesso controlado pelo 017/019 (só usuários logados).
+DROP POLICY IF EXISTS "Allow public access to installments" ON public.installments;
 
 -- History
 DROP POLICY IF EXISTS "Allow public access to history" ON public.history;
-CREATE POLICY "Allow public access to history" ON public.history FOR ALL USING (true) WITH CHECK (true);
+-- [019] política pública removida — acesso controlado pelo 017/019 (só usuários logados).
+DROP POLICY IF EXISTS "Allow public access to history" ON public.history;
 
 -- ============================================
 -- PASSO 5: CRIAR FUNÇÕES E TRIGGERS

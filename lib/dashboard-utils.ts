@@ -7,6 +7,7 @@ import type {
   Installment,
   Service,
 } from "./types"
+import { getCurrentParcelaDueDate } from "./installment-dates"
 import {
   adjustForWeekend,
   buildSafeDate,
@@ -69,12 +70,7 @@ function inPeriod(date: Date | string | null | undefined, period: string): boole
 }
 
 /** Calcula a data da PARCELA ATUAL de um parcelamento (1 registro = N parcelas). */
-function installmentDueDate(inst: Installment): Date {
-  const firstDue = new Date(inst.firstDueDate)
-  const monthsToAdd = inst.currentInstallment - 1
-  const dueDate = buildSafeDate(firstDue.getFullYear(), firstDue.getMonth() + monthsToAdd, inst.dueDay)
-  return adjustForWeekend(dueDate, inst.weekendRule)
-}
+const installmentDueDate = (inst: Installment): Date => getCurrentParcelaDueDate(inst)
 
 /**
  * Para um parcelamento e um período "YYYY-MM" (ou "all"), retorna uma versão
@@ -98,7 +94,7 @@ export function installmentInPeriod(
   inst: Installment,
   period: string,
 ): (Installment & { calculatedDueDate: string; parcelaNumber: number }) | null {
-  const firstDue = new Date(inst.firstDueDate)
+  const firstDue = parseLocalDate(inst.firstDueDate)
   let targetN: number | null = null
 
   if (period === "all" || !/^\d{4}-\d{2}$/.test(period)) {
@@ -320,7 +316,7 @@ export function installmentParcelasInRange(
     status: "completed" | "overdue" | "pending"
     doneAt?: string
   }> = []
-  const firstDue = new Date(inst.firstDueDate)
+  const firstDue = parseLocalDate(inst.firstDueDate)
   const today = new Date()
   today.setHours(0, 0, 0, 0)
 
@@ -360,7 +356,7 @@ export function servicesInRange(services: Service[], range: DateRange): Service[
 export function installmentsInRange(installments: Installment[], range: DateRange): Installment[] {
   if (!range.from && !range.to) return installments
   return installments.filter((i) => {
-    const firstDue = new Date(i.firstDueDate)
+    const firstDue = parseLocalDate(i.firstDueDate)
     for (let n = 1; n <= i.installmentCount; n++) {
       const date = adjustForWeekend(
         buildSafeDate(firstDue.getFullYear(), firstDue.getMonth() + (n - 1), i.dueDay),
@@ -429,7 +425,7 @@ export function monthlyEvolutionBuckets(
 
   for (const o of obligations) {
     if (clientFilter && !clientFilter.has(o.clientId)) continue
-    const key = bucketKey(new Date(o.calculatedDueDate))
+    const key = bucketKey(parseLocalDate(o.calculatedDueDate))
     tally(key, effectiveStatus(o))
   }
   for (const t of taxes) {
@@ -447,7 +443,7 @@ export function monthlyEvolutionBuckets(
   }
   for (const s of services) {
     if (clientFilter && !clientFilter.has(s.clientId)) continue
-    const date = new Date(s.dueDate)
+    const date = parseLocalDate(s.dueDate)
     if (Number.isNaN(date.getTime())) continue
     const key = bucketKey(date)
     tally(key, effectiveStatus({ status: s.status, calculatedDueDate: s.dueDate }))
@@ -480,7 +476,7 @@ export function heatmapByDay(
   const matches = (d: Date) => d.getFullYear() === year && d.getMonth() === month0
 
   for (const o of obligations) {
-    const d = new Date(o.calculatedDueDate)
+    const d = parseLocalDate(o.calculatedDueDate)
     if (matches(d)) counts[d.getDate() - 1]++
   }
   for (const t of taxes) {
@@ -492,7 +488,7 @@ export function heatmapByDay(
     if (matches(d)) counts[d.getDate() - 1]++
   }
   for (const s of services) {
-    const d = new Date(s.dueDate)
+    const d = parseLocalDate(s.dueDate)
     if (!Number.isNaN(d.getTime()) && matches(d)) counts[d.getDate() - 1]++
   }
 

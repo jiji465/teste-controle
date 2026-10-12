@@ -15,7 +15,7 @@ import type { ObligationWithDetails, Client, Tax, Installment, Service } from "@
 import { TAX_REGIME_LABELS } from "@/lib/types"
 import { BUSINESS_ACTIVITY_LABELS, type BusinessActivity } from "@/lib/obligation-templates"
 import { effectiveStatus } from "@/lib/obligation-status"
-import { adjustForWeekend, buildSafeDate, calculateDueDateFromCompetency } from "@/lib/date-utils"
+import { adjustForWeekend, buildSafeDate, calculateDueDateFromCompetency, parseLocalDate } from "@/lib/date-utils"
 import { CheckCircle2, Clock, AlertTriangle, Loader2, Building2, MapPin, Briefcase, ShoppingBag, Factory, Layers } from "lucide-react"
 
 type RegimeDistributionChartProps = {
@@ -90,7 +90,7 @@ function ObligationsHealthCard({
 
     // Parcelamentos: usa data da parcela atual.
     for (const i of installments) {
-      const firstDue = new Date(i.firstDueDate)
+      const firstDue = parseLocalDate(i.firstDueDate)
       const monthsToAdd = i.currentInstallment - 1
       const dueDate = adjustForWeekend(
         buildSafeDate(firstDue.getFullYear(), firstDue.getMonth() + monthsToAdd, i.dueDay),

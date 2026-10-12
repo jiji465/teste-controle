@@ -1,5 +1,6 @@
 "use client"
 
+import { HistoryTimeline } from "@/components/history-timeline"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -22,7 +23,6 @@ import {
   CalendarClock,
   Repeat,
   Tag,
-  History,
   Copy,
   Scale,
   FolderOpen,
@@ -41,10 +41,10 @@ const PRIORITY_LABELS: Record<Priority, string> = {
 }
 
 const PRIORITY_COLORS: Record<Priority, string> = {
-  low: "border-blue-500 text-blue-700 dark:text-blue-400",
+  low: "border-info text-info",
   medium: "border-gray-400 text-gray-700 dark:text-gray-400",
-  high: "border-orange-500 text-orange-700 dark:text-orange-400",
-  urgent: "border-red-500 text-red-700 dark:text-red-400",
+  high: "border-warning text-warning",
+  urgent: "border-destructive text-destructive",
 }
 
 const SCOPE_COLORS: Record<string, string> = {
@@ -99,11 +99,11 @@ export function ObligationDetails({ obligation, open, onOpenChange, onEdit }: Ob
         <div
           className={`relative px-6 pt-6 pb-5 border-b ${
             effectiveStatus === "overdue"
-              ? "bg-gradient-to-br from-red-500/10 via-red-500/5 to-transparent"
+              ? "bg-gradient-to-br from-destructive/10 via-destructive/5 to-transparent"
               : effectiveStatus === "completed"
-                ? "bg-gradient-to-br from-green-500/10 via-green-500/5 to-transparent"
+                ? "bg-gradient-to-br from-success/10 via-success/5 to-transparent"
                 : effectiveStatus === "in_progress"
-                  ? "bg-gradient-to-br from-blue-500/10 via-blue-500/5 to-transparent"
+                  ? "bg-gradient-to-br from-info/10 via-info/5 to-transparent"
                   : "bg-gradient-to-br from-amber-500/10 via-amber-500/5 to-transparent"
           }`}
         >
@@ -282,29 +282,8 @@ export function ObligationDetails({ obligation, open, onOpenChange, onEdit }: Ob
             </>
           )}
 
-          {/* Histórico */}
-          {obligation.history && obligation.history.length > 0 && (
-            <>
-              <Separator />
-              <div>
-                <div className="flex items-center gap-2 mb-3">
-                  <History className="size-4 text-muted-foreground" />
-                  <p className="text-sm font-semibold">Histórico</p>
-                </div>
-                <div className="space-y-3">
-                  {obligation.history.slice(-8).reverse().map((entry) => (
-                    <div key={entry.id} className="flex gap-3 text-sm">
-                      <div className="size-2 rounded-full bg-primary mt-1.5 shrink-0" />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-foreground">{entry.description}</p>
-                        <p className="text-xs text-muted-foreground">{formatDate(entry.timestamp)}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </>
-          )}
+          {/* Histórico (trilha do banco + anotações do registro) */}
+          <HistoryTimeline entityType="obligation" entityId={obligation.id} localEntries={obligation.history} />
 
           <Separator />
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
@@ -314,7 +293,7 @@ export function ObligationDetails({ obligation, open, onOpenChange, onEdit }: Ob
             </div>
             {obligation.completedAt && (
               <div className="flex items-center gap-1.5">
-                <CheckCircle2 className="size-3.5 text-green-600" />
+                <CheckCircle2 className="size-3.5 text-success" />
                 Concluída em <span className="font-medium">{formatDate(obligation.completedAt)}</span>
                 {obligation.completedBy && <span>por {obligation.completedBy}</span>}
               </div>
@@ -349,14 +328,14 @@ function StatusBadge({ status, completedAt }: { status: string; completedAt?: st
   switch (status) {
     case "completed":
       return (
-        <Badge className="bg-green-600 hover:bg-green-700 text-white">
+        <Badge className="bg-success text-success-foreground hover:bg-success/90 text-white">
           <CheckCircle2 className="size-3 mr-1" />
           Concluída {completedAt && `em ${formatDate(completedAt)}`}
         </Badge>
       )
     case "in_progress":
       return (
-        <Badge className="bg-blue-600 hover:bg-blue-700 text-white">
+        <Badge className="bg-info text-info-foreground hover:bg-info/90 text-white">
           <PlayCircle className="size-3 mr-1" />
           Em andamento
         </Badge>
@@ -370,7 +349,7 @@ function StatusBadge({ status, completedAt }: { status: string; completedAt?: st
       )
     default:
       return (
-        <Badge variant="secondary" className="bg-yellow-100 text-yellow-800 dark:bg-yellow-950 dark:text-yellow-200">
+        <Badge variant="secondary" className="bg-warning/10 text-warning dark:bg-warning/15 dark:text-warning">
           <Clock className="size-3 mr-1" />
           Pendente
         </Badge>
@@ -421,9 +400,9 @@ function InfoTile({
 }) {
   const highlightClass =
     highlight === "destructive"
-      ? "border-red-300 dark:border-red-900/60 bg-red-50/60 dark:bg-red-950/20"
+      ? "border-destructive/30 dark:border-destructive/60 bg-destructive/60 dark:bg-destructive/20"
       : highlight === "success"
-        ? "border-green-300 dark:border-green-900/60 bg-green-50/60 dark:bg-green-950/20"
+        ? "border-success/30 dark:border-success/60 bg-success/60 dark:bg-success/20"
         : ""
   return (
     <div

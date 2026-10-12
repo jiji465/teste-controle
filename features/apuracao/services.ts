@@ -1,7 +1,7 @@
 // Persistência das apurações mensais (camada financeira do Relatório Executivo).
 // Mesmo padrão de features/taxes/services.ts: Supabase quando configurado,
 // fallback localStorage caso contrário. Mapeia snake_case (DB) ↔ camelCase (TS).
-import { hasSupabaseConfig, getSupabaseClient } from "@/lib/supabase/core"
+import { hasSupabaseConfig, getSupabaseClient, toDbError } from "@/lib/supabase/core"
 import type { ClientData, HistPoint } from "./lib/types"
 
 export interface ApuracaoRecord {
@@ -102,7 +102,7 @@ export async function getApuracoes(clientId: string): Promise<ApuracaoRecord[]> 
   const { data, error } = await supabase.from("apuracao_mensal").select("*").eq("client_id", clientId).order("comp_key")
   if (error) {
     console.error("[db] Error fetching apuracoes:", error)
-    return lsAll().filter((r) => r.clientId === clientId)
+    throw new Error(`Falha ao carregar apurações: ${error.message}`)
   }
   return (data || []).map(mapFromDb)
 }
@@ -123,7 +123,7 @@ export async function saveApuracao(rec: ApuracaoRecord): Promise<void> {
   const { error } = await supabase.from("apuracao_mensal").upsert(mapToDb(rec), { onConflict: "client_id,comp_key" })
   if (error) {
     console.error("[db] Error saving apuracao:", error)
-    throw error
+    throw toDbError(error)
   }
 }
 
@@ -136,7 +136,7 @@ export async function deleteApuracao(clientId: string, compKey: string): Promise
   const { error } = await supabase.from("apuracao_mensal").delete().match({ client_id: clientId, comp_key: compKey })
   if (error) {
     console.error("[db] Error deleting apuracao:", error)
-    throw error
+    throw toDbError(error)
   }
 }
 

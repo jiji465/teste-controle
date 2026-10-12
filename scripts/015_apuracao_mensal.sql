@@ -39,5 +39,5 @@ create index if not exists apuracao_mensal_comp_idx on public.apuracao_mensal (c
 alter table public.apuracao_mensal enable row level security;
 
 drop policy if exists "Allow public access to apuracao_mensal" on public.apuracao_mensal;
-create policy "Allow public access to apuracao_mensal"
-  on public.apuracao_mensal for all using (true) with check (true);
+-- [019] política pública removida — acesso controlado pelo 017/019 (só usuários logados).
+DROP POLICY IF EXISTS "Allow public access to apuracao_mensal" ON public.apuracao_mensal;

@@ -8,7 +8,7 @@ export const isWeekend = (date: Date): boolean => {
 // Feriados nacionais FIXOS (mês é 0-indexed em JS)
 // Lei 662/49 + Lei 6.802/80 (Aparecida) + Lei 14.759/24 (Consciência Negra).
 // Pra controle fiscal: bancos NÃO abrem nesses dias, vencimentos antecipam ou postergam.
-const fixedHolidays: Array<{ month: number; day: number; name: string }> = [
+const fixedHolidays: Array<{ month: number; day: number; name: string; since?: number }> = [
   { month: 0, day: 1, name: "Confraternização Universal" },
   { month: 3, day: 21, name: "Tiradentes" },
   { month: 4, day: 1, name: "Dia do Trabalho" },
@@ -16,7 +16,8 @@ const fixedHolidays: Array<{ month: number; day: number; name: string }> = [
   { month: 9, day: 12, name: "Nossa Senhora Aparecida" },
   { month: 10, day: 2, name: "Finados" },
   { month: 10, day: 15, name: "Proclamação da República" },
-  { month: 10, day: 20, name: "Consciência Negra" },
+  // Feriado nacional só a partir de 2024 (Lei 14.759/23)
+  { month: 10, day: 20, name: "Consciência Negra", since: 2024 },
   { month: 11, day: 25, name: "Natal" },
 ]
 
@@ -60,14 +61,35 @@ const sameYmd = (a: Date, b: Date): boolean =>
   a.getMonth() === b.getMonth() &&
   a.getDate() === b.getDate()
 
+// Feriados estaduais/municipais do escritório (tabela office_holidays,
+// cadastrados em Configurações). Chave "YYYY-MM-DD". Preenchido pelo
+// DataProvider antes de publicar os dados, pra que todo cálculo de
+// vencimento já considere esses dias.
+const extraHolidays = new Map<string, string>()
+
+export const setExtraHolidays = (list: Array<{ date: string; name: string }>): void => {
+  extraHolidays.clear()
+  for (const h of list) extraHolidays.set(h.date.slice(0, 10), h.name)
+}
+
 /**
- * Retorna o NOME do feriado se a data for feriado nacional, ou null.
- * Lista federal completa: 9 fixos + 4 móveis (derivados da Páscoa).
+ * Retorna o NOME do feriado se a data for feriado, ou null.
+ * Nacionais: 9 fixos + 4 móveis (derivados da Páscoa). Mais os feriados
+ * locais cadastrados em Configurações.
  */
 export const getHolidayName = (date: Date): string | null => {
   const month = date.getMonth()
   const day = date.getDate()
-  const fixed = fixedHolidays.find((h) => h.month === month && h.day === day)
+  if (extraHolidays.size > 0) {
+    const local = extraHolidays.get(
+      `${date.getFullYear()}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`,
+    )
+    if (local) return local
+  }
+  const year = date.getFullYear()
+  const fixed = fixedHolidays.find(
+    (h) => h.month === month && h.day === day && (!h.since || year >= h.since),
+  )
   if (fixed) return fixed.name
 
   const easter = getEaster(date.getFullYear())
@@ -121,6 +143,22 @@ export const adjustForWeekend = (date: Date, rule: WeekendRule): Date => {
 }
 
 /**
+ * N-ésimo dia útil (sem fim de semana/feriado nacional) de um mês.
+ * Ex: EFD-Contribuições vence no 10º dia útil do 2º mês após a competência.
+ */
+export const nthBusinessDay = (year: number, monthZeroBased: number, n: number): Date => {
+  const d = new Date(year, monthZeroBased, 1)
+  let count = 0
+  while (true) {
+    if (!isWeekendOrHoliday(d)) {
+      count++
+      if (count >= n) return d
+    }
+    d.setDate(d.getDate() + 1)
+  }
+}
+
+/**
  * Constrói uma Date "segura": se o dia pedido não existir no mês (ex: 31 em
  * fevereiro), usa o último dia válido do mês em vez de fazer overflow para o
  * mês seguinte (que é o comportamento padrão do construtor de Date).
@@ -138,6 +176,9 @@ export const calculateDueDate = (
   referenceDate: Date = new Date(),
 ): Date => {
   let dueDate: Date
+  // Compara por DIA: um vencimento hoje continua sendo deste período
+  // (antes, comparar com a hora atual empurrava o "hoje" pro mês seguinte).
+  referenceDate = new Date(referenceDate.getFullYear(), referenceDate.getMonth(), referenceDate.getDate())
 
   if (frequency === "annual" && dueMonth) {
     // Annual obligation with specific month
@@ -283,8 +324,11 @@ export const formatCurrency = (value: number): string => {
  * 21h do dia 24 no horário local.
  */
 export const parseLocalDate = (input: string | Date): Date => {
-  if (input instanceof Date) return input
-  const m = input.match(/^(\d{4})-(\d{2})-(\d{2})/)
+  // Cópia: quem chama (isOverdue etc.) pode mexer nas horas sem alterar o original
+  if (input instanceof Date) return new Date(input.getTime())
+  // Só "YYYY-MM-DD" puro é data de calendário. Timestamps completos
+  // ("...T23:30:00Z") representam um instante real e vão direto pro Date.
+  const m = input.match(/^(\d{4})-(\d{2})-(\d{2})$/)
   if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]))
   return new Date(input)
 }

@@ -5,7 +5,7 @@ import { Calendar } from "lucide-react"
 import { FiscalCalendar } from "@/components/fiscal-calendar"
 import { PageHeader } from "@/components/page-header"
 import { useData } from "@/contexts/data-context"
-import { adjustForWeekend, buildSafeDate } from "@/lib/date-utils"
+import { adjustForWeekend, buildSafeDate, parseLocalDate } from "@/lib/date-utils"
 import type { InstallmentWithDetails } from "@/lib/types"
 
 export default function CalendarioPage() {
@@ -20,7 +20,7 @@ export default function CalendarioPage() {
       .map((inst) => {
         const client = clients.find((c) => c.id === inst.clientId)!
         const tax = inst.taxId ? taxes.find((t) => t.id === inst.taxId) : undefined
-        const firstDue = new Date(inst.firstDueDate)
+        const firstDue = parseLocalDate(inst.firstDueDate)
         const monthsToAdd = inst.currentInstallment - 1
         const dueDate = buildSafeDate(firstDue.getFullYear(), firstDue.getMonth() + monthsToAdd, inst.dueDay)
         const adjusted = adjustForWeekend(dueDate, inst.weekendRule)

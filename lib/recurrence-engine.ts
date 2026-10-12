@@ -1,46 +1,4 @@
-import type { Obligation, Tax, RecurrenceType } from "./types"
-import { adjustForWeekend, buildSafeDate } from "./date-utils"
-
-/**
- * @deprecated Função substituída por `calculateNextDueDate` em
- * `recurrence-utils.ts`, que usa buildSafeDate (não estoura no dia 31 em
- * fevereiro) e respeita `dueMonth` para anuais. Mantida só pra não quebrar
- * imports externos. Não usar em código novo.
- */
-export function getNextDueDate(
-  currentDate: Date,
-  dueDay: number,
-  recurrence: RecurrenceType,
-  recurrenceInterval?: number,
-  weekendRule?: "postpone" | "anticipate" | "keep",
-): Date {
-  let year = currentDate.getFullYear()
-  let monthIdx = currentDate.getMonth()
-
-  switch (recurrence) {
-    case "monthly":
-      monthIdx += 1
-      break
-    case "bimonthly":
-      monthIdx += 2
-      break
-    case "quarterly":
-      monthIdx += 3
-      break
-    case "semiannual":
-      monthIdx += 6
-      break
-    case "annual":
-      year += 1
-      break
-    case "custom":
-      monthIdx += recurrenceInterval || 1
-      break
-  }
-
-  const next = buildSafeDate(year, monthIdx, dueDay)
-  return weekendRule ? adjustForWeekend(next, weekendRule) : next
-}
+import type { Obligation, Tax } from "./types"
 
 /** ID determinístico (UUID v5) pra itens gerados pelo motor de recorrência.
  *
@@ -200,13 +158,4 @@ export function getCurrentPeriod(): string {
   const year = now.getFullYear()
   const month = String(now.getMonth() + 1).padStart(2, "0")
   return `${year}-${month}`
-}
-
-export function getNextPeriod(currentPeriod: string): string {
-  const [year, month] = currentPeriod.split("-").map(Number)
-  const date = new Date(year, month - 1, 1)
-  date.setMonth(date.getMonth() + 1)
-  const nextYear = date.getFullYear()
-  const nextMonth = String(date.getMonth() + 1).padStart(2, "0")
-  return `${nextYear}-${nextMonth}`
 }

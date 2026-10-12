@@ -2,9 +2,16 @@
 
 import { useMemo } from "react"
 import { BarChart3 } from "lucide-react"
-import { ReportsPanel } from "@/components/reports-panel"
+import dynamic from "next/dynamic"
+import { PageSkeleton } from "@/components/page-skeleton"
 import { PageHeader } from "@/components/page-header"
 import { useData } from "@/contexts/data-context"
+
+// Painel pesado (gráficos Recharts + exportações): carrega só nesta rota.
+const ReportsPanel = dynamic(() => import("@/components/reports-panel").then((m) => m.ReportsPanel), {
+  ssr: false,
+  loading: () => <PageSkeleton />,
+})
 
 export default function RelatoriosPage() {
   const { clients, taxes, installments, services, obligationsWithDetails, isLoading } = useData()
