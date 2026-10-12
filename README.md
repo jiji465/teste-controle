@@ -13,8 +13,6 @@ contabilidade brasileiro.
 - **Obrigações Acessórias** — declarações ao Fisco (DCTFWeb, SPED, DEFIS, ECD…).
 - **Parcelamentos** — REFIS e parcelamentos de débitos.
 - **Serviços avulsos** — NF-e, consultorias e outras tarefas com data única.
-- **Painel do mês** — check-list da competência: cada empresa × cada
-  obrigação/guia, com conclusão em um clique.
 - **Fechamento de competência** — trava o mês no banco (ninguém altera itens
   de um mês fechado até ele ser reaberto).
 - **Calendário Fiscal** — visão mensal de vencimentos, com ajuste automático
@@ -88,7 +86,6 @@ Pra setup completo do Supabase (criar tabelas, rodar migrations), veja
 │   ├── relatorios/
 │   ├── templates/
 │   ├── servicos/
-│   ├── competencia/       → Painel do mês (matriz empresa × obrigação)
 │   ├── configuracoes/     → Feriados locais, conta
 │   └── api/cnpj/[cnpj]/   → API route — lookup CNPJ via BrasilAPI
 ├── components/           Componentes compartilhados (UI + dashboard)
@@ -110,7 +107,7 @@ Pra setup completo do Supabase (criar tabelas, rodar migrations), veja
 - Dashboard rico com gráficos, clima e saudação dinâmica
 - Multi-device sync via Supabase
 - Login multi-usuário (Auth + RLS) com papel somente leitura
-- Fechamento de competência no banco + Painel do mês
+- Fechamento de competência no banco
 - Feriados estaduais/municipais configuráveis
 - Histórico (auditoria) com autor real em cada item
 - CNPJ alfanumérico (IN RFB 2.229/2024) e CPF
