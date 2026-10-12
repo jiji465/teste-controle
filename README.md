@@ -70,7 +70,9 @@ Pra setup completo do Supabase (criar tabelas, rodar migrations), veja
 > `016` → `017` → **`019_hardening.sql`** (RLS em `services`, remove políticas
 > públicas antigas, índices únicos, histórico com autor real) →
 > **`020_locked_periods.sql`** (fechamento de competência no banco) →
-> **`021_office_holidays.sql`** (feriados locais). Todas são idempotentes.
+> **`021_office_holidays.sql`** (feriados locais) →
+> **`022_apuracao_integridade.sql`** (Relatório Executivo: trava de competência fechada,
+> controle de versão, revisões e auditoria). Todas são idempotentes.
 
 ## Estrutura geral
 

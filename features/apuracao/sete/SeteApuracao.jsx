@@ -9,11 +9,15 @@ import {
     MessageSquare, ChevronDown
 } from 'lucide-react';
 import {
-    DEFAULT_TAXES, DEFAULT_TAXES_LP, DEFAULT_TAXES_MEI_AMBOS, DEFAULT_TAXES_MEI_COMERCIO, DEFAULT_TAXES_MEI_SERVICOS, DEFAULT_TAXES_SN_COMERCIO, DEFAULT_TAXES_SN_SERVICOS, GLOSSARY, MONTHS, OFFICE_NAME, STORAGE_KEY, autoFillTaxes, calcAliquotaEfetivaSN, calcFatorR, calcIRRFProLabore, calculateTotalRevenue, extractPdfText, formatBRLDisplay, formatCNPJ, formatCurrency, formatPercent, getAnexoEfetivo, getDueDate, isSujeitoFatorR, lpDefaults, parseNumBR, parsePGDASD, pgNum, sumProLabore, SALARIO_MINIMO, TETO_INSS, SUBLIMITE_SN, LIMITE_SN,
-    ehRetido, entraNaAliquota, resumoApuracao, avisosApuracao, COMERCIO_GUIA_ESTADUAL, acumuladoPeriodo
+    DEFAULT_TAXES, DEFAULT_TAXES_LP, DEFAULT_TAXES_MEI_AMBOS, DEFAULT_TAXES_MEI_COMERCIO, DEFAULT_TAXES_MEI_SERVICOS, DEFAULT_TAXES_SN_COMERCIO, DEFAULT_TAXES_SN_SERVICOS, GLOSSARY, MONTHS, OFFICE_NAME, STORAGE_KEY, autoFillTaxes, calcAliquotaEfetivaSN, calcFatorR, calcIRRFProLabore, calculateTotalRevenue, extractPdfText, formatBRLDisplay, formatCurrency, formatPercent, getAnexoEfetivo, getDueDate, isSujeitoFatorR, parseNumBR, parsePGDASD, pgNum, sumProLabore, SALARIO_MINIMO, TETO_INSS, SUBLIMITE_SN, LIMITE_SN,
+    ehRetido, entraNaAliquota, resumoApuracao, avisosApuracao, COMERCIO_GUIA_ESTADUAL, acumuladoPeriodo,
+    regimeDefaults, calcEconomia, rbtFatorR
 } from './engine.js';
 // ---- Integração com o controle fiscal (teste-controle) ----
 import { useData } from '@/contexts/data-context';
+import { useAuth } from '@/contexts/auth-context';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { normalizeCnpj, formatDocument } from '@/lib/cnpj-validation';
 import { TAX_REGIME_LABELS } from '@/lib/types';
 import { getApuracoes, saveApuracao, deleteApuracao } from '@/features/apuracao/services';
 import { BrandLockup } from './brand';
@@ -30,8 +34,9 @@ import { Label } from '@/components/ui/label';
 
 
 const FatorRDashboard = ({ clientData, isPrint = false }) => {
-    const rbt12 = parseNumBR(clientData.rbt12);
-    const revenue = parseNumBR(clientData.revenue) + parseNumBR(clientData.revenueRetained) + parseNumBR(clientData.revenueNonRetained);
+    // RBT12p / início de atividade quando a RBT12 é 0 (mesma receita que o motor usa)
+    const rbt12 = rbtFatorR(clientData);
+    const revenue = calculateTotalRevenue(clientData);
     const folha12m = parseNumBR(clientData.folha12m !== undefined ? clientData.folha12m : clientData.folha);
     
     const fR = calcFatorR(folha12m, rbt12);
@@ -217,62 +222,98 @@ const ComercioGuia = ({ clientData, updateClient, parseBRL, flag, valorField, la
     );
 };
 
-const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErrors = {}, setValidationErrors = () => { }, records = [] }) => {
+const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErrors = {}, setValidationErrors = () => { }, records = [], markDirty = () => { }, askConfirm = async () => true }) => {
 
     const [forceShowRetentions, setForceShowRetentions] = useState(false);
     const [importMsg, setImportMsg] = useState(null);
     const pdfInputRef = React.useRef(null);
+    // Último estado commitado — a importação do PGDAS-D é assíncrona (até 30 s) e não
+    // pode usar o `clientData` capturado no clique (perdia o que foi digitado enquanto
+    // o PDF era lido, ou gravava sobre outra empresa selecionada no meio do caminho).
+    const dataRef = React.useRef(clientData);
+    React.useEffect(() => { dataRef.current = clientData; });
 
-    const updateClient = (field, val) => setClientData(prev => ({ ...prev, [field]: val }));
+    // Edição do usuário: marca "alterações não salvas" (o recálculo automático não marca)
+    const updateClient = (field, val) => { markDirty(); setClientData(prev => ({ ...prev, [field]: val })); };
+
+    // Aplica o PGDAS-D sobre o estado ATUAL (updater funcional). Com empresa
+    // selecionada, nome/CNPJ do cadastro prevalecem sobre os do PDF.
+    const aplicarPgdas = (prev, d) => {
+        const next = {
+            ...prev,
+            clientName: prev.clientId ? (prev.clientName || d.nome) : (d.nome || prev.clientName),
+            cnpj: prev.clientId ? (prev.cnpj || d.cnpj) : (d.cnpj || prev.cnpj),
+            regime: 'Simples Nacional',
+            atividade: d.atividade || prev.atividade || 'Serviços',
+            anexo: d.anexo || prev.anexo,
+            // Fator R: quando o PGDAS indica atividade sujeita, gravamos o
+            // anexo-base V (a migração p/ III vem do Fator R ≥ 28%) e já
+            // ligamos a economia III × V no relatório.
+            sujeitoFatorR: d.sujeitoFatorR !== undefined ? d.sujeitoFatorR : prev.sujeitoFatorR,
+            mostrarEconomiaFatorR: d.sujeitoFatorR ? true : prev.mostrarEconomiaFatorR,
+            compMonth: d.compMonth || prev.compMonth,
+            compYear: d.compYear || prev.compYear,
+            competenceShort: d.competenceShort || prev.competenceShort,
+            competence: d.compMonth ? (MONTHS[parseInt(d.compMonth) - 1] + '/' + d.compYear) : prev.competence,
+            revenue: d.rpa || prev.revenue,
+            rbt12: d.rbt12 || prev.rbt12,
+            rbt12p: d.rbt12p || '',
+            dataAbertura: d.dataAbertura || prev.dataAbertura,
+            // "Nenhuma" folha no PDF não herda a folha da empresa/mês anterior (mudaria o Fator R)
+            folha12m: d.folha12m || '',
+            municipio: d.municipio || prev.municipio,
+            evolucao: d.evolucao || prev.evolucao || null,
+            // PGDAS-D é a fonte da verdade: DAS declarado e a segregação por tributo
+            dasOfficial: d.das || '',
+            repartManual: d.repart || null,
+            fatorRInfo: d.fatorR || '',
+        };
+        delete next.revenueRetained; delete next.revenueNonRetained;
+        return next;
+    };
 
     const handleImportPGDASD = async (file) => {
         if (!file) return;
+        const startClientId = dataRef.current.clientId;
         setImportMsg({ type: 'load', text: 'Lendo PDF…' });
+        let timer;
         try {
             const text = await Promise.race([
                 extractPdfText(file),
-                new Promise((_, rej) => setTimeout(() => rej(new Error('tempo esgotado ao ler o arquivo (30s)')), 30000))
+                new Promise((_, rej) => { timer = setTimeout(() => rej(new Error('tempo esgotado ao ler o arquivo (30s)')), 30000); })
             ]);
             const d = parsePGDASD(text);
             if (!d.ok) { setImportMsg({ type: 'err', text: d.error || 'Não consegui ler como PGDAS-D.' }); return; }
+            if (dataRef.current.clientId !== startClientId) {
+                setImportMsg({ type: 'err', text: 'A empresa foi trocada durante a leitura — importação descartada.' });
+                return;
+            }
+
+            // O PDF é da empresa selecionada? CNPJ diferente gravaria valores de outra empresa.
+            const cnpjTela = normalizeCnpj(dataRef.current.cnpj);
+            if (d.cnpj && cnpjTela && normalizeCnpj(d.cnpj) !== cnpjTela) {
+                const ok = await askConfirm({
+                    title: 'CNPJ do PGDAS-D diferente da empresa',
+                    description: `O PDF é do CNPJ ${d.cnpj}${d.nome ? ' (' + d.nome + ')' : ''}, mas a empresa selecionada é ${formatDocument(dataRef.current.cnpj)}${dataRef.current.clientName ? ' (' + dataRef.current.clientName + ')' : ''}. Importar mesmo assim grava estes valores nesta empresa.`,
+                    confirmLabel: 'Importar mesmo assim',
+                    destructive: true,
+                });
+                if (!ok) { setImportMsg({ type: 'err', text: 'Importação cancelada: o CNPJ do PDF não confere com a empresa.' }); return; }
+                if (dataRef.current.clientId !== startClientId) return;
+            }
 
             const rpaNum = pgNum(d.rpa), dasNum = pgNum(d.das);
             const rate = rpaNum > 0 && dasNum > 0 ? (dasNum / rpaNum * 100) : 0;
-            const newData = {
-                ...clientData,
-                clientName: d.nome || clientData.clientName,
-                cnpj: d.cnpj || clientData.cnpj,
-                regime: 'Simples Nacional',
-                atividade: d.atividade || clientData.atividade || 'Serviços',
-                anexo: d.anexo || clientData.anexo,
-                // Fator R: quando o PGDAS indica atividade sujeita, gravamos o
-                // anexo-base V (a migração p/ III vem do Fator R ≥ 28%) e já
-                // ligamos a economia III × V no relatório.
-                sujeitoFatorR: d.sujeitoFatorR !== undefined ? d.sujeitoFatorR : clientData.sujeitoFatorR,
-                mostrarEconomiaFatorR: d.sujeitoFatorR ? true : clientData.mostrarEconomiaFatorR,
-                compMonth: d.compMonth || clientData.compMonth,
-                compYear: d.compYear || clientData.compYear,
-                competenceShort: d.competenceShort || clientData.competenceShort,
-                competence: d.compMonth ? (MONTHS[parseInt(d.compMonth) - 1] + '/' + d.compYear) : clientData.competence,
-                revenue: d.rpa || clientData.revenue,
-                rbt12: d.rbt12 || clientData.rbt12,
-                rbt12p: d.rbt12p || '',
-                folha12m: d.folha12m || clientData.folha12m,
-                municipio: d.municipio || clientData.municipio,
-                evolucao: d.evolucao || clientData.evolucao || null,
-                // PGDAS-D é a fonte da verdade: DAS declarado e a segregação por tributo
-                dasOfficial: d.das || '',
-                repartManual: d.repart || null,
-                fatorRInfo: d.fatorR || '',
-            };
-            delete newData.revenueRetained; delete newData.revenueNonRetained;
             const dueDate = getDueDate(d.compMonth, d.compYear, 'DAS');
             const dasTax = { id: Date.now(), tax: 'DAS', base: d.rpa || '', rate: rate ? rate.toFixed(2).replace('.', ',') : '', apurado: d.das || '', retido: '', value: d.das || '', dueDate, obs: `${d.anexo || 'Simples Nacional'} · Fator R ${d.fatorR || '—'}`, retidoManual: false };
 
-            setClientData(newData);
-            setTaxes(autoFillTaxes(newData, [dasTax]));
+            markDirty();
+            setClientData(prev => aplicarPgdas(prev, d));
+            setTaxes(autoFillTaxes(aplicarPgdas(dataRef.current, d), [dasTax]));
             setValidationErrors({});
-            if (d.multiEstab) {
+            if (!d.compMonth) {
+                setImportMsg({ type: 'err', text: `Importado DAS ${formatCurrency(dasNum)} — competência não identificada no PDF: confira o mês/ano` });
+            } else if (d.multiEstab) {
                 setImportMsg({ type: 'err', text: `Importado: ${d.competenceShort || ''} · DAS ${formatCurrency(dasNum)} — PDF com mais de um estabelecimento, confira os valores` });
             } else {
                 setImportMsg({ type: 'ok', text: `Importado: ${d.competenceShort || ''} · DAS ${formatCurrency(dasNum)}` });
@@ -281,6 +322,8 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
         } catch (e) {
             console.error(e);
             setImportMsg({ type: 'err', text: 'Erro ao ler o PDF: ' + e.message });
+        } finally {
+            clearTimeout(timer);
         }
     };
 
@@ -292,7 +335,7 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
             if (clearLocks) baseTaxes = baseTaxes.map(t => ({ ...t, baseManual: false, rateManual: false, apuradoManual: false, valueManual: false, retidoManual: false }));
             if (baseTaxes.length === 0) {
                 if (data.regime === 'Lucro Presumido' || data.regime === 'Lucro Real') {
-                    baseTaxes = [...lpDefaults(data.atividade)];
+                    baseTaxes = [...regimeDefaults(data.regime, data.atividade)];
                 } else if (data.regime === 'Simples Nacional') {
                     baseTaxes = data.atividade === 'Comércio' ? [...DEFAULT_TAXES_SN_COMERCIO] : [...DEFAULT_TAXES_SN_SERVICOS];
                 } else if (data.regime === 'MEI') {
@@ -463,28 +506,41 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
         clientData.temFumacop,
         clientData.fumacopValor,
         clientData.pisApurado,
-        clientData.cofinsApurado
+        clientData.cofinsApurado,
+        clientData.periodRevenueRetained,
+        clientData.irpjRealApurado,
+        clientData.csllRealApurado,
+        clientData.rbt12p,
+        clientData.dataAbertura,
+        clientData.evolucao
     ]);
 
     // Auto-preenche o "Faturamento acumulado do período" (LP trimestral/estimativa) a partir do
     // histórico salvo (records) + a receita do mês atual. Editável: se travado à mão
     // (periodRevenueManual), não sobrescreve. "usar histórico" destrava.
+    // Só o LP trimestral acumula: a Estimativa (Lucro Real) incide sobre a receita do mês.
+    // Também soma a receita COM retenção do trimestre (as retenções de IRPJ/CSLL de todos
+    // os meses abatem o DARF do fechamento). Atualização automática — não marca "não salvo".
     React.useEffect(() => {
-        const mode = clientData.irpjCsllMode;
-        if (mode !== 'Trimestral (Apuração)' && mode !== 'Estimativa (Anual)') return;
-        if (clientData.periodRevenueManual) return;
+        if (clientData.irpjCsllMode !== 'Trimestral (Apuração)' || clientData.regime === 'Lucro Real') return;
         const sug = acumuladoPeriodo(clientData, records);
         if (!sug) return;
-        if (Math.abs(parseNumBR(clientData.periodRevenue) - sug.total) > 0.005) {
-            updateClient('periodRevenue', formatBRLDisplay(sug.total));
+        const ret = sug.totalRetido > 0 ? formatBRLDisplay(sug.totalRetido) : '';
+        if ((clientData.periodRevenueRetained || '') !== ret) {
+            setClientData(prev => ({ ...prev, periodRevenueRetained: ret }));
         }
-    }, [
+        if (clientData.periodRevenueManual) return;
+        if (Math.abs(parseNumBR(clientData.periodRevenue) - sug.total) > 0.005) {
+            setClientData(prev => ({ ...prev, periodRevenue: formatBRLDisplay(sug.total) }));
+        }
+    }, [clientData.regime, clientData.periodRevenueRetained, clientData.periodRevenue,
         clientData.irpjCsllMode, clientData.compMonth, clientData.compYear,
         clientData.revenue, clientData.revenueRetained, clientData.revenueNonRetained,
         clientData.periodRevenueManual, records,
     ]);
 
     const updateTax = (id, field, val) => {
+        markDirty();
         setTaxes(prev => prev.map(t => {
             if (t.id !== id) return t;
             const updated = { ...t, [field]: val };
@@ -520,10 +576,11 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
     };
 
     const addTax = () => {
+        markDirty();
         setTaxes(prev => [...prev, { id: Date.now(), tax: "", base: "", rate: "", apurado: "", retido: "", value: "", dueDate: "", obs: "", retidoManual: false }]);
     };
 
-    const removeTax = (id) => { setTaxes(prev => prev.filter(t => t.id !== id)); };
+    const removeTax = (id) => { markDirty(); setTaxes(prev => prev.filter(t => t.id !== id)); };
 
     // Indicador visual de campo travado (editado à mão) — mesmo idioma do realce de "Retido"
     const lockCls = (on) => on ? ' shadow-[inset_0_0_0_1px_rgba(245,158,11,0.45)]' : '';
@@ -558,7 +615,7 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
     const addParcel = () => setParcelamentos([...parcelamentos, { id: Date.now() + Math.floor(Math.random() * 1000), descricao: '', valor: '', parcelaAtual: '', parcelasTotal: '', vencDia: '' }]);
     const rmParcel = (i) => setParcelamentos(parcelamentos.filter((_, j) => j !== i));
 
-    const showFatorR = clientData.regime === 'Simples Nacional' && (clientData.anexo === 'Anexo V' || clientData.anexo === 'Anexo III') && parseNumBR(clientData.rbt12) > 0;
+    const showFatorR = clientData.regime === 'Simples Nacional' && (clientData.anexo === 'Anexo V' || clientData.anexo === 'Anexo III') && rbtFatorR(clientData) > 0;
     const totalRevenue = calculateTotalRevenue(clientData);
 
     // Controle inteligente da tabela
@@ -571,7 +628,7 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
                 <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-4 flex items-start gap-2 animate-fade-in-up">
                     <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0" />
                     <p className="text-xs text-amber-800 font-medium leading-relaxed">
-                        <strong>Retenções no Simples Nacional:</strong> Para impostos retidos na fonte (como ISS ou INSS), basta clicar em "Habilitar Retenções" abaixo e inserir o valor direto na coluna "Retido" da tabela, o sistema abaterá automaticamente do "A Pagar".
+                        <strong>Retenções no Simples Nacional:</strong> o <b>ISS retido</b> pelo tomador abate a parcela de ISS do DAS — informe-o em "Habilitar Retenções" (coluna "Retido"). O <b>INSS retido</b> (cessão de mão de obra) <b>não</b> reduz o DAS: compensa só a CPP recolhida fora do DAS (Anexo IV) ou é pedido em restituição.
                     </p>
                 </div>
             )}
@@ -625,7 +682,7 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
                     </div>
                     <div>
                         <label className="field-label">CNPJ</label>
-                        <input className="field-input" value={clientData.cnpj} onChange={e => updateClient('cnpj', formatCNPJ(e.target.value))} placeholder="00.000.000/0001-00" />
+                        <input className="field-input" value={clientData.cnpj} onChange={e => updateClient('cnpj', formatDocument(normalizeCnpj(e.target.value).slice(0, 14)))} placeholder="00.000.000/0001-00" />
                     </div>
                     <div>
                         <label className="field-label">Competência <span className="text-red-400">*</span></label>
@@ -664,12 +721,13 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
                             onChange={e => {
                                 const nr = e.target.value;
                                 const atv = clientData.atividade || 'Serviços';
+                                markDirty();
 
                                 let updatedData = { ...clientData, regime: nr, atividade: atv };
                                 let newTaxes = [];
 
                                 if (nr === 'Lucro Presumido' || nr === 'Lucro Real') {
-                                    newTaxes = [...lpDefaults(atv)];
+                                    newTaxes = [...regimeDefaults(nr, atv)];
                                     updatedData.anexo = '';
                                     updatedData.revenue = '';
                                 } else if (nr === 'Simples Nacional') {
@@ -700,6 +758,7 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
                             <select className="field-input" value={clientData.atividade || 'Serviços'}
                                 onChange={e => {
                                     const atv = e.target.value;
+                                    markDirty();
                                     if (clientData.regime === 'Simples Nacional') {
                                         updateClient('atividade', atv);
                                         const newTaxes = atv === 'Comércio' ? DEFAULT_TAXES_SN_COMERCIO : DEFAULT_TAXES_SN_SERVICOS;
@@ -712,7 +771,7 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
                                         // LP/Real: troca o conjunto padrão (ICMS no comércio, ISS nos serviços)
                                         const upd = { ...clientData, atividade: atv };
                                         setClientData(upd);
-                                        setTaxes(autoFillTaxes(upd, lpDefaults(atv).map((t, i) => ({ ...t, id: Date.now() + i }))));
+                                        setTaxes(autoFillTaxes(upd, regimeDefaults(clientData.regime, atv).map((t, i) => ({ ...t, id: Date.now() + i }))));
                                     }
                                 }}>
                                 <option value="Serviços">Prestação de Serviços</option>
@@ -760,6 +819,13 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
                                     <input className="field-input" type="text" value={clientData.rbt12p || ''}
                                         onChange={e => updateClient('rbt12p', parseBRL(e.target.value))} placeholder="0,00" />
                                 </div>
+                                <div>
+                                    <label className="field-label" htmlFor="sete-abertura">Início de atividade (MM/AAAA) <span className="text-slate-400">(opcional)</span></label>
+                                    <input id="sete-abertura" className="field-input" type="text" inputMode="numeric" value={clientData.dataAbertura || ''}
+                                        onChange={e => { const dg = e.target.value.replace(/\D/g, '').slice(0, 6); updateClient('dataAbertura', dg.length > 2 ? dg.slice(0, 2) + '/' + dg.slice(2) : dg); }}
+                                        placeholder="ex.: 05/2026" />
+                                    <p className="text-[10px] text-slate-500 mt-1">Empresa com menos de 12 meses e sem RBT12p: o sistema proporcionaliza a RBT12 (Res. CGSN 140, art. 22).</p>
+                                </div>
                             </div>
 
                             {clientData.repartManual && (() => {
@@ -777,9 +843,9 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
                                 );
                             })()}
 
-                            {parseNumBR(clientData.rbt12) > 0 && clientData.anexo && !showFatorR && clientData.regime === 'Simples Nacional' && (
+                            {rbtFatorR(clientData) > 0 && clientData.anexo && !showFatorR && clientData.regime === 'Simples Nacional' && (
                                 (() => {
-                                    const rbt12 = parseNumBR(clientData.rbt12);
+                                    const rbt12 = rbtFatorR(clientData);
                                     const folha12m = parseNumBR(clientData.folha12m !== undefined ? clientData.folha12m : clientData.folha);
                                     const fR = calcFatorR(folha12m, rbt12);
                                     const anexoEf = getAnexoEfetivo(clientData.anexo, fR, isSujeitoFatorR(clientData, folha12m));
@@ -847,7 +913,7 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
                                             <span>IRPJ (1,5%): <b className="text-slate-800">{formatCurrency(irpj)}</b></span>
                                             <span className="text-emerald-700 font-bold">Total federal: {formatCurrency(csrf + irpj)}</span>
                                         </div>
-                                        <p className="text-[10px] text-slate-400 mt-1.5">+ ISS conforme o município (alíquota da linha ISS). A <b>CSRF (4,65%)</b> é dispensada quando os pagamentos no mês ao <b>mesmo prestador</b> não passam de R$ 5.000. O <b>IRRF (1,5%)</b> incide quase sempre (dispensa só se a retenção ficar ≤ R$ 10) — e cai para <b>1%</b> em limpeza, vigilância, segurança e locação de mão de obra. Ajuste o valor exato na coluna "Retido" da tabela quando necessário.</p>
+                                        <p className="text-[10px] text-slate-400 mt-1.5">+ ISS conforme o município (alíquota da linha ISS). A <b>CSRF (4,65%)</b> só é dispensada quando a retenção ficar em até R$ 10,00 (Lei 10.833, art. 31, §3º — o limite de R$ 5.000 foi revogado em 2015). O <b>IRRF (1,5%)</b> vale para os serviços profissionais do art. 714 do RIR/2018 (dispensa se ≤ R$ 10) — e é de <b>1%</b> em limpeza, vigilância, segurança e locação de mão de obra. Ajuste o valor exato na coluna "Retido" da tabela quando necessário.</p>
                                     </div>
                                 );
                             })()}
@@ -928,7 +994,8 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
                                     <div>
                                         <label className="field-label">FAP (multiplicador do RAT)</label>
                                         <input className="field-input" type="text" inputMode="decimal" value={clientData.fap ?? ''}
-                                            onChange={e => updateClient('fap', e.target.value.replace(/[^\d,]/g, ''))} placeholder="1,0000 (deixe vazio = 1)" />
+                                            onChange={e => updateClient('fap', e.target.value.replace(/\./g, ',').replace(/[^\d,]/g, '').replace(/,(?=.*,)/g, ''))} placeholder="1,0000 (deixe vazio = 1)" />
+                                        {(() => { const fap = parseNumBR(clientData.fap); return fap > 0 && (fap < 0.5 || fap > 2) ? <p className="text-[10px] text-red-600 font-bold mt-1">FAP fora da faixa legal (0,5 a 2,0) — o cálculo usa o limite. Confira o valor.</p> : null; })()}
                                     </div>
                                 )}
 
@@ -977,7 +1044,7 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
                                     </select>
                                 </div>
                                 
-                                {(clientData.irpjCsllMode === 'Trimestral (Apuração)' || clientData.irpjCsllMode === 'Estimativa (Anual)') && (
+                                {clientData.irpjCsllMode === 'Trimestral (Apuração)' && clientData.regime !== 'Lucro Real' && (
                                     <div className="animate-fade-in">
                                         <div className="flex items-center justify-between mb-1">
                                             <label className="field-label !mb-0">Faturamento Acumulado no Período (R$)</label>
@@ -1001,6 +1068,28 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
                                     </div>
                                 )}
                                 
+                                {clientData.regime === 'Lucro Real' && clientData.irpjCsllMode === 'Trimestral (Apuração)' && (
+                                    <div className="col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-3 animate-fade-in">
+                                        <p className="sm:col-span-2 text-[11px] font-medium text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-2.5">
+                                            <b>Lucro Real trimestral:</b> IRPJ e CSLL saem do lucro real do trimestre (resultado contábil ajustado no LALUR), não de presunção. Informe os valores apurados — sem eles a guia fica em branco.
+                                        </p>
+                                        <div>
+                                            <label className="field-label" htmlFor="sete-irpj-real">IRPJ apurado no trimestre, com adicional (R$)</label>
+                                            <input id="sete-irpj-real" className="field-input" type="text" inputMode="decimal" value={clientData.irpjRealApurado || ''}
+                                                onChange={e => updateClient('irpjRealApurado', parseBRL(e.target.value))} placeholder="0,00" />
+                                        </div>
+                                        <div>
+                                            <label className="field-label" htmlFor="sete-csll-real">CSLL apurada no trimestre (R$)</label>
+                                            <input id="sete-csll-real" className="field-input" type="text" inputMode="decimal" value={clientData.csllRealApurado || ''}
+                                                onChange={e => updateClient('csllRealApurado', parseBRL(e.target.value))} placeholder="0,00" />
+                                        </div>
+                                    </div>
+                                )}
+                                {clientData.irpjCsllMode === 'Estimativa (Anual)' && (
+                                    <div className="flex items-center">
+                                        <p className="text-[10px] text-slate-500 italic">Estimativa mensal: IRPJ e CSLL sobre a receita <b>do mês</b> (presunção), adicional acima de R$ 20 mil, recolhidos todo mês. O ajuste por balancete de suspensão/redução é feito à parte.</p>
+                                    </div>
+                                )}
                                 {(!clientData.irpjCsllMode || clientData.irpjCsllMode === 'Mensal (Provisão)') && (
                                     <div className="flex items-center">
                                         <p className="text-[10px] text-slate-500 italic">IRPJ e CSLL calculados sobre o faturamento do mês e <b>recolhidos todo mês</b> (guia mensal).</p>
@@ -1171,7 +1260,10 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
                                 + Habilitar Retenções
                             </button>
                         )}
-                        <button onClick={() => { recalcular(undefined, true); }}
+                        <button onClick={async () => {
+                            const ok = await askConfirm({ title: 'Restaurar os padrões?', description: 'Os valores editados à mão na tabela (base, alíquota, apurado, retido, a pagar e vencimento) serão descartados e tudo será recalculado.', confirmLabel: 'Restaurar', destructive: true });
+                            if (ok) { markDirty(); recalcular(undefined, true); }
+                        }}
                             title="Destrava os campos editados à mão e recalcula tudo do zero"
                             className="bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-emerald-700 transition-all cursor-pointer shadow-sm hover:shadow-md">
                             <TrendingUp className="w-4 h-4" /> Restaurar padrões
@@ -1248,7 +1340,7 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
                 {taxes.length === 0 && (
                     <div className="text-center py-8 text-slate-400">
                         <Calculator className="w-8 h-8 mx-auto mb-2 opacity-50" />
-                        <p className="text-sm">Nenhum tributo adicionado. Clique em "Recalcular Tudo" para restaurar os padrões.</p>
+                        <p className="text-sm">Nenhum tributo adicionado. Clique em "Restaurar padrões" para recriar a tabela do regime.</p>
                     </div>
                 )}
             </div>
@@ -1268,7 +1360,7 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
     const totalRetido = R.totalRetido;
     const aliquotaEfetiva = R.cargaEfetiva;     // carga sobre o faturamento (só tributos sobre a receita)
 
-    const rbt12 = parseNum(clientData.rbt12);
+    const rbt12 = rbtFatorR(clientData);
     const folha12m = parseNum(clientData.folha12m !== undefined ? clientData.folha12m : clientData.folha);
     const fR = calcFatorR(folha12m, rbt12);
     const anexoEfetivo = clientData.regime === 'Simples Nacional' && clientData.anexo ? getAnexoEfetivo(clientData.anexo, fR, isSujeitoFatorR(clientData, folha12m)) : clientData.anexo;
@@ -1287,66 +1379,9 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
     // Função que totaliza uma lista de tributos
     const calcTotal = (list) => list.reduce((s, t) => s + parseNum(t.value), 0);
 
-    // ===== Economia inteligente: Fator R (Simples) e Equiparação Hospitalar (Lucro Presumido) =====
-    let economia = null;
-    if ((clientData.sujeitoFatorR === true || clientData.mostrarEconomiaFatorR) && clientData.regime === 'Simples Nacional' && (clientData.anexo === 'Anexo III' || clientData.anexo === 'Anexo V') && rbt12 > 0 && fR >= 28) {
-        const rateIII = calcAliquotaEfetivaSN(rbt12, 'Anexo III').rate;
-        const rateV = calcAliquotaEfetivaSN(rbt12, 'Anexo V').rate;
-        // DAS ancorado no REALMENTE apurado (Anexo III efetivo); o Anexo V é o
-        // mesmo DAS reescalado pela razão das alíquotas efetivas V/III.
-        const dasReal = parseNum((taxes.find(t => t.tax === 'DAS') || {}).apurado);
-        const dasIII = dasReal > 0 ? dasReal : revenue * rateIII / 100;
-        const dasV = dasReal > 0 && rateIII > 0 ? dasReal * (rateV / rateIII) : revenue * rateV / 100;
-        // CUSTO TOTAL de cada cenário — inclui os tributos do pró-labore. Para
-        // atingir o Fator R paga-se um pró-labore alto, que gera INSS (11%, até
-        // o teto) e IRRF; sem o Fator R, o sócio recebe o mínimo legal (1
-        // salário mínimo). A economia REAL é a diferença dos custos totais, não
-        // só do DAS — um pró-labore alto pode anular a economia da alíquota.
-        const plAtual = sumProLabore(clientData);
-        const inssCom = Math.min(plAtual, TETO_INSS) * 0.11;
-        const irrfCom = calcIRRFProLabore(plAtual, inssCom).imposto;
-        const custoCom = dasIII + inssCom + irrfCom;
-        const inssSem = SALARIO_MINIMO * 0.11;
-        const irrfSem = calcIRRFProLabore(SALARIO_MINIMO, inssSem).imposto; // ~0 (isento)
-        const custoSem = dasV + inssSem + irrfSem;
-        // Só é "economia" quando o Anexo III (com pró-labore atual) sai mais
-        // barato que o Anexo V (com pró-labore mínimo). Se não, não há economia
-        // real a exibir (economia fica null → some do KPI e da página 2).
-        if (custoSem - custoCom > 0) {
-            economia = {
-                tipo: 'Fator R',
-                valor: custoSem - custoCom,
-                semLabel: 'Sem Fator R · Anexo V (pró-labore mínimo)',
-                comLabel: 'Com Fator R · Anexo III (pró-labore atual)',
-                semVal: custoSem, comVal: custoCom,
-                semExtra: `DAS ${formatCurrency(dasV)} + INSS ${formatCurrency(inssSem)} (1 salário mínimo)`,
-                comExtra: `DAS ${formatCurrency(dasIII)} + INSS ${formatCurrency(inssCom)}${irrfCom > 0 ? ' + IRRF ' + formatCurrency(irrfCom) : ''}`,
-                explica: `O custo total considera os tributos do pró-labore. Para atingir o Fator R (${fR.toFixed(1).replace('.', ',')}% ≥ 28%), o pró-labore de ${formatCurrency(plAtual)} gera INSS e IRRF; sem o Fator R, o sócio receberia 1 salário mínimo (${formatCurrency(SALARIO_MINIMO)}). A economia é a diferença entre o custo total no Anexo V (com pró-labore mínimo) e no Anexo III (com o pró-labore atual).`,
-            };
-        }
-    } else if ((clientData.regime === 'Lucro Presumido' || clientData.regime === 'Lucro Real') && clientData.equiparacaoHospitalar && (clientData.atividade || 'Serviços') === 'Serviços') {
-        const periodMode = clientData.irpjCsllMode === 'Trimestral (Apuração)' || clientData.irpjCsllMode === 'Estimativa (Anual)';
-        const baseRev = periodMode && parseNum(clientData.periodRevenue) > 0 ? parseNum(clientData.periodRevenue) : revenue;
-        const eqRev = Math.min(Math.max(parseNum(clientData.receitaEquiparacao), 0), baseRev);
-        const normRev = baseRev - eqRev;
-        const adicLimit = clientData.irpjCsllMode === 'Trimestral (Apuração)' ? 60000 : 20000;
-        const baseIrpjSem = baseRev * 0.32, baseCsllSem = baseRev * 0.32;
-        const semVal = (baseIrpjSem * 0.15) + (baseCsllSem * 0.09) + (Math.max(0, baseIrpjSem - adicLimit) * 0.10);
-        const baseIrpjCom = eqRev * 0.08 + normRev * 0.32, baseCsllCom = eqRev * 0.12 + normRev * 0.32;
-        const comVal = (baseIrpjCom * 0.15) + (baseCsllCom * 0.09) + (Math.max(0, baseIrpjCom - adicLimit) * 0.10);
-        if (eqRev > 0 && semVal - comVal > 0) {
-            economia = {
-                tipo: 'Equiparação Hospitalar',
-                valor: semVal - comVal,
-                semLabel: 'Sem equiparação · tudo a 32%',
-                comLabel: 'Com equiparação · parcial',
-                semVal, comVal,
-                semExtra: `IRPJ e CSLL sobre 32% de ${formatCurrency(baseRev)}`,
-                comExtra: `${formatCurrency(eqRev)} a 8%/12% + ${formatCurrency(normRev)} a 32%`,
-                explica: `Apenas ${formatCurrency(eqRev)} da receita se enquadra na equiparação (presunção 8% IRPJ / 12% CSLL); o restante (${formatCurrency(normRev)}) segue a 32%. A economia é a diferença na base de IRPJ e CSLL sobre a parcela equiparada.`,
-            };
-        }
-    }
+    // ===== Economia inteligente: Fator R (Simples) e Equiparação Hospitalar (LP/Real) =====
+    // Conta no engine (calcEconomia) — a mesma persistida no histórico ao salvar.
+    const economia = calcEconomia(clientData, taxes);
 
     // Faturamento
     const isLPComercioRep = (clientData.regime === 'Lucro Presumido' || clientData.regime === 'Lucro Real') && (clientData.atividade === 'Comércio' || clientData.atividade === 'Indústria');
@@ -1374,7 +1409,8 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
     const MES_ABBR = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
     // Só datas dd/mm/aaaa válidas entram no calendário (texto livre mal formatado não vai pro PDF)
     const validDue = (s) => { if (!/^\d{2}\/\d{2}\/\d{4}$/.test(s)) return false; const d = +s.slice(0, 2), m = +s.slice(3, 5); return d >= 1 && d <= 31 && m >= 1 && m <= 12; };
-    const withDue = taxes.filter(t => t.tax && !ehRetido(t) && t.dueDate && validDue(t.dueDate) && parseNum(t.value) > 0)
+    // Provisão (IRPJ/CSLL do trimestre em mês comum) não é guia do mês — fica fora do calendário
+    const withDue = taxes.filter(t => t.tax && !ehRetido(t) && !t.provisao && t.dueDate && validDue(t.dueDate) && parseNum(t.value) > 0)
         .sort((a, b) => {
             const pa = a.dueDate.split('/'), pb = b.dueDate.split('/');
             return new Date(pa[2], pa[1] - 1, pa[0]) - new Date(pb[2], pb[1] - 1, pb[0]);
@@ -1709,7 +1745,7 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
     })() : null;
     const estImpostosMM = 14 + taxRows.length * 6.6 + 8;
     const estParcelMM = parcelamentoLines.length > 0 ? 22 + parcelamentoLines.length * 11 : 0;
-    const estResumoBaseMM = 26 + 15 + 21 + 12 + (hasRetentions ? 32 + estImpostosMM : Math.max(34, estImpostosMM)) + ((clientData.irpjCsllMode === 'Trimestral (Apuração)' || clientData.irpjCsllMode === 'Estimativa (Anual)') && parseNum(clientData.periodRevenue) > 0 ? 8 : 0) + (hasFolhaPL ? 34 : 0) + estParcelMM;
+    const estResumoBaseMM = 26 + 15 + 21 + 12 + (hasRetentions ? 32 + estImpostosMM : Math.max(34, estImpostosMM)) + (clientData.irpjCsllMode === 'Trimestral (Apuração)' && [3, 6, 9, 12].includes(parseInt(clientData.compMonth)) && parseNum(clientData.periodRevenue) > 0 ? 8 : 0) + (hasFolhaPL ? 34 : 0) + estParcelMM;
     const evolucaoSeparada = !!evolucaoCard && (estResumoBaseMM + 46 > PAGE_BUDGET_MM);
 
     return (
@@ -1753,7 +1789,7 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
                         </div>
                     )}
 
-                    {(clientData.irpjCsllMode === 'Trimestral (Apuração)' || clientData.irpjCsllMode === 'Estimativa (Anual)') && parseNum(clientData.periodRevenue) > 0 && (
+                    {clientData.irpjCsllMode === 'Trimestral (Apuração)' && [3, 6, 9, 12].includes(parseInt(clientData.compMonth)) && parseNum(clientData.periodRevenue) > 0 && (
                         <div className="avoid-break flex items-center gap-2" style={{ fontSize: '10px', color: '#646d7c', margin: '-2px 2px 12px' }}>
                             <span style={{ width: 14, height: 2, background: '#F79C04', display: 'inline-block', flexShrink: 0 }}></span>
                             <span>IRPJ e CSLL apurados sobre o <b style={{ color: '#1a2230' }}>faturamento acumulado do período: {formatCurrency(clientData.periodRevenue)}</b> · {clientData.irpjCsllMode}</span>
@@ -2101,7 +2137,7 @@ const LiveSummary = ({ clientData, taxes, records = [] }) => {
     const dasTax = taxes.find(t => /^DAS/.test(t.tax || ''));
     const das = dasTax ? parseNumBR(dasTax.value) : 0;
 
-    const rbt12 = parseNumBR(clientData.rbt12);
+    const rbt12 = rbtFatorR(clientData);
     const acimaSublimite = clientData.regime === 'Simples Nacional' && rbt12 > SUBLIMITE_SN;
     const acimaTeto = clientData.regime === 'Simples Nacional' && rbt12 > LIMITE_SN;
     const folha12m = parseNumBR(clientData.folha12m);
@@ -2114,7 +2150,7 @@ const LiveSummary = ({ clientData, taxes, records = [] }) => {
     const valid = (s) => /^\d{2}\/\d{2}\/\d{4}$/.test(s || '');
     const MES_ABBR = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
     const withDue = taxes
-        .filter(t => t.tax && valid(t.dueDate) && parseNumBR(t.value) > 0)
+        .filter(t => t.tax && !ehRetido(t) && !t.provisao && valid(t.dueDate) && parseNumBR(t.value) > 0)
         .sort((a, b) => { const pa = a.dueDate.split('/'), pb = b.dueDate.split('/'); return new Date(pa[2], pa[1] - 1, pa[0]) - new Date(pb[2], pb[1] - 1, pb[0]); });
     const today = new Date(); today.setHours(0, 0, 0, 0);
     const prox = withDue.find(t => { const p = t.dueDate.split('/'); return new Date(p[2], p[1] - 1, p[0]) >= today; }) || withDue[0];
@@ -2218,6 +2254,14 @@ const blankClient = () => ({
     regime: "Lucro Presumido", revenueRetained: "", revenueNonRetained: ""
 });
 
+// Tabela de tributos padrão do regime/atividade (usada ao selecionar a empresa).
+const taxTemplateFor = (regime, atividade) => {
+    if (regime === 'Lucro Presumido' || regime === 'Lucro Real') return regimeDefaults(regime, atividade);
+    if (regime === 'Simples Nacional') return atividade === 'Comércio' ? DEFAULT_TAXES_SN_COMERCIO : DEFAULT_TAXES_SN_SERVICOS;
+    if (regime === 'MEI') return ({ 'Comércio': DEFAULT_TAXES_MEI_COMERCIO, 'Serviços': DEFAULT_TAXES_MEI_SERVICOS, 'Ambos': DEFAULT_TAXES_MEI_AMBOS })[atividade] || DEFAULT_TAXES_MEI_SERVICOS;
+    return DEFAULT_TAXES;
+};
+
 const App = () => {
     // ?view=preview abre direto na visualização (links e verificação automatizada)
     const [tab, setTab] = useState(() => (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('view') === 'preview') ? 'preview' : 'edit');
@@ -2226,9 +2270,41 @@ const App = () => {
     const [validationErrors, setValidationErrors] = useState({});
 
     // ---- Integração com o controle fiscal ----
-    const { clients } = useData();
+    const { clients, isPeriodLocked } = useData();
+    const { isViewer } = useAuth();
     const [clientId, setClientId] = useState("");
     const [records, setRecords] = useState([]);
+    // Registro salvo aberto na tela (id/versão p/ o controle otimista da 022)
+    const [loadedRec, setLoadedRec] = useState(null);
+    // Alterações do usuário ainda não salvas (o recálculo automático não conta)
+    const [dirty, setDirty] = useState(false);
+    const markDirty = useCallback(() => setDirty(true), []);
+    const [saving, setSaving] = useState(false);
+    // Só a resposta da ÚLTIMA leitura do histórico é aplicada (troca rápida A→B)
+    const recordsReq = React.useRef(0);
+
+    // Diálogo de confirmação como Promise: `if (await askConfirm({...}))`
+    const [confirmState, setConfirmState] = useState(null);
+    const confirmResolve = React.useRef(null);
+    const askConfirm = useCallback((opts) => new Promise((resolve) => {
+        confirmResolve.current = resolve;
+        setConfirmState({
+            ...opts,
+            onConfirm: () => { const r = confirmResolve.current; confirmResolve.current = null; if (r) r(true); },
+        });
+    }), []);
+    const closeConfirm = () => {
+        setConfirmState(null);
+        const r = confirmResolve.current; confirmResolve.current = null;
+        if (r) r(false);
+    };
+    const confirmDescartar = (acao) => !dirty ? Promise.resolve(true) : askConfirm({
+        title: 'Descartar alterações não salvas?',
+        description: `A apuração em edição tem alterações que ainda não foram salvas. ${acao} descarta essas alterações.`,
+        confirmLabel: 'Descartar e continuar',
+        destructive: true,
+    });
+    const compLabelOf = (key) => key ? `${key.slice(5, 7)}/${key.slice(0, 4)}` : '';
 
     const [clientData, setClientData] = useState(blankClient);
     const [taxes, setTaxes] = useState(DEFAULT_TAXES);
@@ -2242,23 +2318,45 @@ const App = () => {
     };
 
     const loadRecords = async (id) => {
-        try { setRecords(await getApuracoes(id)); } catch (e) { setRecords([]); setToast({ message: e instanceof Error ? e.message : 'Falha ao carregar apurações', type: 'error' }); }
+        const req = ++recordsReq.current;
+        try {
+            const res = await getApuracoes(id);
+            if (req !== recordsReq.current) return; // resposta de uma empresa anterior
+            setRecords(res);
+        } catch (e) {
+            if (req !== recordsReq.current) return;
+            setRecords([]);
+            setToast({ message: e instanceof Error ? e.message : 'Falha ao carregar apurações', type: 'error' });
+        }
     };
 
+    // Trocar de empresa ZERA os dados financeiros: antes, faturamento, sócios,
+    // retenções e tributos da empresa anterior ficavam na tela e podiam ser salvos
+    // na nova empresa.
     const selectClient = async (id) => {
+        if (id === clientId) return;
+        if (!(await confirmDescartar('Trocar de empresa'))) return;
+        recordsReq.current++; // invalida leituras em andamento da empresa anterior
         setClientId(id);
-        if (!id) { setRecords([]); return; }
+        setRecords([]);
+        setLoadedRec(null);
+        setDirty(false);
+        setValidationErrors({});
+        if (!id) { setClientData(blankClient()); setTaxes(DEFAULT_TAXES); return; }
         const c = clients.find(x => x.id === id);
-        if (c) {
-            setClientData(prev => ({
-                ...prev,
-                clientId: id,
-                clientName: c.name || prev.clientName,
-                cnpj: c.cnpj ? formatCNPJ(c.cnpj) : prev.cnpj,
-                regime: c.taxRegime ? (TAX_REGIME_LABELS[c.taxRegime] || prev.regime) : prev.regime,
-                atividade: mapAtividade(c.businessActivity) || prev.atividade,
-            }));
-        }
+        const regime = c && c.taxRegime && TAX_REGIME_LABELS[c.taxRegime] && TAX_REGIME_LABELS[c.taxRegime] !== 'Imune / Isento'
+            ? TAX_REGIME_LABELS[c.taxRegime] : 'Lucro Presumido';
+        const atividade = mapAtividade(c && c.businessActivity);
+        const novo = {
+            ...blankClient(),
+            clientId: id,
+            clientName: (c && c.name) || '',
+            cnpj: c && c.cnpj ? formatDocument(c.cnpj) : '',
+            regime,
+            atividade,
+        };
+        setClientData(novo);
+        setTaxes(autoFillTaxes(novo, taxTemplateFor(regime, atividade).map((t, i) => ({ ...t, id: Date.now() + i }))));
         await loadRecords(id);
     };
 
@@ -2277,53 +2375,107 @@ const App = () => {
     };
 
     const saveComp = async () => {
+        if (saving) return;
+        if (isViewer) { setToast({ message: 'Perfil somente leitura — não é possível salvar.', type: 'error' }); return; }
         if (!clientId) { setToast({ message: 'Selecione a empresa do controle fiscal.', type: 'error' }); return; }
         const compKey = compKeyOf(clientData);
         if (!compKey) { setToast({ message: 'Informe mês e ano da competência.', type: 'error' }); return; }
+        if (!validate()) {
+            setTab('edit');
+            setToast({ message: 'Corrija os campos destacados antes de salvar.', type: 'error' });
+            return;
+        }
+        if (isPeriodLocked(compKey)) {
+            setToast({ message: `Competência ${compLabelOf(compKey)} está fechada — reabra pelo cadeado do topo para alterar.`, type: 'error' });
+            return;
+        }
+        // Salvar sobre OUTRA competência já existente (ex.: trocou o mês após reabrir,
+        // ou "Iniciar próximo mês" caiu num mês já salvo) pede confirmação.
+        const existente = records.find(r => r.compKey === compKey);
+        const mesmaAberta = !!loadedRec && loadedRec.compKey === compKey;
+        if (existente && !mesmaAberta) {
+            const ok = await askConfirm({
+                title: `Substituir a competência ${existente.competenceShort || compLabelOf(compKey)}?`,
+                description: 'Já existe uma apuração salva para este mês. Salvar agora substitui os valores salvos.',
+                confirmLabel: 'Substituir',
+                destructive: true,
+            });
+            if (!ok) return;
+        }
+        const alvo = mesmaAberta ? loadedRec : existente;
         const revenue = calculateTotalRevenue(clientData);
         const R = resumoApuracao(taxes, revenue);
         const das = taxes.filter(t => /^DAS/.test(t.tax)).reduce((s, t) => s + parseNumBR(t.value), 0);
+        const eco = calcEconomia(clientData, taxes);
         const rec = {
+            id: alvo ? alvo.id : undefined,
+            version: alvo ? alvo.version : undefined,
             clientId,
             compKey,
-            competenceShort: clientData.competenceShort || (String(clientData.compMonth || '').padStart(2, '0') + '/' + (clientData.compYear || '')),
+            competenceShort: compLabelOf(compKey),
             regime: clientData.regime,
             anexo: clientData.anexo,
             atividade: clientData.atividade,
             faturamento: revenue,
             rbt12: parseNumBR(clientData.rbt12),
-            folha12m: parseNumBR(clientData.folha12m),
-            proLabore: parseNumBR(clientData.proLabore),
+            folha12m: parseNumBR(clientData.folha12m !== undefined ? clientData.folha12m : clientData.folha),
+            proLabore: sumProLabore(clientData),
             totalTributos: R.totalApurado,
             totalPagar: R.totalRecolherMes,
             aliquotaEfetiva: R.cargaEfetiva,
-            economia: 0,
+            economia: eco ? eco.valor : 0,
             das,
+            baseCarga: R.baseCarga,
+            totalProvisao: R.totalProvisao,
+            totalRetido: R.totalRetido,
             payload: { clientData, taxes },
         };
+        setSaving(true);
         try {
-            await saveApuracao(rec);
+            const salvo = await saveApuracao(rec);
+            setLoadedRec({ id: salvo && salvo.id, version: salvo && salvo.version, compKey });
+            setDirty(false);
             await loadRecords(clientId);
             setToast({ message: `Competência ${rec.competenceShort} salva.`, type: 'success' });
         } catch (e) {
             console.error(e);
-            setToast({ message: 'Erro ao salvar a competência.', type: 'error' });
+            setToast({ message: e instanceof Error && e.message ? e.message : 'Erro ao salvar a competência.', type: 'error' });
+        } finally {
+            setSaving(false);
         }
     };
 
-    const delComp = async (compKey) => {
+    const delComp = async (r) => {
+        if (isViewer) return;
+        if (isPeriodLocked(r.compKey)) {
+            setToast({ message: `Competência ${compLabelOf(r.compKey)} está fechada — reabra pelo cadeado do topo para excluir.`, type: 'error' });
+            return;
+        }
+        const ok = await askConfirm({
+            title: `Excluir a competência ${r.competenceShort || compLabelOf(r.compKey)}?`,
+            description: `A apuração salva deste mês (${formatCurrency(r.totalPagar)} a pagar) será removida.`,
+            confirmLabel: 'Excluir',
+            destructive: true,
+        });
+        if (!ok) return;
         try {
-            await deleteApuracao(clientId, compKey);
+            await deleteApuracao(clientId, r.compKey);
+            if (loadedRec && loadedRec.compKey === r.compKey) setLoadedRec(null);
             await loadRecords(clientId);
             setToast({ message: 'Competência removida.', type: 'warning' });
-        } catch { setToast({ message: 'Erro ao remover.', type: 'error' }); }
+        } catch (e) {
+            setToast({ message: e instanceof Error && e.message ? e.message : 'Erro ao remover.', type: 'error' });
+        }
     };
 
-    const reopenRecord = (rec) => {
+    const reopenRecord = async (rec) => {
         if (!rec || !rec.payload) return;
+        if (!(await confirmDescartar('Reabrir outra competência'))) return;
         const p = rec.payload;
         if (p.clientData) setClientData({ ...p.clientData, clientId });
         if (Array.isArray(p.taxes)) setTaxes(p.taxes);
+        setLoadedRec({ id: rec.id, version: rec.version, compKey: rec.compKey });
+        setDirty(false);
         setValidationErrors({});
         setTab('edit');
     };
@@ -2331,8 +2483,9 @@ const App = () => {
     // Inicia o PRÓXIMO mês a partir da última competência salva: copia todos os
     // dados (regime, folha, pró-labore, evolução, alíquotas, tributos…) e avança
     // a competência em 1 mês. O contador só revisa e ajusta o faturamento do mês.
-    const novoMesDaUltima = () => {
+    const novoMesDaUltima = async () => {
         if (!clientId) { setToast({ message: 'Selecione a empresa primeiro.', type: 'error' }); return; }
+        if (!(await confirmDescartar('Iniciar o próximo mês'))) return;
         if (!Array.isArray(records) || records.length === 0) { setToast({ message: 'Não há competência salva para copiar.', type: 'error' }); return; }
         const ultima = records.slice().sort((a, b) => a.compKey.localeCompare(b.compKey)).pop();
         if (!ultima || !ultima.payload || !ultima.payload.clientData) { setToast({ message: 'A última competência não tem dados salvos para copiar.', type: 'error' }); return; }
@@ -2365,6 +2518,8 @@ const App = () => {
             parcelamentos: parcelNovo,
         });
         setTaxes(Array.isArray(ultima.payload.taxes) ? ultima.payload.taxes.map(t => ({ ...t })) : DEFAULT_TAXES);
+        setLoadedRec(null);   // é uma competência nova (ainda não salva)
+        setDirty(true);
         setValidationErrors({});
         setTab('edit');
         setToast({ message: `Mês ${compShort} preenchido com os dados de ${ultima.competenceShort}. Revise o faturamento do mês.`, type: 'success' });
@@ -2383,9 +2538,19 @@ const App = () => {
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, []);
 
-    const clearForm = () => {
-        setClientData(clientId ? { ...blankClient(), clientId } : blankClient());
+    const clearForm = async () => {
+        const ok = await askConfirm({
+            title: 'Limpar o formulário?',
+            description: 'Todos os dados da apuração em edição (faturamento, folha, sócios, tributos e ajustes manuais) serão apagados da tela. Competências já salvas não são afetadas.',
+            confirmLabel: 'Limpar',
+            destructive: true,
+        });
+        if (!ok) return;
+        const c = clientId ? clients.find(x => x.id === clientId) : null;
+        setClientData(clientId ? { ...blankClient(), clientId, clientName: (c && c.name) || '', cnpj: c && c.cnpj ? formatDocument(c.cnpj) : '' } : blankClient());
         setTaxes(DEFAULT_TAXES);
+        setLoadedRec(null);
+        setDirty(false);
         setValidationErrors({});
         setToast({ message: 'Formulário limpo.', type: 'warning' });
     };
@@ -2404,7 +2569,7 @@ const App = () => {
         }
 
         // MEI sem faturamento ainda deve o DAS fixo — o relatório de vencimentos continua útil
-        const totalRev = parseNumBR(clientData.revenueRetained) + parseNumBR(clientData.revenueNonRetained) + parseNumBR(clientData.revenue);
+        const totalRev = calculateTotalRevenue(clientData);
         if (totalRev <= 0 && clientData.regime !== 'MEI') errors.revenue = 'O faturamento total (soma) deve ser maior que zero';
 
         setValidationErrors(errors);
@@ -2466,6 +2631,7 @@ const App = () => {
         <div className="px-4 lg:px-6 xl:px-8 py-5">
             <style dangerouslySetInnerHTML={{ __html: SETE_STYLES }} />
             {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
+            <ConfirmDialog state={confirmState} onClose={closeConfirm} />
             {loading && <LoadingOverlay />}
 
             {/* Cabeçalho do módulo — mesmo padrão das demais telas do controle fiscal */}
@@ -2475,10 +2641,16 @@ const App = () => {
                     title="Relatório Executivo"
                     description="Apuração fiscal mensal do cliente e relatório executivo em PDF · tabelas e valores vigentes em 2026."
                 />
-                <div className="flex items-center gap-2">
-                    <Button variant="outline" size="sm" onClick={saveComp} title="Salvar competência da empresa selecionada">
-                        <Save className="h-4 w-4" /> Salvar competência
-                    </Button>
+                <div className="flex flex-wrap items-center gap-2">
+                    {dirty && !isViewer && (
+                        <span className="text-[11px] font-semibold text-warning" role="status">Alterações não salvas</span>
+                    )}
+                    {!isViewer && (
+                        <Button variant="outline" size="sm" onClick={saveComp} disabled={saving}
+                            title={isPeriodLocked(compKeyOf(clientData)) ? 'Competência fechada — reabra pelo cadeado do topo' : 'Salvar competência da empresa selecionada'}>
+                            <Save className="h-4 w-4" /> {saving ? 'Salvando…' : 'Salvar competência'}
+                        </Button>
+                    )}
                     <Button variant="outline" size="sm" onClick={handleWhatsAppCopy} title="Copiar resumo para WhatsApp">
                         <MessageSquare className="h-4 w-4" /> WhatsApp
                     </Button>
@@ -2505,13 +2677,13 @@ const App = () => {
                                     <SelectTrigger className="w-full"><SelectValue placeholder="Selecione a empresa" /></SelectTrigger>
                                     <SelectContent>
                                         {clients.map((c) => (
-                                            <SelectItem key={c.id} value={c.id}>{c.name}{c.cnpj ? ` — ${formatCNPJ(c.cnpj)}` : ''}</SelectItem>
+                                            <SelectItem key={c.id} value={c.id}>{c.name}{c.cnpj ? ` — ${formatDocument(c.cnpj)}` : ''}</SelectItem>
                                         ))}
                                     </SelectContent>
                                 </Select>
                             </div>
                             <div className="flex items-center gap-2 shrink-0">
-                                <Button variant="ghost" size="sm" onClick={clearForm} title="Limpar o formulário">
+                                <Button variant="ghost" size="sm" onClick={clearForm} title="Limpar o formulário" disabled={isViewer}>
                                     <Trash2 className="h-4 w-4" /> Limpar
                                 </Button>
                                 <p className="text-xs text-muted-foreground max-w-[240px] leading-snug hidden lg:block">
@@ -2523,7 +2695,7 @@ const App = () => {
                             <div className="mt-4 pt-4 border-t">
                                 <div className="flex items-center justify-between gap-2 mb-2">
                                     <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Competências salvas</p>
-                                    {records.length > 0 && (
+                                    {records.length > 0 && !isViewer && (
                                         <Button variant="outline" size="sm" className="h-7 gap-1.5 text-xs" onClick={novoMesDaUltima} title="Copia a última competência salva e avança 1 mês">
                                             <Calendar className="h-3.5 w-3.5" /> Iniciar próximo mês
                                         </Button>
@@ -2535,12 +2707,14 @@ const App = () => {
                                     <div className="flex flex-wrap gap-2">
                                         {records.slice().sort((a, b) => a.compKey.localeCompare(b.compKey)).map((r) => (
                                             <span key={r.compKey} className="inline-flex items-center gap-2 rounded-lg border bg-muted/40 px-3 py-1.5 text-xs font-medium">
-                                                <button onClick={() => reopenRecord(r)} className="hover:text-primary transition-colors cursor-pointer" title="Reabrir competência">
+                                                <button onClick={() => reopenRecord(r)} className="hover:text-primary transition-colors cursor-pointer" title="Reabrir competência" aria-label={`Reabrir competência ${r.competenceShort || r.compKey}`}>
                                                     {r.competenceShort} · {formatCurrency(r.totalPagar)}
                                                 </button>
-                                                <button onClick={() => delComp(r.compKey)} className="text-muted-foreground hover:text-destructive transition-colors cursor-pointer" title="Remover competência">
-                                                    <Trash2 className="w-3.5 h-3.5" />
-                                                </button>
+                                                {!isViewer && !isPeriodLocked(r.compKey) && (
+                                                    <button onClick={() => delComp(r)} className="text-muted-foreground hover:text-destructive transition-colors cursor-pointer" title="Excluir competência" aria-label={`Excluir competência ${r.competenceShort || r.compKey}`}>
+                                                        <Trash2 className="w-3.5 h-3.5" />
+                                                    </button>
+                                                )}
                                             </span>
                                         ))}
                                     </div>
@@ -2560,6 +2734,8 @@ const App = () => {
                                 validationErrors={validationErrors}
                                 setValidationErrors={setValidationErrors}
                                 records={records}
+                                markDirty={markDirty}
+                                askConfirm={askConfirm}
                             />
                         </div>
                         <LiveSummary clientData={clientData} taxes={taxes} records={records} />

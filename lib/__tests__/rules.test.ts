@@ -5,6 +5,7 @@ import { effectiveStatus } from "../obligation-status"
 import { formatRange, yoyRange, dateInRange } from "../date-range"
 import { formatDocument, isValidCNPJ, isValidCPF, normalizeCnpj } from "../cnpj-validation"
 import { safeRedirect } from "../safe-redirect"
+import { toDbError } from "../supabase/core"
 import { toLocalDateString } from "../date-utils"
 import { undoLastSent, markCurrentInstallmentAsSent } from "@/features/installments/actions"
 import type { Installment, Tax } from "../types"
@@ -142,5 +143,16 @@ describe("safeRedirect", () => {
     expect(safeRedirect("//evil.com")).toBe("/")
     expect(safeRedirect("/\\evil.com")).toBe("/")
     expect(safeRedirect(null)).toBe("/")
+  })
+})
+
+
+describe("toDbError — mensagens do banco", () => {
+  it("40001 (versão da apuração) explica que outra pessoa salvou antes", () => {
+    const e = toDbError({ code: "40001", message: "Esta competência foi alterada por outra pessoa (versão 3 no banco, 2 na tela). Recarregue antes de salvar." })
+    expect(e.message).toMatch(/alterada por outra pessoa/)
+  })
+  it("competência fechada repassa a mensagem do trigger", () => {
+    expect(toDbError({ message: "Competência 2026-06 está fechada. Reabra a competência para alterar esta apuração." }).message).toMatch(/fechada/)
   })
 })
