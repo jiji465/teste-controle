@@ -24,7 +24,6 @@ import { formatDate } from "@/lib/date-utils"
 
 const ROUTE_LABELS: Record<string, string> = {
   "/": "Dashboard",
-  "/competencia": "Painel do mês",
   "/configuracoes": "Configurações",
   "/clientes": "Empresas",
   "/impostos": "Guias de Imposto",
