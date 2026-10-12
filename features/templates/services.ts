@@ -66,10 +66,11 @@ function templateToRow(pkg: CustomTemplatePackage) {
 // ─── API pública ─────────────────────────────────────────────────────────────
 
 /**
- * Retorna templates do Supabase (fonte da verdade) e atualiza o cache local.
- * Faz MERGE com edições locais ainda não sincronizadas (compara updatedAt):
- * se a versão local de um template é mais nova, mantém a local e re-envia
- * pro Supabase. Isso evita perder edições recentes durante races.
+ * Retorna templates do Supabase (fonte da verdade) e substitui o cache local.
+ * O cache NUNCA é reenviado ao banco: um navegador desatualizado reenviando
+ * sua cópia ressuscitava templates apagados ou desfazia edições de outro
+ * usuário. Templates antigos só-locais sobem uma única vez pela
+ * migrateLocalTemplatesToSupabase().
  */
 export async function getCustomTemplatesAsync(): Promise<CustomTemplatePackage[]> {
   if (!hasSupabaseConfig()) return getLocal()
@@ -81,42 +82,13 @@ export async function getCustomTemplatesAsync(): Promise<CustomTemplatePackage[]
       .select("*")
       .order("name")
     if (error) {
-      console.error("[templates] Supabase fetch error, fallback local:", error)
+      console.error("[templates] Supabase fetch error, usando cache local:", error)
       return getLocal()
     }
 
     const remote = (data as Row[]).map(rowToTemplate)
-    const local = getLocal()
-    const localById = new Map(local.map((t) => [t.id, t]))
-
-    // Merge: pra cada template remoto, se existir versão local com updatedAt
-    // mais novo, prefere a local (e re-empurra pra Supabase em background).
-    const merged: CustomTemplatePackage[] = []
-    const seenIds = new Set<string>()
-
-    for (const r of remote) {
-      seenIds.add(r.id)
-      const l = localById.get(r.id)
-      if (l && l.updatedAt && r.updatedAt && new Date(l.updatedAt) > new Date(r.updatedAt)) {
-        merged.push(l)
-        // Reenvia silenciosamente pra remoto (não bloqueia)
-        void saveCustomTemplateAsync(l).catch(() => {})
-      } else {
-        merged.push(r)
-      }
-    }
-
-    // Templates locais que NÃO estão no remoto: provavelmente novos não-sincronizados.
-    // Empurra eles pro remoto.
-    for (const l of local) {
-      if (!seenIds.has(l.id)) {
-        merged.push(l)
-        void saveCustomTemplateAsync(l).catch(() => {})
-      }
-    }
-
-    setLocal(merged)
-    return merged
+    setLocal(remote)
+    return remote
   } catch (err) {
     console.error("[templates] erro inesperado, fallback local:", err)
     return getLocal()

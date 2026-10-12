@@ -25,7 +25,7 @@ export function UserMenu() {
 
   if (isLoading) {
     return (
-      <Button variant="ghost" size="icon" className="size-8" disabled>
+      <Button variant="ghost" size="icon" className="size-8" disabled aria-label="Carregando usuário">
         <Loader2 className="size-4 animate-spin" />
       </Button>
     )

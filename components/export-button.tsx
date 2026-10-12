@@ -40,16 +40,16 @@ export function ExportButton<T>({
   responsive = true,
   variant = "outline",
 }: Props<T>) {
-  const handleExport = (fmt: "xlsx" | "pdf" | "csv") => {
+  const handleExport = async (fmt: "xlsx" | "pdf" | "csv") => {
     if (rows.length === 0) {
       toast.error("Nada para exportar com os filtros atuais")
       return
     }
     const filename = timestampFilename(filenamePrefix)
     try {
-      if (fmt === "xlsx") exportToXlsx({ filename, sheetName: sheetName ?? pdfTitle, columns, rows })
+      if (fmt === "xlsx") await exportToXlsx({ filename, sheetName: sheetName ?? pdfTitle, columns, rows })
       else if (fmt === "csv") exportToCsv({ filename, columns, rows })
-      else exportToPdf({ filename, title: pdfTitle, subtitle: pdfSubtitle, columns, rows })
+      else await exportToPdf({ filename, title: pdfTitle, subtitle: pdfSubtitle, columns, rows })
       toast.success(`${rows.length} registros exportados`)
     } catch (err) {
       console.error("[export]", err)

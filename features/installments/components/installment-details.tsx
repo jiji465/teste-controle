@@ -1,5 +1,7 @@
 "use client"
 
+import { HistoryTimeline } from "@/components/history-timeline"
+import { getParcelaDueDate } from "@/lib/installment-dates"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -20,7 +22,6 @@ import {
   Pencil,
   Copy,
   User,
-  History,
   Tag,
   Receipt,
   AlertCircle,
@@ -28,10 +29,9 @@ import {
   ListChecks,
   RotateCcw,
   Circle,
-  Send,
 } from "lucide-react"
 import type { Installment, Client, Tax, Priority } from "@/lib/types"
-import { adjustForWeekend, buildSafeDate, formatDate, isOverdue } from "@/lib/date-utils"
+import { formatDate, isOverdue } from "@/lib/date-utils"
 import { toast } from "sonner"
 
 const PRIORITY_LABELS: Record<Priority, string> = {
@@ -42,10 +42,10 @@ const PRIORITY_LABELS: Record<Priority, string> = {
 }
 
 const PRIORITY_COLORS: Record<Priority, string> = {
-  low: "border-blue-500 text-blue-700 dark:text-blue-400",
+  low: "border-info text-info",
   medium: "border-gray-400 text-gray-700 dark:text-gray-400",
-  high: "border-orange-500 text-orange-700 dark:text-orange-400",
-  urgent: "border-red-500 text-red-700 dark:text-red-400",
+  high: "border-warning text-warning",
+  urgent: "border-destructive text-destructive",
 }
 
 const WEEKEND_LABELS: Record<string, string> = {
@@ -88,16 +88,7 @@ export function InstallmentDetails({
 
   /** Calcula a data de vencimento de uma parcela específica (1..N) com base
    *  na 1ª data + (N-1) meses. Aplica a regra de fim de semana/feriado. */
-  const dueDateFor = (parcelaNumber: number): Date => {
-    const firstDue = new Date(installment.firstDueDate)
-    const monthsToAdd = parcelaNumber - 1
-    const dueDate = buildSafeDate(
-      firstDue.getFullYear(),
-      firstDue.getMonth() + monthsToAdd,
-      installment.dueDay,
-    )
-    return adjustForWeekend(dueDate, installment.weekendRule)
-  }
+  const dueDateFor = (parcelaNumber: number): Date => getParcelaDueDate(installment, parcelaNumber)
 
   const calcDueDate = dueDateFor(installment.currentInstallment)
   const overdue = installment.status !== "completed" && isOverdue(calcDueDate)
@@ -151,11 +142,11 @@ export function InstallmentDetails({
         <div
           className={`relative px-6 pt-6 pb-5 border-b ${
             effectiveStatus === "overdue"
-              ? "bg-gradient-to-br from-red-500/10 via-red-500/5 to-transparent"
+              ? "bg-gradient-to-br from-destructive/10 via-destructive/5 to-transparent"
               : effectiveStatus === "completed"
-                ? "bg-gradient-to-br from-green-500/10 via-green-500/5 to-transparent"
+                ? "bg-gradient-to-br from-success/10 via-success/5 to-transparent"
                 : effectiveStatus === "in_progress"
-                  ? "bg-gradient-to-br from-blue-500/10 via-blue-500/5 to-transparent"
+                  ? "bg-gradient-to-br from-info/10 via-info/5 to-transparent"
                   : "bg-gradient-to-br from-amber-500/10 via-amber-500/5 to-transparent"
           }`}
         >
@@ -210,7 +201,7 @@ export function InstallmentDetails({
                   !paidByNumber.get(installment.currentInstallment)?.paidAt && (
                     <Button
                       onClick={() => onPay(installment)}
-                      className="flex-1 gap-2 bg-green-600 hover:bg-green-700 text-white"
+                      className="flex-1 gap-2 bg-success text-success-foreground hover:bg-success/90 text-white"
                       title="Marca a parcela atual como concluída e avança para a próxima"
                     >
                       <CheckCircle2 className="size-4" />
@@ -297,9 +288,9 @@ export function InstallmentDetails({
                   const isCurrentOverdue = isCurrent && isOverdue(due)
 
                   const rowBg = isDone
-                    ? "bg-green-50/50 dark:bg-green-950/10"
+                    ? "bg-success/50 dark:bg-success/10"
                     : isCurrentOverdue
-                      ? "bg-red-50/60 dark:bg-red-950/20"
+                      ? "bg-destructive/60 dark:bg-destructive/20"
                       : isCurrent
                         ? "bg-amber-50/50 dark:bg-amber-950/10"
                         : ""
@@ -316,9 +307,9 @@ export function InstallmentDetails({
                     >
                       <span className="shrink-0">
                         {isDone ? (
-                          <CheckCircle2 className="size-4 text-green-600" />
+                          <CheckCircle2 className="size-4 text-success" />
                         ) : isCurrentOverdue ? (
-                          <AlertTriangle className="size-4 text-red-600" />
+                          <AlertTriangle className="size-4 text-destructive" />
                         ) : isCurrent ? (
                           <Clock className="size-4 text-amber-600" />
                         ) : (
@@ -333,12 +324,12 @@ export function InstallmentDetails({
                       </span>
                       <span className="flex-1 min-w-0 text-xs">
                         {isDone && doneAt ? (
-                          <span className="text-green-700 dark:text-green-400 truncate block">
+                          <span className="text-success dark:text-success truncate block">
                             Concluída em {formatDate(doneAt)}
                             {doneBy && ` por ${doneBy}`}
                           </span>
                         ) : isCurrentOverdue ? (
-                          <span className="text-red-700 dark:text-red-400 font-medium">
+                          <span className="text-destructive dark:text-destructive font-medium">
                             Atrasada — venceu em {formatDate(due)}
                           </span>
                         ) : isCurrent ? (
@@ -356,7 +347,7 @@ export function InstallmentDetails({
                             size="sm"
                             variant="default"
                             onClick={() => onPay(installment)}
-                            className="h-7 text-[11px] gap-1 bg-green-600 hover:bg-green-700"
+                            className="h-7 text-[11px] gap-1 bg-success text-success-foreground hover:bg-success/90"
                           >
                             <CheckCircle2 className="size-3" /> Concluir
                           </Button>
@@ -461,29 +452,8 @@ export function InstallmentDetails({
             </>
           )}
 
-          {/* Histórico */}
-          {installment.history && installment.history.length > 0 && (
-            <>
-              <Separator />
-              <div>
-                <div className="flex items-center gap-2 mb-3">
-                  <History className="size-4 text-muted-foreground" />
-                  <p className="text-sm font-semibold">Histórico</p>
-                </div>
-                <div className="space-y-3">
-                  {installment.history.slice(-5).reverse().map((entry) => (
-                    <div key={entry.id} className="flex gap-3 text-sm">
-                      <div className="size-2 rounded-full bg-primary mt-1.5 shrink-0" />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-foreground">{entry.description}</p>
-                        <p className="text-xs text-muted-foreground">{formatDate(entry.timestamp)}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </>
-          )}
+          {/* Histórico (trilha do banco + anotações do registro) */}
+          <HistoryTimeline entityType="installment" entityId={installment.id} localEntries={installment.history} />
 
           <Separator />
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
@@ -493,7 +463,7 @@ export function InstallmentDetails({
             </div>
             {installment.completedAt && (
               <div className="flex items-center gap-1.5">
-                <CheckCircle2 className="size-3.5 text-green-600" />
+                <CheckCircle2 className="size-3.5 text-success" />
                 Concluído em <span className="font-medium">{formatDate(installment.completedAt)}</span>
                 {installment.completedBy && <span>por {installment.completedBy}</span>}
               </div>
@@ -528,14 +498,14 @@ function StatusBadge({ status, completedAt }: { status: string; completedAt?: st
   switch (status) {
     case "completed":
       return (
-        <Badge className="bg-green-600 hover:bg-green-700 text-white">
+        <Badge className="bg-success text-success-foreground hover:bg-success/90 text-white">
           <CheckCircle2 className="size-3 mr-1" />
           Concluída {completedAt && `em ${formatDate(completedAt)}`}
         </Badge>
       )
     case "in_progress":
       return (
-        <Badge className="bg-blue-600 hover:bg-blue-700 text-white">
+        <Badge className="bg-info text-info-foreground hover:bg-info/90 text-white">
           <PlayCircle className="size-3 mr-1" />
           Em andamento
         </Badge>
@@ -549,7 +519,7 @@ function StatusBadge({ status, completedAt }: { status: string; completedAt?: st
       )
     default:
       return (
-        <Badge variant="secondary" className="bg-yellow-100 text-yellow-800 dark:bg-yellow-950 dark:text-yellow-200">
+        <Badge variant="secondary" className="bg-warning/10 text-warning dark:bg-warning/15 dark:text-warning">
           <Clock className="size-3 mr-1" />
           Pendente
         </Badge>
@@ -600,9 +570,9 @@ function InfoTile({
 }) {
   const highlightClass =
     highlight === "destructive"
-      ? "border-red-300 dark:border-red-900/60 bg-red-50/60 dark:bg-red-950/20"
+      ? "border-destructive/30 dark:border-destructive/60 bg-destructive/60 dark:bg-destructive/20"
       : highlight === "success"
-        ? "border-green-300 dark:border-green-900/60 bg-green-50/60 dark:bg-green-950/20"
+        ? "border-success/30 dark:border-success/60 bg-success/60 dark:bg-success/20"
         : ""
   return (
     <div

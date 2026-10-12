@@ -1,3 +1,4 @@
+import { isWeekendOrHoliday } from "../../../lib/date-utils";
 // PDF.js é carregado sob demanda (dynamic import) dentro de extractPdfText.
 // No Next.js não usamos o import "?url" do Vite — o worker é apontado para a CDN.
 
@@ -300,39 +301,12 @@ export const getProLabores = (data) => {
 };
 export const sumProLabore = (data) => getProLabores(data).reduce((s, v) => s + v, 0);
 
-export const FERIADOS_NACIONAIS = ['01/01', '21/04', '01/05', '07/09', '12/10', '02/11', '15/11', '20/11', '25/12']; // feriados nacionais fixos
 const pad2 = (n) => String(n).padStart(2, '0');
 
-// Feriados móveis (bancários) por ano, a partir do domingo de Páscoa (algoritmo de Meeus).
-// Sexta-feira Santa (−2), Carnaval segunda (−48) e terça (−47), Corpus Christi (+60).
-const computeEaster = (year) => {
-    const a = year % 19, b = Math.floor(year / 100), c = year % 100;
-    const d = Math.floor(b / 4), e = b % 4, f = Math.floor((b + 8) / 25);
-    const g = Math.floor((b - f + 1) / 3), h = (19 * a + b - d - g + 15) % 30;
-    const i = Math.floor(c / 4), k = c % 4;
-    const l = (32 + 2 * e + 2 * i - h - k) % 7;
-    const mm = Math.floor((a + 11 * h + 22 * l) / 451);
-    const month = Math.floor((h + l - 7 * mm + 114) / 31);
-    const day = ((h + l - 7 * mm + 114) % 31) + 1;
-    return new Date(year, month - 1, day);
-};
-const _feriadosMoveisCache = {};
-export const feriadosMoveis = (year) => {
-    if (_feriadosMoveisCache[year]) return _feriadosMoveisCache[year];
-    const easter = computeEaster(year);
-    const set = new Set([-2, -47, -48, 60].map((off) => {
-        const d = new Date(easter); d.setDate(easter.getDate() + off);
-        return pad2(d.getDate()) + '/' + pad2(d.getMonth() + 1);
-    }));
-    _feriadosMoveisCache[year] = set;
-    return set;
-};
-
-const isDiaUtil = (d) => {
-    if (d.getDay() === 0 || d.getDay() === 6) return false;
-    const mmdd = pad2(d.getDate()) + '/' + pad2(d.getMonth() + 1);
-    return !FERIADOS_NACIONAIS.includes(mmdd) && !feriadosMoveis(d.getFullYear()).has(mmdd);
-};
+// Dia útil = sem fim de semana nem feriado nacional. Usa a MESMA tabela de
+// feriados do resto do sistema (lib/date-utils) — antes havia uma cópia aqui
+// que divergia (ex.: Consciência Negra antes de 2024).
+const isDiaUtil = (d) => !isWeekendOrHoliday(d);
 
 export const lastBusinessDay = (month, year) => {
     const lastDay = new Date(year, month, 0).getDate();

@@ -14,6 +14,7 @@ import { usePathname, useRouter } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { SidebarNav, MobileSidebar, SIDEBAR_STORAGE_KEY } from "@/components/sidebar-nav"
 import { AppHeader } from "@/components/app-header"
+import { LockedPeriodBanner } from "@/components/locked-period-banner"
 import { MobileBottomNav } from "@/components/mobile-bottom-nav"
 import { useAuth } from "@/contexts/auth-context"
 import { isRouteAllowedForViewer } from "@/lib/roles"
@@ -74,6 +75,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         )}
       >
         <AppHeader onOpenMobile={() => setMobileOpen(true)} />
+        <LockedPeriodBanner />
         {/* pb extra no mobile pra o conteúdo não ficar atrás do bottom nav */}
         <main className="pb-20 lg:pb-0">{children}</main>
       </div>

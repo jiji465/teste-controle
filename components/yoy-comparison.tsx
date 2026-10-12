@@ -14,7 +14,7 @@ import { TrendingUp, TrendingDown, Minus } from "lucide-react"
 import type { ObligationWithDetails, Tax, Installment } from "@/lib/types"
 import { effectiveStatus } from "@/lib/obligation-status"
 import { yoyRange, dateInRange, type DateRange } from "@/lib/date-range"
-import { adjustForWeekend, buildSafeDate, calculateDueDateFromCompetency } from "@/lib/date-utils"
+import { adjustForWeekend, buildSafeDate, calculateDueDateFromCompetency, parseLocalDate } from "@/lib/date-utils"
 
 type Props = {
   obligations: ObligationWithDetails[]
@@ -41,7 +41,7 @@ function countCompletedInRange(
     if (dateInRange(d, range)) n++
   }
   for (const i of installments) {
-    const firstDue = new Date(i.firstDueDate)
+    const firstDue = parseLocalDate(i.firstDueDate)
     const monthsToAdd = i.currentInstallment - 1
     const d = adjustForWeekend(
       buildSafeDate(firstDue.getFullYear(), firstDue.getMonth() + monthsToAdd, i.dueDay),

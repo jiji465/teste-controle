@@ -69,7 +69,7 @@ export function ClientDetails({ client, open, onOpenChange, onEdit }: ClientDeta
                   <Badge
                     className={
                       isActive
-                        ? "bg-green-600 hover:bg-green-700 text-white"
+                        ? "bg-success text-success-foreground hover:bg-success/90 text-white"
                         : "bg-gray-400 hover:bg-gray-500 text-white"
                     }
                   >

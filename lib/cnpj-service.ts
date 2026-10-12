@@ -1,3 +1,4 @@
+import { normalizeCnpj } from "./cnpj-validation"
 export type CNPJData = {
   nome: string
   fantasia: string
@@ -46,7 +47,7 @@ export async function lookupCNPJ(
   cnpj: string,
   signal?: AbortSignal,
 ): Promise<CNPJData | null> {
-  const cleanCnpj = cnpj.replace(/\D/g, "")
+  const cleanCnpj = normalizeCnpj(cnpj)
   if (cleanCnpj.length !== 14) return null
 
   let response: Response

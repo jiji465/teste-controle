@@ -1,54 +1,45 @@
 /**
- * Skeleton genérico de página com cabeçalho, abas, busca e tabela.
- * Reutilizado pelos `loading.tsx` de obrigações, impostos e parcelamentos.
+ * Skeleton genérico de página (cabeçalho, cartões de status e tabela), no
+ * mesmo espaçamento das páginas internas — roda DENTRO da shell, então não
+ * desenha header próprio. Usado pelos `loading.tsx` e pelos imports dinâmicos.
  */
 export function PageSkeleton() {
   return (
-    <div className="min-h-screen bg-background">
-      {/* nav placeholder */}
-      <div className="h-16 border-b bg-background/80" />
-      <main className="container mx-auto px-4 py-8">
-        <div className="space-y-6 animate-pulse">
-          {/* header */}
-          <div className="flex items-start justify-between gap-4">
-            <div className="space-y-2">
-              <div className="h-9 w-72 bg-muted rounded" />
-              <div className="h-5 w-96 bg-muted/60 rounded" />
-            </div>
-            <div className="flex gap-2">
-              <div className="h-9 w-28 bg-muted/60 rounded" />
-              <div className="h-9 w-36 bg-muted rounded" />
-            </div>
-          </div>
-
-          {/* tabs */}
-          <div className="grid grid-cols-5 gap-2">
-            {Array.from({ length: 5 }).map((_, i) => (
-              <div key={i} className="h-14 bg-muted/60 rounded-md" />
-            ))}
-          </div>
-
-          {/* toolbar */}
+    <div className="px-4 lg:px-6 xl:px-8 py-5" role="status" aria-label="Carregando">
+      <div className="space-y-5 animate-pulse">
+        <div className="flex items-start justify-between gap-4">
           <div className="flex gap-3">
-            <div className="h-10 flex-1 bg-muted/40 rounded" />
-            <div className="h-10 w-24 bg-muted/60 rounded" />
+            <div className="size-9 rounded-md bg-muted" />
+            <div className="space-y-2">
+              <div className="h-6 w-56 rounded bg-muted" />
+              <div className="h-4 w-80 max-w-[60vw] rounded bg-muted/60" />
+            </div>
           </div>
-
-          {/* table */}
-          <div className="border rounded-lg overflow-hidden">
-            <div className="h-12 bg-muted/40 border-b" />
-            {Array.from({ length: 6 }).map((_, i) => (
-              <div key={i} className="h-14 border-b last:border-b-0 px-4 flex items-center gap-3">
-                <div className="size-4 bg-muted/60 rounded" />
-                <div className="h-4 w-1/4 bg-muted/60 rounded" />
-                <div className="h-4 w-1/5 bg-muted/40 rounded" />
-                <div className="h-4 w-1/6 bg-muted/40 rounded" />
-                <div className="h-4 w-1/6 bg-muted/40 rounded ml-auto" />
-              </div>
-            ))}
+          <div className="hidden gap-2 sm:flex">
+            <div className="h-9 w-28 rounded bg-muted/60" />
+            <div className="h-9 w-36 rounded bg-muted" />
           </div>
         </div>
-      </main>
+
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <div key={i} className="h-[74px] rounded-xl bg-muted/60" />
+          ))}
+        </div>
+
+        <div className="overflow-hidden rounded-lg border">
+          <div className="h-11 border-b bg-muted/40" />
+          {Array.from({ length: 7 }).map((_, i) => (
+            <div key={i} className="flex h-12 items-center gap-3 border-b px-4 last:border-b-0">
+              <div className="size-4 rounded bg-muted/60" />
+              <div className="h-4 w-1/4 rounded bg-muted/60" />
+              <div className="h-4 w-1/5 rounded bg-muted/40" />
+              <div className="ml-auto h-4 w-1/6 rounded bg-muted/40" />
+            </div>
+          ))}
+        </div>
+      </div>
+      <span className="sr-only">Carregando…</span>
     </div>
   )
 }

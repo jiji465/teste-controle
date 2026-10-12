@@ -46,15 +46,13 @@ import {
   Legend,
   ComposedChart,
 } from "recharts"
-import { exportRelatorioExcel } from "@/lib/report-excel"
-import { exportRelatorioPdf } from "@/lib/report-pdf"
 import { periodoLabel, geradoEm } from "@/lib/report-config"
 import type { ReportData, ReportPendenciaRow } from "@/lib/report-types"
 import { calculateClientCompliance } from "@/lib/compliance-score"
 import { TAX_REGIME_LABELS } from "@/lib/types"
 import { toast } from "sonner"
 import type { ObligationWithDetails, Tax, Installment, Service, Client } from "@/lib/types"
-import { formatDate, buildSafeDate, adjustForWeekend, calculateDueDateFromCompetency } from "@/lib/date-utils"
+import { formatDate, buildSafeDate, adjustForWeekend, calculateDueDateFromCompetency, parseLocalDate } from "@/lib/date-utils"
 import { effectiveStatus } from "@/lib/obligation-status"
 import { getRecurrenceDescription } from "@/lib/recurrence-utils"
 import {
@@ -144,7 +142,7 @@ export function ReportsPanel({
     if (filters.statuses.length > 0) {
       const set = new Set<FilterStatus>(filters.statuses)
       result = result.filter((i) => {
-        const firstDue = new Date(i.firstDueDate)
+        const firstDue = parseLocalDate(i.firstDueDate)
         const monthsToAdd = i.currentInstallment - 1
         const due = adjustForWeekend(
           buildSafeDate(firstDue.getFullYear(), firstDue.getMonth() + monthsToAdd, i.dueDay),
@@ -229,7 +227,7 @@ export function ReportsPanel({
     () =>
       stats.completed.filter((obl) => {
         if (!obl.completedAt) return false
-        return new Date(obl.completedAt) <= new Date(obl.calculatedDueDate)
+        return new Date(obl.completedAt) <= parseLocalDate(obl.calculatedDueDate)
       }),
     [stats.completed],
   )
@@ -453,7 +451,7 @@ export function ReportsPanel({
     today.setHours(0, 0, 0, 0)
     return filteredInstallments
       .map((inst) => {
-        const firstDue = new Date(inst.firstDueDate)
+        const firstDue = parseLocalDate(inst.firstDueDate)
         const monthsToAdd = inst.currentInstallment - 1
         const dueDate = buildSafeDate(
           firstDue.getFullYear(),
@@ -474,13 +472,13 @@ export function ReportsPanel({
   const reportData = useMemo<ReportData>(() => {
     const fmt = (d: string | Date | undefined): string => {
       if (!d) return ""
-      const date = typeof d === "string" ? new Date(d) : d
+      const date = parseLocalDate(d)
       if (Number.isNaN(date.getTime())) return ""
       return date.toLocaleDateString("pt-BR")
     }
     const ms = (d: string | Date | undefined): number => {
       if (!d) return 0
-      const date = typeof d === "string" ? new Date(d) : d
+      const date = parseLocalDate(d)
       return Number.isNaN(date.getTime()) ? 0 : date.getTime()
     }
     const prioLabel = (p: string) =>
@@ -638,6 +636,8 @@ export function ReportsPanel({
 
   const handleExportExcel = async () => {
     try {
+      // Carregado sob demanda: ExcelJS só baixa quando alguém exporta
+      const { exportRelatorioExcel } = await import("@/lib/report-excel")
       await exportRelatorioExcel(reportData)
       toast.success("Excel gerado")
     } catch (e) {
@@ -646,8 +646,9 @@ export function ReportsPanel({
     }
   }
 
-  const handleExportPdf = () => {
+  const handleExportPdf = async () => {
     try {
+      const { exportRelatorioPdf } = await import("@/lib/report-pdf")
       exportRelatorioPdf(reportData)
       toast.success("PDF gerado")
     } catch (e) {

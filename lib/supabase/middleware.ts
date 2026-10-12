@@ -52,7 +52,8 @@ export async function updateSession(request: NextRequest) {
     const redirectUrl = request.nextUrl.clone()
     redirectUrl.pathname = "/login"
     redirectUrl.search = ""
-    redirectUrl.searchParams.set("redirect", path)
+    // Guarda também a query (?clientId=...) pra voltar exatamente onde estava
+    redirectUrl.searchParams.set("redirect", path + request.nextUrl.search)
     return NextResponse.redirect(redirectUrl)
   }
 

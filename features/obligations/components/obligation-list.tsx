@@ -1,5 +1,7 @@
 "use client"
 
+import { usePagination } from "@/hooks/use-pagination"
+import { ListPagination } from "@/components/list-pagination"
 import { forwardRef, useImperativeHandle, useMemo, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -37,13 +39,14 @@ import type { Obligation, ObligationWithDetails, Client, Tax, Priority, TaxRegim
 import { TAX_REGIME_LABELS, TAX_REGIME_COLORS } from "@/lib/types"
 import { saveObligation, deleteObligation } from "@/features/obligations/services"
 import { buildRecurringObligations } from "@/lib/recurrence-generate"
-import { formatDate, isOverdue } from "@/lib/date-utils"
+import { formatDate, isOverdue, parseLocalDate } from "@/lib/date-utils"
 import { effectiveStatus } from "@/lib/obligation-status"
 import { StatusBadge, PriorityBadge, type TaskStatus } from "@/components/status-badge"
 import { getRecurrenceDescription } from "@/lib/recurrence-utils"
 import { checkAndGenerateRecurrences } from "@/lib/auto-recurrence"
-import { matchesText } from "@/lib/utils"
+import { matchesText , errorMessage} from "@/lib/utils"
 import { toast } from "sonner"
+import { useAuth } from "@/contexts/auth-context"
 
 type ObligationListProps = {
   obligations: ObligationWithDetails[]
@@ -78,6 +81,7 @@ export const ObligationList = forwardRef<ObligationListHandle, ObligationListPro
   { obligations, clients, taxes, onUpdate }: ObligationListProps,
   ref,
 ) {
+  const { userName } = useAuth()
   const [search, setSearch] = useState("")
   const [clientFilter, setClientFilter] = useState<string>("all")
   const [priorityFilter, setPriorityFilter] = useState<string>("all")
@@ -139,7 +143,7 @@ export const ObligationList = forwardRef<ObligationListHandle, ObligationListPro
     return [...filteredObligations].sort((a, b) => {
       let comparison = 0
       if (sortBy === "dueDate") {
-        comparison = new Date(a.calculatedDueDate).getTime() - new Date(b.calculatedDueDate).getTime()
+        comparison = parseLocalDate(a.calculatedDueDate).getTime() - parseLocalDate(b.calculatedDueDate).getTime()
       } else if (sortBy === "client") {
         comparison = a.client.name.localeCompare(b.client.name)
       } else if (sortBy === "name") {
@@ -181,7 +185,7 @@ export const ObligationList = forwardRef<ObligationListHandle, ObligationListPro
       setEditingObligation(undefined)
     } catch (error) {
       console.error("[obligations] save error:", error)
-      toast.error("Erro ao salvar obrigação")
+      toast.error(errorMessage(error, "Erro ao salvar obrigação"))
     }
   }
 
@@ -197,7 +201,7 @@ export const ObligationList = forwardRef<ObligationListHandle, ObligationListPro
           toast.success("Obrigação excluída")
           onUpdate()
         } catch (error) {
-          toast.error("Erro ao excluir obrigação")
+          toast.error(errorMessage(error, "Erro ao excluir obrigação"))
           console.error("[obligations] delete error:", error)
         }
       },
@@ -238,7 +242,7 @@ export const ObligationList = forwardRef<ObligationListHandle, ObligationListPro
                   ...o,
                   status: "completed",
                   completedAt: now,
-                  completedBy: "Contador",
+                  completedBy: userName,
                   history: [
                     ...(o.history || []),
                     { id: crypto.randomUUID(), action: "completed", description: "Concluída via ação em lote", timestamp: now },
@@ -421,7 +425,7 @@ export const ObligationList = forwardRef<ObligationListHandle, ObligationListPro
       ...obligation,
       status: "completed" as const,
       completedAt: completedDate,
-      completedBy: "Contador",
+      completedBy: userName,
       history: [
         ...history,
         {
@@ -443,7 +447,7 @@ export const ObligationList = forwardRef<ObligationListHandle, ObligationListPro
       onUpdate()
     } catch (error) {
       console.error("[obligations] complete error:", error)
-      toast.error("Erro ao concluir obrigação")
+      toast.error(errorMessage(error, "Erro ao concluir obrigação"))
     }
   }
 
@@ -467,7 +471,7 @@ export const ObligationList = forwardRef<ObligationListHandle, ObligationListPro
       onUpdate()
     } catch (error) {
       console.error("[obligations] start error:", error)
-      toast.error("Erro ao iniciar obrigação")
+      toast.error(errorMessage(error, "Erro ao iniciar obrigação"))
     }
   }
 
@@ -501,7 +505,7 @@ export const ObligationList = forwardRef<ObligationListHandle, ObligationListPro
       onUpdate()
     } catch (error) {
       console.error("[obligations] duplicate error:", error)
-      toast.error("Erro ao duplicar obrigação")
+      toast.error(errorMessage(error, "Erro ao duplicar obrigação"))
     }
   }
 
@@ -518,7 +522,7 @@ export const ObligationList = forwardRef<ObligationListHandle, ObligationListPro
   useImperativeHandle(ref, () => ({ openNewForm: handleNew }), [])
 
   const getRelativeDate = (dateString: string) => {
-    const date = new Date(dateString)
+    const date = parseLocalDate(dateString)
     const today = new Date()
     today.setHours(0, 0, 0, 0)
     const targetDate = new Date(date)
@@ -583,6 +587,9 @@ export const ObligationList = forwardRef<ObligationListHandle, ObligationListPro
       </div>
     )
   }
+
+  // Paginação: renderiza 50 linhas por vez (listas com centenas de itens travavam)
+  const pagination = usePagination(sortedObligations)
 
   return (
     <div className="space-y-4">
@@ -731,7 +738,7 @@ export const ObligationList = forwardRef<ObligationListHandle, ObligationListPro
                   <div onClick={(e) => e.stopPropagation()}>
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon" className="size-7">
+                        <Button variant="ghost" size="icon" className="size-7" aria-label="Mais ações">
                           <MoreVertical className="size-4" />
                         </Button>
                       </DropdownMenuTrigger>
@@ -845,7 +852,7 @@ export const ObligationList = forwardRef<ObligationListHandle, ObligationListPro
                 </TableCell>
               </TableRow>
             ) : (
-              sortedObligations.map((obligation) => (
+              pagination.items.map((obligation) => (
                 <TableRow
                   key={obligation.id}
                   data-state={selectedIds.has(obligation.id) ? "selected" : undefined}
@@ -958,7 +965,7 @@ export const ObligationList = forwardRef<ObligationListHandle, ObligationListPro
                   >
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon">
+                        <Button variant="ghost" size="icon" aria-label="Mais ações">
                           <MoreVertical className="size-4" />
                         </Button>
                       </DropdownMenuTrigger>
@@ -1002,6 +1009,7 @@ export const ObligationList = forwardRef<ObligationListHandle, ObligationListPro
           </TableBody>
         </Table>
       </div>
+      <ListPagination pagination={pagination} />
 
       <ObligationForm
         obligation={editingObligation}

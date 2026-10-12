@@ -1,5 +1,5 @@
 import type { Service, ServiceCategory, RecurrenceType, Priority, WeekendRule } from "@/lib/types"
-import { hasSupabaseConfig, getSupabaseClient } from "@/lib/supabase/core"
+import { hasSupabaseConfig, getSupabaseClient, fetchAll, toDbError } from "@/lib/supabase/core"
 
 // Storage local não cobre Serviços (Service é nova entidade). Em modo
 // sem Supabase, a lista volta vazia — usuário precisa do banco pra usar.
@@ -54,13 +54,14 @@ function mapDbToService(row: any): Service {
 
 export async function getServices(): Promise<Service[]> {
   if (!hasSupabaseConfig()) return []
-  const supabase = getSupabaseClient()
-  const { data, error } = await supabase.from("services").select("*").order("due_date")
-  if (error) {
-    console.error("[db] Error fetching services:", error)
-    return []
+  try {
+    const rows = await fetchAll("services", "due_date")
+    return rows.map(mapDbToService)
+  } catch (e) {
+    // Tabela ainda não criada (migration 012 não rodada) → módulo vazio, não erro geral.
+    if (e instanceof Error && /does not exist|schema cache/i.test(e.message)) return []
+    throw e
   }
-  return data.map(mapDbToService)
 }
 
 export async function saveService(service: Service): Promise<void> {
@@ -71,7 +72,7 @@ export async function saveService(service: Service): Promise<void> {
   const { error } = await supabase.from("services").upsert(mapServiceToDb(service))
   if (error) {
     console.error("[db] Error saving service:", error)
-    throw error
+    throw toDbError(error)
   }
 }
 
@@ -83,6 +84,6 @@ export async function deleteService(id: string): Promise<void> {
   const { error } = await supabase.from("services").delete().eq("id", id)
   if (error) {
     console.error("[db] Error deleting service:", error)
-    throw error
+    throw toDbError(error)
   }
 }

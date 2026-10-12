@@ -20,7 +20,7 @@ const RegimeDistributionChart = dynamic(
   },
 )
 import { calculateDashboardStats, installmentInPeriod } from "@/lib/dashboard-utils"
-import { calculateDueDateFromCompetency } from "@/lib/date-utils"
+import { calculateDueDateFromCompetency, parseLocalDate } from "@/lib/date-utils"
 import { getCurrentPeriod } from "@/lib/recurrence-engine"
 import { getGreetingMeta } from "@/lib/weather"
 import { WeatherGreeting } from "@/components/weather-greeting"
@@ -46,7 +46,7 @@ import { toast } from "sonner"
 
 export default function DashboardPage() {
   const { clients, taxes, obligations: rawObligations, obligationsWithDetails, installments, services, lockedPeriods, isLoading, refreshData, togglePeriodLock } = useData()
-  const { isViewer } = useAuth() // visualizador: esconde atalhos de ação (Indicadores só leitura)
+  const { isViewer, userName } = useAuth() // visualizador: esconde atalhos de ação (Indicadores só leitura)
   const [stats, setStats] = useState<DashboardStats | null>(null)
   const [isMounted, setIsMounted] = useState(false)
   const completeObligation = async (obl: ObligationWithDetails, e?: React.MouseEvent) => {
@@ -57,7 +57,7 @@ export default function DashboardPage() {
       ...obl,
       status: "completed",
       completedAt: now,
-      completedBy: "Contador",
+      completedBy: userName,
       history: [
         ...(obl.history || []),
         { id: crypto.randomUUID(), action: "completed", description: "Concluída pelo Dashboard", timestamp: now },
@@ -101,7 +101,7 @@ export default function DashboardPage() {
   const filteredInstallments = useMemo(() => {
     if (isLoading) return []
     return installments.filter((i) => {
-      const firstDue = new Date(i.firstDueDate)
+      const firstDue = parseLocalDate(i.firstDueDate)
       for (let n = 1; n <= i.installmentCount; n++) {
         const dueDate = adjustForWeekend(
           buildSafeDate(firstDue.getFullYear(), firstDue.getMonth() + (n - 1), i.dueDay),
@@ -146,7 +146,7 @@ export default function DashboardPage() {
 
   const inPreviousPeriod = (d: string | Date | null | undefined): boolean => {
     if (!previousPeriodKey || !d) return false
-    const date = typeof d === "string" ? new Date(d) : d
+    const date = parseLocalDate(d)
     if (Number.isNaN(date.getTime())) return false
     const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`
     return key === previousPeriodKey
@@ -170,7 +170,7 @@ export default function DashboardPage() {
   const previousInstallments = useMemo(() => {
     if (!previousPeriodKey) return undefined
     return installments.filter((i) => {
-      const firstDue = new Date(i.firstDueDate)
+      const firstDue = parseLocalDate(i.firstDueDate)
       for (let n = 1; n <= i.installmentCount; n++) {
         const dueDate = adjustForWeekend(
           buildSafeDate(firstDue.getFullYear(), firstDue.getMonth() + (n - 1), i.dueDay),
@@ -241,13 +241,13 @@ export default function DashboardPage() {
     let n = 0
     for (const o of obligations) {
       if (o.status === "completed") continue
-      const due = new Date(o.calculatedDueDate)
+      const due = parseLocalDate(o.calculatedDueDate)
       due.setHours(0, 0, 0, 0)
       if (due <= today) n++
     }
     for (const i of filteredInstallments) {
       if (i.status === "completed") continue
-      const firstDue = new Date(i.firstDueDate)
+      const firstDue = parseLocalDate(i.firstDueDate)
       const monthsToAdd = i.currentInstallment - 1
       const due = adjustForWeekend(
         buildSafeDate(firstDue.getFullYear(), firstDue.getMonth() + monthsToAdd, i.dueDay),

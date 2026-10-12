@@ -204,8 +204,11 @@ export function undoInstallmentPayment(
   )
   return {
     ...installment,
-    // Se estava marcado como concluído, volta pra pending
-    status: installment.status === "completed" ? "pending" : installment.status,
+    // Se estava concluído, volta pra em andamento (há outras parcelas pagas) ou pendente
+    status:
+      installment.status === "completed"
+        ? records.some((r) => r.paidAt || r.sentAt) ? "in_progress" : "pending"
+        : installment.status,
     completedAt: undefined,
     completedBy: undefined,
     paidInstallments: records,
@@ -240,7 +243,8 @@ export function undoLastSent(
   return {
     ...installment,
     currentInstallment: last.number,
-    status: "pending",
+    // Ainda há parcelas concluídas antes desta → continua em andamento.
+    status: remaining.length > 0 ? "in_progress" : "pending",
     completedAt: undefined,
     completedBy: undefined,
     paidInstallments: remaining,

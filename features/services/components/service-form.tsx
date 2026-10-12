@@ -1,5 +1,6 @@
 "use client"
 
+import { errorMessage } from "@/lib/utils"
 import { useEffect, useMemo, useState } from "react"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
@@ -210,7 +211,7 @@ export function ServiceForm({ service, clients, open, onOpenChange, onSave }: Pr
       onOpenChange(false)
     } catch (err) {
       console.error("[service-form] save failed:", err)
-      toast.error("Erro ao salvar serviço")
+      toast.error(errorMessage(err, "Erro ao salvar serviço"))
     } finally {
       setIsSaving(false)
     }
@@ -281,7 +282,7 @@ export function ServiceForm({ service, clients, open, onOpenChange, onSave }: Pr
         toast.error(`Já existe cliente com esse CNPJ: ${e.existingName}`)
       } else {
         console.error("[service-form] quick client error:", e)
-        toast.error("Erro ao criar cliente")
+        toast.error(errorMessage(e, "Erro ao criar cliente"))
       }
     } finally {
       setQuickSaving(false)

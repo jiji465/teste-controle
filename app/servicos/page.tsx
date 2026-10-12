@@ -27,8 +27,17 @@ import {
 } from "lucide-react"
 import { useData } from "@/contexts/data-context"
 import { useSelectedPeriod } from "@/hooks/use-selected-period"
-import { isOverdue } from "@/lib/date-utils"
-import type { Service } from "@/lib/types"
+import { isOverdue, parseLocalDate } from "@/lib/date-utils"
+import { SERVICE_CATEGORY_LABELS, type Service } from "@/lib/types"
+import { ExportButton } from "@/components/export-button"
+import type { ExportColumn } from "@/lib/export-utils"
+
+const STATUS_EXPORT_LABEL: Record<Service["status"], string> = {
+  pending: "Pendente",
+  in_progress: "Em andamento",
+  completed: "Concluído",
+  overdue: "Atrasado",
+}
 
 function effectiveServiceStatus(s: Service): Service["status"] {
   if (s.status === "completed") return "completed"
@@ -71,6 +80,18 @@ export default function ServicosPage() {
     }
   }
 
+  const clientName = (id: string) => clients.find((c) => c.id === id)?.name ?? ""
+  const serviceExportColumns: ExportColumn<Service>[] = [
+    { header: "Serviço", width: 32, accessor: (s) => s.name },
+    { header: "Empresa", width: 32, accessor: (s) => clientName(s.clientId) },
+    { header: "Categoria", width: 16, accessor: (s) => SERVICE_CATEGORY_LABELS[s.category] },
+    { header: "Vencimento", width: 12, accessor: (s) => parseLocalDate(s.dueDate) },
+    { header: "Status", width: 14, accessor: (s) => STATUS_EXPORT_LABEL[effectiveServiceStatus(s)] },
+    { header: "Concluído em", width: 14, accessor: (s) => (s.completedAt ? new Date(s.completedAt) : "") },
+    { header: "Concluído por", width: 18, accessor: (s) => s.completedBy },
+    { header: "Observações", width: 40, accessor: (s) => s.notes },
+  ]
+
   return (
     <div className="px-4 lg:px-6 xl:px-8 py-5">
       <div className="space-y-5">
@@ -89,6 +110,14 @@ export default function ServicosPage() {
             }
           />
           <div className="flex gap-2">
+            <ExportButton
+              filenamePrefix="servicos"
+              pdfTitle="Serviços avulsos"
+              pdfSubtitle={isFiltering && periodLabel ? `Período: ${periodLabel}` : undefined}
+              sheetName="Serviços"
+              columns={serviceExportColumns}
+              rows={getFilteredServices()}
+            />
             <Button onClick={() => listRef.current?.openNewForm()}>
               <Plus className="size-4 mr-2" />
               Novo Serviço

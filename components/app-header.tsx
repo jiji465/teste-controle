@@ -17,12 +17,15 @@ import { Menu, RefreshCw, Bell, ChevronRight, AlertTriangle, Clock, ArrowRight }
 import { Button } from "@/components/ui/button"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { PeriodSwitcher } from "@/components/period-switcher"
+import { PeriodLockControl } from "@/components/period-lock-control"
 import { useData } from "@/contexts/data-context"
 import { useTaskAlerts, ALERT_KIND_LABEL, type TaskAlert } from "@/hooks/use-task-alerts"
 import { formatDate } from "@/lib/date-utils"
 
 const ROUTE_LABELS: Record<string, string> = {
   "/": "Dashboard",
+  "/competencia": "Painel do mês",
+  "/configuracoes": "Configurações",
   "/clientes": "Empresas",
   "/impostos": "Guias de Imposto",
   "/obrigacoes": "Obrigações Acessórias",
@@ -69,8 +72,9 @@ export function AppHeader({ onOpenMobile }: { onOpenMobile: () => void }) {
 
         {/* Direita: período + ações */}
         <div className="flex items-center gap-1.5">
-          <div className="hidden md:block">
+          <div className="hidden md:flex md:items-center md:gap-1.5">
             <PeriodSwitcher />
+            <PeriodLockControl />
           </div>
 
           <Button

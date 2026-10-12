@@ -1,6 +1,7 @@
 "use client"
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react"
+import { parseLocalDate } from "@/lib/date-utils"
 
 const MONTH_NAMES = [
   "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
@@ -97,7 +98,7 @@ export function PeriodProvider({ children }: { children: ReactNode }) {
     (date: string | Date | null | undefined): boolean => {
       if (showAll) return true
       if (!date) return true
-      const d = typeof date === "string" ? new Date(date) : date
+      const d = parseLocalDate(date)
       if (Number.isNaN(d.getTime())) return true
       const yearMonth = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`
       return yearMonth === period

@@ -72,6 +72,8 @@ export function taxToTemplateItem(tax: Tax): TemplateItem {
 // scope obrigatório em cada item (assim a esfera aparece já no template).
 // weekendRule:
 //   - federal       → "anticipate" (antecipa pro último dia útil anterior)
+//     EXCEÇÃO: DAS / DAS-MEI / PGDAS-D → "postpone" (Res. CGSN 140/18: sem
+//     expediente bancário, vence no primeiro dia útil subsequente)
 //   - estadual/municipal → "postpone" (posterga pro próximo dia útil)
 // REMOVIDOS dos templates padrão (a pedido):
 //   - FGTS / RAIS  → quem manda nessas é o DP, não Fiscal
@@ -83,8 +85,8 @@ const COMMON_ALL: ObligationTemplate[] = [
 ]
 
 const SIMPLES_SERVICOS: ObligationTemplate[] = [
-  { name: "DAS", description: "Documento de Arrecadação do Simples Nacional", category: "tax_guide", scope: "federal", dueDay: 20, frequency: "monthly", recurrence: "monthly", weekendRule: "anticipate", priority: "urgent" },
-  { name: "PGDAS-D", description: "Programa Gerador do Documento de Arrecadação - Declaração", category: "declaration", scope: "federal", dueDay: 20, frequency: "monthly", recurrence: "monthly", weekendRule: "anticipate", priority: "high" },
+  { name: "DAS", description: "Documento de Arrecadação do Simples Nacional", category: "tax_guide", scope: "federal", dueDay: 20, frequency: "monthly", recurrence: "monthly", weekendRule: "postpone", priority: "urgent" },
+  { name: "PGDAS-D", description: "Programa Gerador do Documento de Arrecadação - Declaração", category: "declaration", scope: "federal", dueDay: 20, frequency: "monthly", recurrence: "monthly", weekendRule: "postpone", priority: "high" },
   { name: "ISS", description: "Imposto Sobre Serviços", category: "tax_guide", scope: "municipal", dueDay: 10, frequency: "monthly", recurrence: "monthly", weekendRule: "postpone", priority: "high" },
   // DEFIS: anual, vence em 31/03 do ano seguinte ao exercício (Resolução
   // CGSN 140/18 art. 72). dueMonth=3 + dueDay=31 + buildSafeDate ajusta.
@@ -92,8 +94,8 @@ const SIMPLES_SERVICOS: ObligationTemplate[] = [
 ]
 
 const SIMPLES_COMERCIO: ObligationTemplate[] = [
-  { name: "DAS", description: "Documento de Arrecadação do Simples Nacional", category: "tax_guide", scope: "federal", dueDay: 20, frequency: "monthly", recurrence: "monthly", weekendRule: "anticipate", priority: "urgent" },
-  { name: "PGDAS-D", description: "Programa Gerador do Documento de Arrecadação - Declaração", category: "declaration", scope: "federal", dueDay: 20, frequency: "monthly", recurrence: "monthly", weekendRule: "anticipate", priority: "high" },
+  { name: "DAS", description: "Documento de Arrecadação do Simples Nacional", category: "tax_guide", scope: "federal", dueDay: 20, frequency: "monthly", recurrence: "monthly", weekendRule: "postpone", priority: "urgent" },
+  { name: "PGDAS-D", description: "Programa Gerador do Documento de Arrecadação - Declaração", category: "declaration", scope: "federal", dueDay: 20, frequency: "monthly", recurrence: "monthly", weekendRule: "postpone", priority: "high" },
   // DEFIS: anual, vence em 31/03 do ano seguinte ao exercício (Resolução
   // CGSN 140/18 art. 72). dueMonth=3 + dueDay=31 + buildSafeDate ajusta.
   { name: "DEFIS", description: "DEFIS - vence 31/03 do ano seguinte ao exercício", category: "declaration", scope: "federal", dueDay: 31, dueMonth: 3, frequency: "annual", recurrence: "annual", weekendRule: "anticipate", priority: "high" },
@@ -246,12 +248,12 @@ const TEMPLATES: Partial<Record<TemplateKey, ObligationTemplate[]>> = {
   lucro_real_trimestral_industria: [...COMMON_ALL, ...REAL_TRIMESTRAL_INDUSTRIA],
   lucro_real_trimestral_misto: [...COMMON_ALL, ...REAL_TRIMESTRAL_MISTO],
   mei_servicos: [
-    { name: "DAS-MEI", description: "Documento de Arrecadação do MEI", category: "tax_guide", scope: "federal", dueDay: 20, frequency: "monthly", recurrence: "monthly", weekendRule: "anticipate", priority: "urgent" },
+    { name: "DAS-MEI", description: "Documento de Arrecadação do MEI", category: "tax_guide", scope: "federal", dueDay: 20, frequency: "monthly", recurrence: "monthly", weekendRule: "postpone", priority: "urgent" },
     // DASN-SIMEI: anual, vence 31/05 do ano seguinte ao exercício (LC 123/06).
     { name: "DASN-SIMEI", description: "DASN-SIMEI - vence 31/05 do ano seguinte ao exercício", category: "declaration", scope: "federal", dueDay: 31, dueMonth: 5, frequency: "annual", recurrence: "annual", weekendRule: "anticipate", priority: "high" },
   ],
   mei_comercio: [
-    { name: "DAS-MEI", description: "Documento de Arrecadação do MEI", category: "tax_guide", scope: "federal", dueDay: 20, frequency: "monthly", recurrence: "monthly", weekendRule: "anticipate", priority: "urgent" },
+    { name: "DAS-MEI", description: "Documento de Arrecadação do MEI", category: "tax_guide", scope: "federal", dueDay: 20, frequency: "monthly", recurrence: "monthly", weekendRule: "postpone", priority: "urgent" },
     // DASN-SIMEI: anual, vence 31/05 do ano seguinte ao exercício (LC 123/06).
     { name: "DASN-SIMEI", description: "DASN-SIMEI - vence 31/05 do ano seguinte ao exercício", category: "declaration", scope: "federal", dueDay: 31, dueMonth: 5, frequency: "annual", recurrence: "annual", weekendRule: "anticipate", priority: "high" },
   ],

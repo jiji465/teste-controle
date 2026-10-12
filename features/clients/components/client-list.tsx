@@ -1,5 +1,8 @@
 "use client"
 
+import { StatFilterBar } from "@/components/stat-filter-bar"
+import { usePagination } from "@/hooks/use-pagination"
+import { ListPagination } from "@/components/list-pagination"
 import { useMemo, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -30,7 +33,7 @@ import { applyTemplateToClient, summarizeApplyResult, type CompetencyRange } fro
 import { useData } from "@/contexts/data-context"
 import { useAuth } from "@/contexts/auth-context"
 import { toast } from "sonner"
-import { matchesText, matchesCnpj } from "@/lib/utils"
+import { matchesText, matchesCnpj , errorMessage} from "@/lib/utils"
 
 type ClientListProps = {
   clients: Client[]
@@ -161,7 +164,7 @@ export function ClientList({ clients, onUpdate }: ClientListProps) {
       if (error instanceof DuplicateClientError) {
         toast.error(error.message)
       } else {
-        toast.error("Erro ao salvar empresa. Tente novamente.")
+        toast.error(errorMessage(error, "Erro ao salvar empresa. Tente novamente."))
         console.error("[clients] save error:", error)
       }
       throw error
@@ -181,7 +184,7 @@ export function ClientList({ clients, onUpdate }: ClientListProps) {
           toast.success("Empresa excluída")
           onUpdate()
         } catch (error) {
-          toast.error("Erro ao excluir empresa")
+          toast.error(errorMessage(error, "Erro ao excluir empresa"))
           console.error("[clients] delete error:", error)
         }
       },
@@ -230,7 +233,7 @@ export function ClientList({ clients, onUpdate }: ClientListProps) {
           )
           onUpdate()
         } catch (error) {
-          toast.error("Erro ao arquivar empresa")
+          toast.error(errorMessage(error, "Erro ao arquivar empresa"))
           console.error("[clients] archive error:", error)
         }
       },
@@ -243,7 +246,7 @@ export function ClientList({ clients, onUpdate }: ClientListProps) {
       toast.success("Empresa reativada")
       onUpdate()
     } catch (error) {
-      toast.error("Erro ao reativar empresa")
+      toast.error(errorMessage(error, "Erro ao reativar empresa"))
       console.error("[clients] reactivate error:", error)
     }
   }
@@ -370,25 +373,31 @@ export function ClientList({ clients, onUpdate }: ClientListProps) {
     {} as Record<string, number>,
   )
 
+  // Paginação: renderiza 50 linhas por vez (listas com centenas de itens travavam)
+  const pagination = usePagination(filteredClients)
+
   return (
     <div className="space-y-4">
       <ConfirmDialog state={confirmState} onClose={() => setConfirmState(null)} />
-      {/* Toolbar: search + stats + action */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        <div className="flex flex-wrap gap-2 text-sm">
-          <span className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-muted text-muted-foreground">
-            <Building2 className="size-3.5" />
-            {clients.length} empresa{clients.length !== 1 ? "s" : ""} · {activeCount} ativa{activeCount !== 1 ? "s" : ""}
-          </span>
-          {(Object.entries(regimeCounts) as [keyof typeof TAX_REGIME_LABELS, number][]).map(([regime, count]) => (
-            <span
-              key={regime}
-              className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${TAX_REGIME_COLORS[regime as keyof typeof TAX_REGIME_COLORS]}`}
-            >
-              {TAX_REGIME_LABELS[regime as keyof typeof TAX_REGIME_LABELS]}: {count}
-            </span>
-          ))}
-        </div>
+      {/* Cartões por regime = resumo + filtro (mesmo padrão das outras abas) */}
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start">
+        <StatFilterBar
+          className="flex-1"
+          value={regimeFilter}
+          onChange={setRegimeFilter}
+          items={[
+            { value: "all", label: activeCount === clients.length ? "Todas" : `Todas · ${activeCount} ativas`, count: clients.length, icon: Building2, tone: "neutral" },
+            ...(Object.entries(regimeCounts) as [keyof typeof TAX_REGIME_LABELS, number][])
+              .sort((a, b) => b[1] - a[1])
+              .slice(0, 4)
+              .map(([regime, count]) => ({
+                value: regime,
+                label: TAX_REGIME_LABELS[regime],
+                count,
+                tone: "info" as const,
+              })),
+          ]}
+        />
         {!isViewer && (
           <Button onClick={() => handleOpenForm()} className="shrink-0">
             <Plus className="mr-2 h-4 w-4" /> Nova Empresa
@@ -489,7 +498,7 @@ export function ClientList({ clients, onUpdate }: ClientListProps) {
             </p>
           </div>
         ) : (
-          filteredClients.map((client) => (
+          pagination.items.map((client) => (
             <div
               key={client.id}
               className={`border rounded-lg p-3 space-y-2 ${selectedIds.has(client.id) ? "bg-primary/5 border-primary/40" : "bg-card"}`}
@@ -512,7 +521,7 @@ export function ClientList({ clients, onUpdate }: ClientListProps) {
                 {!isViewer && (
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="icon" className="size-8 shrink-0">
+                    <Button variant="ghost" size="icon" className="size-8 shrink-0" aria-label="Mais ações">
                       <MoreVertical className="size-4" />
                     </Button>
                   </DropdownMenuTrigger>
@@ -653,7 +662,7 @@ export function ClientList({ clients, onUpdate }: ClientListProps) {
                 </TableCell>
               </TableRow>
             ) : (
-              filteredClients.map((client) => (
+              pagination.items.map((client) => (
                 <TableRow
                   key={client.id}
                   data-state={selectedIds.has(client.id) ? "selected" : undefined}
@@ -786,6 +795,7 @@ export function ClientList({ clients, onUpdate }: ClientListProps) {
           </TableBody>
         </Table>
       </div>
+      <ListPagination pagination={pagination} />
 
       <ClientForm
         client={editingClient}

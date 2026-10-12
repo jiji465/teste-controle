@@ -14,6 +14,9 @@
  *   datas exatas de cada parcela paga.
  */
 
+import { usePagination } from "@/hooks/use-pagination"
+import { ListPagination } from "@/components/list-pagination"
+import { getCurrentParcelaDueDate, getParcelaDueDate } from "@/lib/installment-dates"
 import { useState, useEffect, useMemo } from "react"
 import { Button } from "@/components/ui/button"
 import { PageHeader } from "@/components/page-header"
@@ -51,7 +54,7 @@ import {
   undoLastSent,
 } from "@/features/installments/actions"
 import { saveInstallment, deleteInstallment } from "@/lib/supabase/database"
-import { matchesText } from "@/lib/utils"
+import { matchesText , errorMessage} from "@/lib/utils"
 import type { Installment } from "@/lib/types"
 import {
   Plus,
@@ -71,19 +74,16 @@ import {
   Building2,
   AlertCircle as PriorityIcon,
 } from "lucide-react"
-import {
-  formatDate,
-  adjustForWeekend,
-  buildSafeDate,
-  isOverdue,
-} from "@/lib/date-utils"
+import { formatDate, parseLocalDate } from "@/lib/date-utils"
 import { useData } from "@/contexts/data-context"
 import { useSelectedPeriod } from "@/hooks/use-selected-period"
 import { useUrlState } from "@/hooks/use-url-state"
 import { statusLabel, priorityLabel } from "@/lib/labels"
 import { toast } from "sonner"
+import { useAuth } from "@/contexts/auth-context"
 
 export default function ParcelamentosPage() {
+  const { userName } = useAuth()
   // ─── Dados ───────────────────────────────────────────────────────────────
   const {
     installments,
@@ -128,27 +128,11 @@ export default function ParcelamentosPage() {
   }
 
   /** Vencimento da parcela ATUAL. */
-  const calculateDueDate = (i: Installment): Date => {
-    const firstDue = new Date(i.firstDueDate)
-    const monthsToAdd = i.currentInstallment - 1
-    const date = buildSafeDate(
-      firstDue.getFullYear(),
-      firstDue.getMonth() + monthsToAdd,
-      i.dueDay,
-    )
-    return adjustForWeekend(date, i.weekendRule)
-  }
+  const calculateDueDate = (i: Installment): Date => getCurrentParcelaDueDate(i)
 
   /** Vencimento de UMA parcela específica (1..installmentCount). */
-  const calculateParcelaDueDate = (i: Installment, parcelNumber: number): Date => {
-    const firstDue = new Date(i.firstDueDate)
-    const date = buildSafeDate(
-      firstDue.getFullYear(),
-      firstDue.getMonth() + (parcelNumber - 1),
-      i.dueDay,
-    )
-    return adjustForWeekend(date, i.weekendRule)
-  }
+  const calculateParcelaDueDate = (i: Installment, parcelNumber: number): Date =>
+    getParcelaDueDate(i, parcelNumber)
 
   /** O parcelamento "encosta" no período se QUALQUER parcela dele cair nele.
    *  Antes o filtro usava só a parcela atual — pagar a parcela 5 em Março
@@ -296,13 +280,13 @@ export default function ParcelamentosPage() {
       await refreshData()
     } catch (e) {
       console.error("[parcelamentos] start error:", e)
-      toast.error("Erro ao iniciar parcelamento")
+      toast.error(errorMessage(e, "Erro ao iniciar parcelamento"))
     }
   }
 
   const handleComplete = async (i: Installment) => {
     try {
-      const result = payCurrentInstallment(i)
+      const result = payCurrentInstallment(i, userName)
       await saveInstallment(result.updated)
       toast.success(
         result.isFinalPayment
@@ -337,7 +321,7 @@ export default function ParcelamentosPage() {
       await refreshData()
     } catch (e) {
       console.error("[parcelamentos] reopen error:", e)
-      toast.error("Erro ao reabrir")
+      toast.error(errorMessage(e, "Erro ao reabrir"))
     }
   }
 
@@ -369,7 +353,7 @@ export default function ParcelamentosPage() {
           await refreshData()
         } catch (e) {
           console.error("[parcelamentos] delete error:", e)
-          toast.error("Erro ao excluir")
+          toast.error(errorMessage(e, "Erro ao excluir"))
         }
       },
     })
@@ -407,7 +391,7 @@ export default function ParcelamentosPage() {
           const skipped = all.length - targets.length
           await Promise.all(
             targets.map((i) => {
-              const result = payCurrentInstallment(i)
+              const result = payCurrentInstallment(i, userName)
               return saveInstallment(result.updated)
             }),
           )
@@ -543,28 +527,28 @@ export default function ParcelamentosPage() {
     switch (status) {
       case "completed":
         return (
-          <Badge variant="secondary" className="bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-300">
+          <Badge variant="secondary" className="bg-success/10 text-success border-success/25">
             <CheckCircle2 className="size-3 mr-1" />
             Concluído {i.completedAt && `em ${formatDate(i.completedAt)}`}
           </Badge>
         )
       case "in_progress":
         return (
-          <Badge variant="secondary" className="bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300">
+          <Badge variant="secondary" className="bg-info/10 text-info border-info/25">
             <PlayCircle className="size-3 mr-1" />
             Em Andamento
           </Badge>
         )
       case "overdue":
         return (
-          <Badge variant="secondary" className="bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300">
+          <Badge variant="secondary" className="bg-destructive/10 text-destructive border-destructive/25">
             <AlertTriangle className="size-3 mr-1" />
             Atrasado
           </Badge>
         )
       default:
         return (
-          <Badge variant="secondary" className="bg-yellow-100 text-yellow-700 dark:bg-yellow-950 dark:text-yellow-300">
+          <Badge variant="secondary" className="bg-amber-500/10 text-amber-700 border-amber-500/30 dark:text-amber-400">
             <Clock className="size-3 mr-1" />
             Pendente
           </Badge>
@@ -579,13 +563,16 @@ export default function ParcelamentosPage() {
     { header: "Cliente", width: 28, accessor: (i) => getClientName(i.clientId) },
     { header: "Imposto", width: 18, accessor: (i) => getTaxName(i.taxId) },
     { header: "Parcela", width: 12, accessor: (i) => `${i.currentInstallment}/${i.installmentCount}` },
-    { header: "1º vencimento", width: 14, accessor: (i) => new Date(i.firstDueDate) },
+    { header: "1º vencimento", width: 14, accessor: (i) => parseLocalDate(i.firstDueDate) },
     { header: "Próx. venc.", width: 14, accessor: (i) => calculateDueDate(i) },
     { header: "Status", width: 14, accessor: (i) => statusLabel(getStatus(i)) },
     { header: "Prioridade", width: 12, accessor: (i) => priorityLabel(i.priority) },
   ]
 
   // ─── Render ──────────────────────────────────────────────────────────────
+
+  // Paginação: renderiza 50 linhas por vez (listas com centenas de itens travavam)
+  const pagination = usePagination(visibleInstallments)
 
   return (
     <div className="px-4 lg:px-6 xl:px-8 py-5">
@@ -748,7 +735,7 @@ export default function ParcelamentosPage() {
                   )}
                 </div>
               ) : (
-                visibleInstallments.map((i) => {
+                pagination.items.map((i) => {
                   const status = getStatus(i)
                   // Em filtro mensal, mostra a parcela DAQUELE mês (não a current).
                   const display = getDisplayParcela(i)
@@ -761,7 +748,7 @@ export default function ParcelamentosPage() {
                         isSelected
                           ? "bg-primary/5 border-primary/40"
                           : status === "overdue"
-                            ? "bg-red-50/50 dark:bg-red-950/10 border-red-200 dark:border-red-900"
+                            ? "bg-destructive/5 border-destructive/20"
                             : "bg-card"
                       }`}
                       onClick={() => handleView(i)}
@@ -782,10 +769,10 @@ export default function ParcelamentosPage() {
                                 variant="outline"
                                 className={`text-[10px] py-0 px-1.5 ${
                                   i.priority === "urgent"
-                                    ? "border-red-500 text-red-700 dark:text-red-400"
+                                    ? "border-destructive text-destructive"
                                     : i.priority === "high"
-                                      ? "border-orange-500 text-orange-700 dark:text-orange-400"
-                                      : "border-blue-500 text-blue-700 dark:text-blue-400"
+                                      ? "border-warning text-warning"
+                                      : "border-info text-info"
                                 }`}
                               >
                                 {i.priority === "urgent" ? "Urgente" : i.priority === "high" ? "Alta" : "Baixa"}
@@ -836,7 +823,7 @@ export default function ParcelamentosPage() {
                               size="sm"
                               variant="default"
                               onClick={() => handleComplete(i)}
-                              className="h-7 text-xs gap-1 bg-green-600 hover:bg-green-700"
+                              className="h-7 text-xs gap-1 bg-success text-success-foreground hover:bg-success/90"
                             >
                               <CheckCircle2 className="size-3" /> Concluir
                             </Button>
@@ -935,7 +922,7 @@ export default function ParcelamentosPage() {
                       </TableCell>
                     </TableRow>
                   ) : (
-                    visibleInstallments.map((i) => {
+                    pagination.items.map((i) => {
                       const status = getStatus(i)
                       // Em filtro mensal, mostra parcela DAQUELE mês (não a current).
                       const display = getDisplayParcela(i)
@@ -949,7 +936,7 @@ export default function ParcelamentosPage() {
                             isSelected
                               ? "bg-primary/5"
                               : status === "overdue"
-                                ? "bg-red-50/50 dark:bg-red-950/10"
+                                ? "bg-destructive/5"
                                 : ""
                           }`}
                           onClick={() => handleView(i)}
@@ -969,10 +956,10 @@ export default function ParcelamentosPage() {
                                   variant="outline"
                                   className={
                                     i.priority === "urgent"
-                                      ? "border-red-500 text-red-700 dark:text-red-400"
+                                      ? "border-destructive text-destructive"
                                       : i.priority === "high"
-                                        ? "border-orange-500 text-orange-700 dark:text-orange-400"
-                                        : "border-blue-500 text-blue-700 dark:text-blue-400"
+                                        ? "border-warning text-warning"
+                                        : "border-info text-info"
                                   }
                                 >
                                   {i.priority === "urgent" ? "Urgente" : i.priority === "high" ? "Alta" : "Baixa"}
@@ -1007,7 +994,7 @@ export default function ParcelamentosPage() {
                                   size="sm"
                                   variant="default"
                                   onClick={() => handleComplete(i)}
-                                  className="h-7 text-xs bg-green-600 hover:bg-green-700"
+                                  className="h-7 text-xs bg-success text-success-foreground hover:bg-success/90"
                                   title={`Marcar parcela ${i.currentInstallment}/${i.installmentCount} como paga`}
                                 >
                                   <CheckCircle2 className="size-3 mr-1" />
@@ -1022,7 +1009,7 @@ export default function ParcelamentosPage() {
                           >
                             <DropdownMenu>
                               <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" size="icon">
+                                <Button variant="ghost" size="icon" aria-label="Mais ações">
                                   <MoreVertical className="size-4" />
                                 </Button>
                               </DropdownMenuTrigger>
@@ -1072,6 +1059,7 @@ export default function ParcelamentosPage() {
                 </TableBody>
               </Table>
             </div>
+            <ListPagination pagination={pagination} />
         </div>
       </div>
 
@@ -1096,7 +1084,7 @@ export default function ParcelamentosPage() {
           onPay={handleComplete}
           onMarkAsSent={async (i) => {
             try {
-              const result = markCurrentInstallmentAsSent(i)
+              const result = markCurrentInstallmentAsSent(i, userName)
               await saveInstallment(result.updated)
               toast.success(`Parcela ${result.sentNumber}/${i.installmentCount} marcada como enviada`)
               await refreshData()
@@ -1107,13 +1095,13 @@ export default function ParcelamentosPage() {
           }}
           onConfirmPayment={async (i, n) => {
             try {
-              const result = confirmInstallmentPayment(i, n)
+              const result = confirmInstallmentPayment(i, n, userName)
               await saveInstallment(result.updated)
               toast.success(`Pagamento da parcela ${n}/${i.installmentCount} confirmado`)
               await refreshData()
             } catch (e) {
               console.error(e)
-              toast.error("Erro ao confirmar pagamento")
+              toast.error(errorMessage(e, "Erro ao confirmar pagamento"))
             }
           }}
           onUndoLastPayment={async (i) => {
@@ -1123,7 +1111,7 @@ export default function ParcelamentosPage() {
               await refreshData()
             } catch (e) {
               console.error(e)
-              toast.error("Erro ao desfazer")
+              toast.error(errorMessage(e, "Erro ao desfazer"))
             }
           }}
         />

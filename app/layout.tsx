@@ -29,7 +29,6 @@ const fontMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Sistema Fiscal - Controle de Obrigações",
   description: "Sistema de controle de obrigações acessórias e impostos para contabilidade",
-  generator: "v0.app",
 }
 
 export const viewport: Viewport = {

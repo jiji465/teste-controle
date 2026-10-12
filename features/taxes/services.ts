@@ -1,5 +1,5 @@
 import type { Tax } from "@/lib/types"
-import { hasSupabaseConfig, getSupabaseClient, local } from "@/lib/supabase/core"
+import { hasSupabaseConfig, getSupabaseClient, fetchAll, local, toDbError } from "@/lib/supabase/core"
 
 function mapTaxToDb(tax: Tax) {
   return {
@@ -60,22 +60,20 @@ function mapDbToTax(row: any): Tax {
 
 export async function getTaxes(): Promise<Tax[]> {
   if (!hasSupabaseConfig()) return local.getTaxes()
-  const supabase = getSupabaseClient()
-  const { data, error } = await supabase.from("taxes").select("*").order("name")
-  if (error) { console.error("[db] Error fetching taxes:", error); return local.getTaxes() }
-  return data.map(mapDbToTax)
+  const rows = await fetchAll("taxes", "name")
+  return rows.map(mapDbToTax)
 }
 
 export async function saveTax(tax: Tax): Promise<void> {
   if (!hasSupabaseConfig()) { local.saveTax(tax); return }
   const supabase = getSupabaseClient()
   const { error } = await supabase.from("taxes").upsert(mapTaxToDb(tax))
-  if (error) { console.error("[db] Error saving tax:", error); throw error }
+  if (error) { console.error("[db] Error saving tax:", error); throw toDbError(error) }
 }
 
 export async function deleteTax(id: string): Promise<void> {
   if (!hasSupabaseConfig()) { local.deleteTax(id); return }
   const supabase = getSupabaseClient()
   const { error } = await supabase.from("taxes").delete().eq("id", id)
-  if (error) { console.error("[db] Error deleting tax:", error); throw error }
+  if (error) { console.error("[db] Error deleting tax:", error); throw toDbError(error) }
 }

@@ -2,9 +2,10 @@
  * Cálculo de "Compliance Score" por cliente — nota A/B/C baseada em
  * taxa de cumprimento no prazo + quantidade de atrasos atuais.
  */
+import { getCurrentParcelaDueDate } from "./installment-dates"
 import type { Client, ObligationWithDetails, Tax, Installment, Service } from "./types"
 import { effectiveStatus } from "./obligation-status"
-import { adjustForWeekend, buildSafeDate, calculateDueDateFromCompetency } from "./date-utils"
+import { calculateDueDateFromCompetency, parseLocalDate } from "./date-utils"
 
 export type ComplianceGrade = "A" | "B" | "C"
 
@@ -28,12 +29,7 @@ function deriveTaxDueDate(t: Tax): Date | null {
   return calculateDueDateFromCompetency(t.competencyMonth, t.dueDay, t.weekendRule, t.dueMonth)
 }
 
-function deriveInstallmentDueDate(i: Installment): Date {
-  const firstDue = new Date(i.firstDueDate)
-  const monthsToAdd = i.currentInstallment - 1
-  const raw = buildSafeDate(firstDue.getFullYear(), firstDue.getMonth() + monthsToAdd, i.dueDay)
-  return adjustForWeekend(raw, i.weekendRule)
-}
+const deriveInstallmentDueDate = (i: Installment): Date => getCurrentParcelaDueDate(i)
 
 /** "Concluído no prazo" = completedAt no MESMO DIA do vencimento ou antes.
  *  Normaliza pra dia inteiro (sem hora). */
@@ -75,7 +71,7 @@ export function calculateClientCompliance(
       const eff = effectiveStatus(o)
       if (eff === "completed") {
         completed++
-        if (completedOnTimeCheck(o.completedAt, new Date(o.calculatedDueDate))) {
+        if (completedOnTimeCheck(o.completedAt, parseLocalDate(o.calculatedDueDate))) {
           completedOnTime++
         }
       } else if (eff === "overdue") {
@@ -115,7 +111,7 @@ export function calculateClientCompliance(
     for (const s of services) {
       if (s.clientId !== client.id) continue
       totalItems++
-      const due = new Date(s.dueDate)
+      const due = parseLocalDate(s.dueDate)
       const eff = effectiveStatus({ status: s.status, calculatedDueDate: s.dueDate })
       if (eff === "completed") {
         completed++

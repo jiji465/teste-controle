@@ -2242,7 +2242,7 @@ const App = () => {
     };
 
     const loadRecords = async (id) => {
-        try { setRecords(await getApuracoes(id)); } catch { setRecords([]); }
+        try { setRecords(await getApuracoes(id)); } catch (e) { setRecords([]); setToast({ message: e instanceof Error ? e.message : 'Falha ao carregar apurações', type: 'error' }); }
     };
 
     const selectClient = async (id) => {

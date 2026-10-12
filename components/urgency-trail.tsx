@@ -35,8 +35,7 @@ import {
   adjustForWeekend,
   buildSafeDate,
   calculateDueDateFromCompetency,
-  formatDate,
-} from "@/lib/date-utils"
+  formatDate, parseLocalDate } from "@/lib/date-utils"
 import { urgencyTier, type UrgencyTier } from "@/lib/compliance-score"
 
 type Props = {
@@ -152,7 +151,7 @@ export function UrgencyTrail({
 
     for (const o of obligations) {
       if (o.status === "completed") continue
-      const due = new Date(o.calculatedDueDate)
+      const due = parseLocalDate(o.calculatedDueDate)
       const tier = urgencyTier(due, o.status)
       if (!tier || tier === "later") continue
       result.push({
@@ -188,7 +187,7 @@ export function UrgencyTrail({
 
     for (const i of installments) {
       if (i.status === "completed") continue
-      const firstDue = new Date(i.firstDueDate)
+      const firstDue = parseLocalDate(i.firstDueDate)
       const monthsToAdd = i.currentInstallment - 1
       const date = adjustForWeekend(
         buildSafeDate(firstDue.getFullYear(), firstDue.getMonth() + monthsToAdd, i.dueDay),
@@ -212,7 +211,7 @@ export function UrgencyTrail({
     // Serviços: usam dueDate único
     for (const sv of services) {
       if (sv.status === "completed") continue
-      const date = new Date(sv.dueDate)
+      const date = parseLocalDate(sv.dueDate)
       if (Number.isNaN(date.getTime())) continue
       const tier = urgencyTier(date, sv.status)
       if (!tier || tier === "later") continue

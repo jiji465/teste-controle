@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server"
+import { isValidCNPJ, normalizeCnpj } from "@/lib/cnpj-validation"
 
 const BRASILAPI_URL = "https://brasilapi.com.br/api/cnpj/v1"
 const RECEITAWS_URL = "https://receitaws.com.br/v1/cnpj"
@@ -66,9 +67,9 @@ export async function GET(
   { params }: { params: Promise<{ cnpj: string }> },
 ) {
   const { cnpj } = await params
-  const cleanCnpj = cnpj.replace(/\D/g, "")
+  const cleanCnpj = normalizeCnpj(cnpj)
 
-  if (cleanCnpj.length !== 14) {
+  if (!isValidCNPJ(cleanCnpj)) {
     return NextResponse.json({ error: "CNPJ inválido" }, { status: 400 })
   }
 

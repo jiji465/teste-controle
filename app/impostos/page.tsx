@@ -1,5 +1,7 @@
 "use client"
 
+import { usePagination } from "@/hooks/use-pagination"
+import { ListPagination } from "@/components/list-pagination"
 import { useEffect, useMemo, useState } from "react"
 import { ConfirmDialog, type ConfirmState } from "@/components/ui/confirm-dialog"
 import { useUrlState } from "@/hooks/use-url-state"
@@ -26,8 +28,9 @@ import { saveTax, deleteTax } from "@/lib/supabase/database"
 import { buildRecurringTaxes } from "@/lib/recurrence-generate"
 import { calculateDueDateFromCompetency, formatDate, isOverdue } from "@/lib/date-utils"
 import { checkAndGenerateRecurrences } from "@/lib/auto-recurrence"
-import { matchesText } from "@/lib/utils"
+import { matchesText , errorMessage} from "@/lib/utils"
 import { toast } from "sonner"
+import { useAuth } from "@/contexts/auth-context"
 import {
   CheckCircle2,
   Clock,
@@ -81,6 +84,7 @@ function getRelativeDate(date: Date): string {
 }
 
 export default function ImpostosPage() {
+  const { userName } = useAuth()
   const { taxes, clients, obligations: rawObligations, obligationsWithDetails, refreshData } = useData()
   const { isInPeriod, periodLabel, isFiltering } = useSelectedPeriod()
   const [editingTax, setEditingTax] = useState<Tax | undefined>()
@@ -157,7 +161,7 @@ export default function ImpostosPage() {
       setIsFormOpen(false)
     } catch (error) {
       console.error("[impostos] Erro ao salvar imposto:", error)
-      toast.error("Erro ao salvar imposto. Tente novamente.")
+      toast.error(errorMessage(error, "Erro ao salvar imposto. Tente novamente."))
     }
   }
 
@@ -174,7 +178,7 @@ export default function ImpostosPage() {
           await updateData()
         } catch (error) {
           console.error("[impostos] Erro ao excluir imposto:", error)
-          toast.error("Erro ao excluir imposto. Tente novamente.")
+          toast.error(errorMessage(error, "Erro ao excluir imposto. Tente novamente."))
         }
       },
     })
@@ -202,7 +206,7 @@ export default function ImpostosPage() {
       await updateData()
     } catch (error) {
       console.error("[impostos] Error starting tax:", error)
-      toast.error("Erro ao iniciar a guia. Tente novamente.")
+      toast.error(errorMessage(error, "Erro ao iniciar a guia. Tente novamente."))
     }
   }
 
@@ -212,6 +216,7 @@ export default function ImpostosPage() {
         ...tax,
         status: "completed" as const,
         completedAt: new Date().toISOString(),
+        completedBy: userName,
       }
       await saveTax(updatedTax)
       // Gera próxima instância da recorrência imediatamente (em vez de
@@ -222,7 +227,7 @@ export default function ImpostosPage() {
       await updateData()
     } catch (error) {
       console.error("[impostos] Error completing tax:", error)
-      toast.error("Erro ao concluir a guia. Tente novamente.")
+      toast.error(errorMessage(error, "Erro ao concluir a guia. Tente novamente."))
     }
   }
 
@@ -481,7 +486,7 @@ export default function ImpostosPage() {
     switch (status) {
       case "completed":
         return (
-          <Badge variant="secondary" className="bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-300">
+          <Badge variant="secondary" className="bg-success/10 text-success border-success/25">
             <CheckCircle2 className="size-3 mr-1" />
             Entregue {completedAt && `em ${new Date(completedAt).toLocaleDateString("pt-BR")}`}
           </Badge>
@@ -489,21 +494,21 @@ export default function ImpostosPage() {
       case "in_progress":
         if (isCalculatedOverdue) {
           return (
-            <Badge variant="secondary" className="bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300">
+            <Badge variant="secondary" className="bg-destructive/10 text-destructive border-destructive/25">
               <AlertTriangle className="size-3 mr-1" />
               Atrasada
             </Badge>
           )
         }
         return (
-          <Badge variant="secondary" className="bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300">
+          <Badge variant="secondary" className="bg-info/10 text-info border-info/25">
             <PlayCircle className="size-3 mr-1" />
             Em Andamento
           </Badge>
         )
       case "overdue":
         return (
-          <Badge variant="secondary" className="bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300">
+          <Badge variant="secondary" className="bg-destructive/10 text-destructive border-destructive/25">
             <AlertTriangle className="size-3 mr-1" />
             Atrasada
           </Badge>
@@ -511,20 +516,23 @@ export default function ImpostosPage() {
       default:
         if (isCalculatedOverdue) {
           return (
-            <Badge variant="secondary" className="bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300">
+            <Badge variant="secondary" className="bg-destructive/10 text-destructive border-destructive/25">
               <AlertTriangle className="size-3 mr-1" />
               Atrasada
             </Badge>
           )
         }
         return (
-          <Badge variant="secondary" className="bg-yellow-100 text-yellow-700 dark:bg-yellow-950 dark:text-yellow-300">
+          <Badge variant="secondary" className="bg-amber-500/10 text-amber-700 border-amber-500/30 dark:text-amber-400">
             <Clock className="size-3 mr-1" />
             Pendente
           </Badge>
         )
     }
   }
+
+  // Paginação: renderiza 50 linhas por vez (listas com centenas de itens travavam)
+  const pagination = usePagination(getFilteredTaxes())
 
   return (
     <div className="px-4 lg:px-6 xl:px-8 py-5">
@@ -688,7 +696,7 @@ export default function ImpostosPage() {
                       </Button>
                     </div>
                   ) : (
-                    getFilteredTaxes().map((tax) => {
+                    pagination.items.map((tax) => {
                       const calcDate = calculateDueDateFromCompetency(
                         tax.competencyMonth,
                         tax.dueDay,
@@ -768,7 +776,7 @@ export default function ImpostosPage() {
                                 size="sm"
                                 variant="default"
                                 onClick={() => handleCompleteTax(tax)}
-                                className="h-7 text-xs gap-1 bg-green-600 hover:bg-green-700"
+                                className="h-7 text-xs gap-1 bg-success text-success-foreground hover:bg-success/90"
                               >
                                 <CheckCircle2 className="size-3" /> Concluir
                               </Button>
@@ -849,7 +857,7 @@ export default function ImpostosPage() {
                           </TableCell>
                         </TableRow>
                       ) : (
-                        getFilteredTaxes().map((tax) => {
+                        pagination.items.map((tax) => {
                           const calculatedDueDate = calculateDueDateFromCompetency(
                             tax.competencyMonth,
                             tax.dueDay,
@@ -868,7 +876,7 @@ export default function ImpostosPage() {
                               selectedIds.has(tax.id)
                                 ? "bg-primary/5"
                                 : isTaxOverdue
-                                  ? "bg-red-50/50 dark:bg-red-950/10"
+                                  ? "bg-destructive/5"
                                   : ""
                             }`}
                             onClick={() => handleView(tax)}
@@ -889,10 +897,10 @@ export default function ImpostosPage() {
                                       variant="outline"
                                       className={
                                         tax.priority === "urgent"
-                                          ? "border-red-500 text-red-700 dark:text-red-400"
+                                          ? "border-destructive text-destructive"
                                           : tax.priority === "high"
-                                            ? "border-orange-500 text-orange-700 dark:text-orange-400"
-                                            : "border-blue-500 text-blue-700 dark:text-blue-400"
+                                            ? "border-warning text-warning"
+                                            : "border-info text-info"
                                       }
                                     >
                                       {tax.priority === "urgent"
@@ -978,7 +986,7 @@ export default function ImpostosPage() {
                                     size="sm"
                                     variant="default"
                                     onClick={() => handleCompleteTax(tax)}
-                                    className="h-7 text-xs bg-green-600 hover:bg-green-700"
+                                    className="h-7 text-xs bg-success text-success-foreground hover:bg-success/90"
                                   >
                                     <CheckCircle2 className="size-3 mr-1" />
                                     Concluir
@@ -992,7 +1000,7 @@ export default function ImpostosPage() {
                             >
                               <DropdownMenu>
                                 <DropdownMenuTrigger asChild>
-                                  <Button variant="ghost" size="icon">
+                                  <Button variant="ghost" size="icon" aria-label="Mais ações">
                                     <MoreVertical className="size-4" />
                                   </Button>
                                 </DropdownMenuTrigger>
@@ -1033,6 +1041,7 @@ export default function ImpostosPage() {
                     </TableBody>
                   </Table>
                 </div>
+                <ListPagination pagination={pagination} />
               </div>
           </div>
         </div>

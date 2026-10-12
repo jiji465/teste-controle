@@ -20,6 +20,7 @@ import { TAX_REGIME_LABELS } from "@/lib/types"
 import { exportToXlsx, exportToPdf, exportToCsv, timestampFilename, type ExportColumn } from "@/lib/export-utils"
 import { statusLabel, priorityLabel } from "@/lib/labels"
 import { toast } from "sonner"
+import { parseLocalDate } from "@/lib/date-utils"
 
 type ExportFmt = "xlsx" | "csv" | "pdf"
 
@@ -45,7 +46,7 @@ export function ExportDialog({ open, onOpenChange, obligations, clients }: Expor
       const s = new Date(dateStart)
       const e = new Date(dateEnd)
       data = data.filter((o) => {
-        const due = new Date(o.calculatedDueDate)
+        const due = parseLocalDate(o.calculatedDueDate)
         return due >= s && due <= e
       })
     }
@@ -57,13 +58,13 @@ export function ExportDialog({ open, onOpenChange, obligations, clients }: Expor
     { header: "Cliente", width: 30, accessor: (o) => o.client.name },
     { header: "CNPJ", width: 18, accessor: (o) => o.client.cnpj || "" },
     { header: "Regime", width: 18, accessor: (o) => (o.client.taxRegime ? TAX_REGIME_LABELS[o.client.taxRegime] : "") },
-    { header: "Vencimento", width: 12, accessor: (o) => new Date(o.calculatedDueDate) },
+    { header: "Vencimento", width: 12, accessor: (o) => parseLocalDate(o.calculatedDueDate) },
     { header: "Status", width: 12, accessor: (o) => statusLabel(o.status) },
     { header: "Prioridade", width: 10, accessor: (o) => priorityLabel(o.priority) },
     { header: "Concluída em", width: 14, accessor: (o) => (o.completedAt ? new Date(o.completedAt) : "") },
   ]
 
-  const handleExport = () => {
+  const handleExport = async () => {
     if (filteredData.length === 0) {
       toast.error("Nenhuma obrigação encontrada com esses filtros")
       return
@@ -81,11 +82,11 @@ export function ExportDialog({ open, onOpenChange, obligations, clients }: Expor
 
     try {
       if (format === "xlsx") {
-        exportToXlsx({ filename, sheetName: "Obrigações", columns, rows: filteredData })
+        await exportToXlsx({ filename, sheetName: "Obrigações", columns, rows: filteredData })
       } else if (format === "csv") {
         exportToCsv({ filename, columns, rows: filteredData })
       } else {
-        exportToPdf({
+        await exportToPdf({
           filename,
           title: "Relatório de Obrigações",
           subtitle,

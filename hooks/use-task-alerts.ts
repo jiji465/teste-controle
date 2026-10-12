@@ -10,14 +10,8 @@
 
 import { useMemo } from "react"
 import { useData } from "@/contexts/data-context"
-import { getObligationsWithDetails } from "@/lib/dashboard-utils"
-import {
-  isOverdue,
-  calculateDueDateFromCompetency,
-  buildSafeDate,
-  adjustForWeekend,
-} from "@/lib/date-utils"
-import type { ObligationWithDetails } from "@/lib/types"
+import { isOverdue, isUpcomingThisWeek, calculateDueDateFromCompetency, parseLocalDate } from "@/lib/date-utils"
+import { getCurrentParcelaDueDate } from "@/lib/installment-dates"
 
 export type TaskAlertKind = "obrigacao" | "guia" | "parcela" | "servico"
 
@@ -38,12 +32,7 @@ export const ALERT_KIND_LABEL: Record<TaskAlertKind, string> = {
 }
 
 export function useTaskAlerts() {
-  const { obligations, clients, taxes, installments, services, isLoading } = useData()
-
-  const obsWithDetails = useMemo<ObligationWithDetails[]>(() => {
-    if (isLoading || !clients.length) return []
-    return getObligationsWithDetails(obligations, clients, taxes)
-  }, [obligations, clients, taxes, isLoading])
+  const { obligationsWithDetails: obsWithDetails, clients, taxes, installments, services } = useData()
 
   return useMemo(() => {
     const clientName = (id: string | undefined) => clients.find((c) => c.id === id)?.name ?? "—"
@@ -75,11 +64,7 @@ export function useTaskAlerts() {
     }
     for (const i of installments) {
       if (i.status === "completed") continue
-      const firstDue = new Date(i.firstDueDate)
-      const due = adjustForWeekend(
-        buildSafeDate(firstDue.getFullYear(), firstDue.getMonth() + (i.currentInstallment - 1), i.dueDay),
-        i.weekendRule,
-      )
+      const due = getCurrentParcelaDueDate(i)
       items.push({
         id: `inst-${i.id}`,
         name: i.name,
@@ -101,17 +86,16 @@ export function useTaskAlerts() {
       })
     }
 
-    const today = new Date()
-    const nextWeek = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000)
+    // Comparação por DIA (helpers de date-utils): um item que vence hoje
+    // entra em "esta semana" — antes, comparar com a hora atual o descartava.
     const overdueList: TaskAlert[] = []
     const weekList: TaskAlert[] = []
     for (const it of items) {
-      const due = new Date(it.dueDate)
       if (isOverdue(it.dueDate)) overdueList.push(it)
-      else if (due >= today && due <= nextWeek) weekList.push(it)
+      else if (isUpcomingThisWeek(it.dueDate)) weekList.push(it)
     }
     const byDate = (a: TaskAlert, b: TaskAlert) =>
-      new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime()
+      parseLocalDate(a.dueDate).getTime() - parseLocalDate(b.dueDate).getTime()
     overdueList.sort(byDate)
     weekList.sort(byDate)
 
