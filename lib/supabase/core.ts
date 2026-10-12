@@ -37,6 +37,10 @@ export function toDbError(error: { message?: string; code?: string; details?: st
     if (/cnpj/i.test(msg + (error.details ?? ""))) return new Error("Já existe uma empresa cadastrada com este CNPJ.")
     return new Error("Já existe um item igual para esta competência.")
   }
+  // Controle otimista de versão (apuracao_mensal, migration 022): alguém salvou antes
+  if (error?.code === "40001") {
+    return new Error(/alterada por outra pessoa/i.test(msg) ? msg : "Este registro foi alterado por outra pessoa. Recarregue antes de salvar.")
+  }
   if (error?.code === "42501" || /row-level security/i.test(msg)) {
     return new Error("Sem permissão para esta ação (perfil somente leitura ou sessão expirada).")
   }

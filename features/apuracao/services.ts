@@ -21,10 +21,21 @@ export interface ApuracaoRecord {
   aliquotaEfetiva: number
   economia: number
   das: number
-  /** Estado completo do editor (ClientData) p/ reabrir/editar e re-gerar o PDF. */
-  payload?: ClientData
+  /** Estado completo do editor ({ clientData, taxes }) p/ reabrir/editar e re-gerar o PDF. */
+  payload?: { clientData?: ClientData & Record<string, unknown>; taxes?: unknown[] } | ClientData
   updatedAt?: string
+  /** Versão otimista (migration 022). Enviar a versão carregada ao atualizar. */
+  version?: number
+  /** Totais do motor persistidos p/ conferência (migration 022). */
+  baseCarga?: number
+  totalProvisao?: number
+  totalRetido?: number
+  updatedByName?: string
 }
+
+/** Colunas que só existem depois da migration 022 (enviadas apenas se o banco já tiver). */
+const COLS_022 = ["version", "base_carga", "total_provisao", "total_retido", "engine_version"] as const
+export const ENGINE_VERSION = "2026.10-fase1"
 
 const LS_KEY = "ctrl-fiscal:apuracao"
 
@@ -48,9 +59,24 @@ function mapToDb(r: ApuracaoRecord) {
     economia: r.economia ?? 0,
     das: r.das ?? 0,
     payload: r.payload ?? null,
+    // updated_at/autor: no banco com 022 quem carimba é o trigger (relógio do servidor)
     updated_at: new Date().toISOString(),
+    version: r.version ?? null,
+    base_carga: r.baseCarga ?? null,
+    total_provisao: r.totalProvisao ?? null,
+    total_retido: r.totalRetido ?? null,
+    engine_version: ENGINE_VERSION,
   }
 }
+
+/** Remove as colunas da 022 (banco ainda sem a migration). */
+function sem022(row: Record<string, unknown>) {
+  const out = { ...row }
+  for (const c of COLS_022) delete out[c]
+  return out
+}
+const faltaColuna = (e: { code?: string; message?: string } | null) =>
+  !!e && (e.code === "42703" || e.code === "PGRST204" || /column .* does not exist|schema cache/i.test(e.message ?? ""))
 function mapFromDb(row: any): ApuracaoRecord {
   return {
     id: row.id,
@@ -71,6 +97,8 @@ function mapFromDb(row: any): ApuracaoRecord {
     das: Number(row.das) || 0,
     payload: row.payload ?? undefined,
     updatedAt: row.updated_at ?? undefined,
+    version: row.version ?? undefined,
+    updatedByName: row.updated_by_name ?? undefined,
   }
 }
 
@@ -112,22 +140,64 @@ export async function getApuracao(clientId: string, compKey: string): Promise<Ap
   return all.find((r) => r.compKey === compKey) || null
 }
 
-export async function saveApuracao(rec: ApuracaoRecord): Promise<void> {
+/**
+ * Salva a competência.
+ *  · Registro novo (sem id): INSERT — se a competência já existir no banco, o índice
+ *    único recusa (23505) em vez de sobrescrever em silêncio.
+ *  · Registro existente (com id): UPDATE com a versão carregada — se outra pessoa
+ *    salvou antes, o trigger da 022 recusa (40001) e nada é perdido.
+ * Banco sem a migration 022: cai no upsert antigo (sem controle de versão).
+ * Retorna o registro gravado (id/versão atualizados).
+ */
+export async function saveApuracao(rec: ApuracaoRecord): Promise<ApuracaoRecord> {
   if (!hasSupabaseConfig()) {
-    const arr = lsAll().filter((r) => !(r.clientId === rec.clientId && r.compKey === rec.compKey))
-    arr.push({ ...rec, updatedAt: new Date().toISOString() })
-    lsWrite(arr)
-    return
+    const arr = lsAll()
+    const atual = arr.find((r) => r.clientId === rec.clientId && r.compKey === rec.compKey)
+    if (atual && rec.version !== undefined && atual.version !== undefined && atual.version !== rec.version) {
+      throw new Error("Esta competência foi alterada em outra aba. Recarregue antes de salvar.")
+    }
+    const salvo: ApuracaoRecord = {
+      ...rec,
+      id: atual?.id ?? rec.id ?? (typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : String(Date.now())),
+      version: (atual?.version ?? 0) + 1,
+      updatedAt: new Date().toISOString(),
+    }
+    lsWrite([...arr.filter((r) => r !== atual), salvo])
+    return salvo
   }
   const supabase = getSupabaseClient()
-  const { error } = await supabase.from("apuracao_mensal").upsert(mapToDb(rec), { onConflict: "client_id,comp_key" })
+  const row = mapToDb(rec) as Record<string, unknown>
+  delete row.updated_at
+
+  const gravar = async (dados: Record<string, unknown>) => {
+    if (rec.id) {
+      return supabase.from("apuracao_mensal").update(dados).eq("id", rec.id).select().single()
+    }
+    const { version: _v, ...novo } = dados
+    void _v
+    return supabase.from("apuracao_mensal").insert(novo).select().single()
+  }
+
+  let { data, error } = await gravar(row)
+  if (error && faltaColuna(error)) {
+    // Banco ainda sem a 022: comportamento anterior (upsert por empresa+competência)
+    const legado = sem022(row)
+    ;({ data, error } = await supabase
+      .from("apuracao_mensal")
+      .upsert({ ...legado, updated_at: new Date().toISOString() }, { onConflict: "client_id,comp_key" })
+      .select()
+      .single())
+  }
   if (error) {
     console.error("[db] Error saving apuracao:", error)
     throw toDbError(error)
   }
+  return mapFromDb(data)
 }
 
 export async function deleteApuracao(clientId: string, compKey: string): Promise<void> {
+  // A 022 bloqueia exclusão de competência fechada e guarda um snapshot em
+  // apuracao_mensal_revisoes antes de apagar.
   if (!hasSupabaseConfig()) {
     lsWrite(lsAll().filter((r) => !(r.clientId === clientId && r.compKey === compKey)))
     return

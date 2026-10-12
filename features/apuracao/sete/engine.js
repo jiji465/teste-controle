@@ -674,6 +674,8 @@ export const autoFillTaxes = (data, currentTaxes) => {
             // Faixa legal 0,5–2,0 (Decreto 3.048/99, art. 202-A): fora dela é erro de digitação
             // (ex.: "1.2345" virando 12345) — limita e sinaliza.
             if (t.tax === 'RAT' || t.tax === 'RAT (Ajustado)') {
+                // Observação de um FAP anterior não pode sobreviver ao valor corrigido
+                if (/× FAP/.test(updated.obs || '')) updated.obs = 'Risco Ambiental do Trabalho';
                 const fapInf = parseNumBR(data.fap);
                 if (fapInf > 0 && b > 0 && r > 0) {
                     const fap = Math.min(2, Math.max(0.5, fapInf));
@@ -897,6 +899,93 @@ export const autoFillTaxes = (data, currentTaxes) => {
 
         return updated;
     });
+};
+
+/**
+ * Receita de 12 meses usada no Fator R e na alíquota do Simples: a RBT12p informada
+ * (PGDAS-D), a de início de atividade (art. 22) ou a RBT12 normal. Fonte única p/
+ * tela, relatório e motor — antes o Fator R usava sempre a RBT12 (0 em empresa nova).
+ */
+export const rbtFatorR = (data) => {
+    const p = parseNumBR(data && data.rbt12p);
+    if (p > 0) return p;
+    const r = parseNumBR(data && data.rbt12);
+    if (r > 0) return r;
+    const ini = rbt12InicioAtividade(data);
+    return ini !== null ? ini : 0;
+};
+
+/**
+ * Economia gerada no mês (exibida no relatório e persistida no histórico):
+ *  · Fator R (Simples, Anexo III efetivo): custo total no Anexo V com pró-labore
+ *    mínimo − custo no Anexo III com o pró-labore atual (DAS + INSS + IRRF).
+ *  · Equiparação hospitalar (LP/Real, serviços): IRPJ/CSLL a 32% − com a parcela
+ *    equiparada a 8%/12%.
+ * Retorna null quando não há economia real.
+ */
+export const calcEconomia = (clientData, taxes) => {
+    const revenue = calculateTotalRevenue(clientData);
+    const rbtFR = rbtFatorR(clientData);
+    const folha12m = parseNumBR(clientData.folha12m !== undefined ? clientData.folha12m : clientData.folha);
+    const fR = calcFatorR(folha12m, rbtFR);
+    if ((clientData.sujeitoFatorR === true || clientData.mostrarEconomiaFatorR) && clientData.regime === 'Simples Nacional' && (clientData.anexo === 'Anexo III' || clientData.anexo === 'Anexo V') && rbtFR > 0 && fR >= 28) {
+        const rateIII = calcAliquotaEfetivaSN(rbtFR, 'Anexo III').rate;
+        const rateV = calcAliquotaEfetivaSN(rbtFR, 'Anexo V').rate;
+        // DAS ancorado no REALMENTE apurado (Anexo III efetivo); o Anexo V é o
+        // mesmo DAS reescalado pela razão das alíquotas efetivas V/III.
+        const dasReal = parseNumBR(((taxes || []).find(t => t.tax === 'DAS') || {}).apurado);
+        const dasIII = dasReal > 0 ? dasReal : revenue * rateIII / 100;
+        const dasV = dasReal > 0 && rateIII > 0 ? dasReal * (rateV / rateIII) : revenue * rateV / 100;
+        // Custo total de cada cenário inclui os tributos do pró-labore (INSS 11% até o
+        // teto e IRRF); sem Fator R o sócio receberia 1 salário mínimo.
+        const plAtual = sumProLabore(clientData);
+        const inssCom = Math.min(plAtual, TETO_INSS) * 0.11;
+        const irrfCom = calcIRRFProLabore(plAtual, inssCom).imposto;
+        const custoCom = dasIII + inssCom + irrfCom;
+        const inssSem = SALARIO_MINIMO * 0.11;
+        const irrfSem = calcIRRFProLabore(SALARIO_MINIMO, inssSem).imposto;
+        const custoSem = dasV + inssSem + irrfSem;
+        if (custoSem - custoCom > 0) {
+            return {
+                tipo: 'Fator R',
+                valor: custoSem - custoCom,
+                semLabel: 'Sem Fator R · Anexo V (pró-labore mínimo)',
+                comLabel: 'Com Fator R · Anexo III (pró-labore atual)',
+                semVal: custoSem, comVal: custoCom,
+                semExtra: `DAS ${formatCurrency(dasV)} + INSS ${formatCurrency(inssSem)} (1 salário mínimo)`,
+                comExtra: `DAS ${formatCurrency(dasIII)} + INSS ${formatCurrency(inssCom)}${irrfCom > 0 ? ' + IRRF ' + formatCurrency(irrfCom) : ''}`,
+                explica: `O custo total considera os tributos do pró-labore. Para atingir o Fator R (${fR.toFixed(1).replace('.', ',')}% ≥ 28%), o pró-labore de ${formatCurrency(plAtual)} gera INSS e IRRF; sem o Fator R, o sócio receberia 1 salário mínimo (${formatCurrency(SALARIO_MINIMO)}). A economia é a diferença entre o custo total no Anexo V (com pró-labore mínimo) e no Anexo III (com o pró-labore atual).`,
+            };
+        }
+        return null;
+    }
+    if ((clientData.regime === 'Lucro Presumido' || clientData.regime === 'Lucro Real') && clientData.equiparacaoHospitalar && (clientData.atividade || 'Serviços') === 'Serviços') {
+        // Só o fechamento trimestral usa a receita acumulada (mesma regra do motor);
+        // mensal e estimativa usam a receita do mês com limite de R$ 20 mil.
+        const trimestral = clientData.irpjCsllMode === 'Trimestral (Apuração)';
+        const fech = trimestral && [3, 6, 9, 12].includes(parseInt(clientData.compMonth));
+        const baseRev = fech && parseNumBR(clientData.periodRevenue) > 0 ? parseNumBR(clientData.periodRevenue) : revenue;
+        const eqRev = Math.min(Math.max(parseNumBR(clientData.receitaEquiparacao), 0), baseRev);
+        const normRev = baseRev - eqRev;
+        const adicLimit = trimestral ? 60000 : 20000;
+        const baseIrpjSem = baseRev * 0.32, baseCsllSem = baseRev * 0.32;
+        const semVal = (baseIrpjSem * 0.15) + (baseCsllSem * 0.09) + (Math.max(0, baseIrpjSem - adicLimit) * 0.10);
+        const baseIrpjCom = eqRev * 0.08 + normRev * 0.32, baseCsllCom = eqRev * 0.12 + normRev * 0.32;
+        const comVal = (baseIrpjCom * 0.15) + (baseCsllCom * 0.09) + (Math.max(0, baseIrpjCom - adicLimit) * 0.10);
+        if (eqRev > 0 && semVal - comVal > 0) {
+            return {
+                tipo: 'Equiparação Hospitalar',
+                valor: semVal - comVal,
+                semLabel: 'Sem equiparação · tudo a 32%',
+                comLabel: 'Com equiparação · parcial',
+                semVal, comVal,
+                semExtra: `IRPJ e CSLL sobre 32% de ${formatCurrency(baseRev)}`,
+                comExtra: `${formatCurrency(eqRev)} a 8%/12% + ${formatCurrency(normRev)} a 32%`,
+                explica: `Apenas ${formatCurrency(eqRev)} da receita se enquadra na equiparação (presunção 8% IRPJ / 12% CSLL); o restante (${formatCurrency(normRev)}) segue a 32%. A economia é a diferença na base de IRPJ e CSLL sobre a parcela equiparada.`,
+            };
+        }
+    }
+    return null;
 };
 
 export const STORAGE_KEY = 'sete-apuracao-draft';

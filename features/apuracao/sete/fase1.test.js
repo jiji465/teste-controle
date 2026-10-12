@@ -15,6 +15,8 @@ import {
   parsePGDASD,
   acumuladoPeriodo,
   rbt12InicioAtividade,
+  calcEconomia,
+  rbtFatorR,
 } from "./engine.js"
 
 const byTax = (taxes, name) => taxes.find((t) => t.tax === name)
@@ -311,5 +313,44 @@ describe("B11 — DAS não pode capturar multa/juros", () => {
   it("captura a data de abertura (para início de atividade)", () => {
     const r = parsePGDASD("PGDAS-D\nNome empresarial: X LTDA Data de abertura no CNPJ: 05/08/2025")
     expect(r.dataAbertura).toBe("08/2025")
+  })
+})
+
+/* ===================== Economia persistida + receita do Fator R ===================== */
+
+
+describe("calcEconomia — fonte única (relatório e histórico)", () => {
+  it("equiparação hospitalar, LP mensal, 100% equiparado: 8.880 − 2.280 = 6.600", () => {
+    // Sem: IRPJ 15%×32.000 = 4.800 + CSLL 9%×32.000 = 2.880 + adic 10%×12.000 = 1.200
+    // Com: IRPJ 15%×8.000 = 1.200 + CSLL 9%×12.000 = 1.080 (sem adicional)
+    const e = calcEconomia(
+      { regime: "Lucro Presumido", atividade: "Serviços", revenueNonRetained: "100.000,00", equiparacaoHospitalar: true, receitaEquiparacao: "100.000,00", irpjCsllMode: "Mensal (Provisão)", compMonth: "5", compYear: "2026" },
+      [],
+    )
+    expect(e.tipo).toBe("Equiparação Hospitalar")
+    expect(e.valor).toBeCloseTo(6600, 2)
+  })
+  it("sem cenário de economia → null", () => {
+    expect(calcEconomia({ regime: "Lucro Presumido", atividade: "Serviços", revenueNonRetained: "100.000,00" }, [])).toBeNull()
+  })
+})
+
+describe("rbtFatorR — receita de 12 meses do Fator R", () => {
+  it("prefere a RBT12p, depois a RBT12", () => {
+    expect(rbtFatorR({ rbt12: "0", rbt12p: "120.000,00" })).toBe(120000)
+    expect(rbtFatorR({ rbt12: "300.000,00" })).toBe(300000)
+  })
+  it("empresa nova sem RBT12p usa o art. 22", () => {
+    expect(rbtFatorR({ rbt12: "0", dataAbertura: "07/2026", compMonth: "7", compYear: "2026", regime: "Simples Nacional", revenue: "10.000,00" })).toBe(120000)
+  })
+})
+
+describe("B9 — corrigir o FAP limpa o aviso anterior", () => {
+  it("FAP 12345 → aviso; depois FAP 1 → observação volta ao padrão", () => {
+    const base = { regime: "Lucro Presumido", atividade: "Serviços", revenueNonRetained: "100.000,00", folhaMensal: "20.000,00", compMonth: "5", compYear: "2026", irpjCsllMode: "Mensal (Provisão)" }
+    const comAviso = autoFillTaxes({ ...base, fap: "12345" }, withIds(lpDefaults("Serviços")))
+    const corrigido = autoFillTaxes({ ...base, fap: "1,0000" }, comAviso)
+    expect(byTax(corrigido, "RAT").obs).not.toMatch(/FAP/)
+    expect(num(corrigido, "RAT")).toBeCloseTo(200, 2)
   })
 })
