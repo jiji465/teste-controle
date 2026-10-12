@@ -31,7 +31,6 @@ import {
   ChevronsLeft,
   ChevronsRight,
   type LucideIcon,
-  Grid3x3,
   Settings,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
@@ -53,10 +52,7 @@ type NavGroup = { label: string; items: NavItem[] }
 const NAV_GROUPS: NavGroup[] = [
   {
     label: "Visão geral",
-    items: [
-      { href: "/", label: "Dashboard", icon: LayoutDashboard },
-      { href: "/competencia", label: "Painel do mês", icon: Grid3x3 },
-    ],
+    items: [{ href: "/", label: "Dashboard", icon: LayoutDashboard }],
   },
   {
     label: "Cadastros",
