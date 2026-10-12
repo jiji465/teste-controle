@@ -27,11 +27,14 @@ import { useData } from "@/contexts/data-context"
 import { useAuth } from "@/contexts/auth-context"
 import { useSelectedPeriod } from "@/contexts/period-context"
 import { cn } from "@/lib/utils"
+import { calculateDueDateFromCompetency, isOverdue, parseLocalDate } from "@/lib/date-utils"
 
 const monthLabel = (period: string) => {
   const [y, m] = period.split("-").map(Number)
   return new Date(y, m - 1, 1).toLocaleDateString("pt-BR", { month: "long", year: "numeric" })
 }
+const compLabel = (period: string) => `${period.slice(5, 7)}/${period.slice(0, 4)}`
+const MESES = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"]
 
 export function PeriodLockControl() {
   const { period, showAll } = useSelectedPeriod()
@@ -43,16 +46,35 @@ export function PeriodLockControl() {
   const info = useMemo(() => lockedPeriodInfo.find((p) => p.period === period), [lockedPeriodInfo, period])
   const locked = !!info
 
-  // Pendências da competência (o que ainda não foi concluído)
+  // Pendências da COMPETÊNCIA (o fechamento trava pela competência, não pelo mês de
+  // vencimento). Separa o que já venceu (atrasado) do que ainda está no prazo — a
+  // competência de setembro, por exemplo, vence quase toda em outubro.
   const pending = useMemo(() => {
     const inPeriod = (comp?: string) => !!comp && comp.slice(0, 7) === period
+    const dues: (Date | null)[] = [
+      ...obligationsWithDetails
+        .filter((o) => inPeriod(o.competencyMonth) && o.status !== "completed")
+        .map((o) => (o.calculatedDueDate ? parseLocalDate(o.calculatedDueDate) : null)),
+      ...taxes
+        .filter((t) => inPeriod(t.competencyMonth) && t.status !== "completed")
+        .map((t) => calculateDueDateFromCompetency(t.competencyMonth, t.dueDay, t.weekendRule, t.dueMonth)),
+      ...services
+        .filter((s) => inPeriod(s.dueDate) && s.status !== "completed")
+        .map((s) => parseLocalDate(s.dueDate)),
+    ]
+    const atrasados = dues.filter((d) => d && isOverdue(d)).length
+    // Mês em que a maior parte do que está no prazo vence (ex.: "outubro")
+    const cont = new Map<number, number>()
+    for (const d of dues) if (d && !isOverdue(d)) cont.set(d.getMonth(), (cont.get(d.getMonth()) ?? 0) + 1)
+    const mesVenc = [...cont.entries()].sort((a, b) => b[1] - a[1])[0]?.[0]
     return {
-      obligations: obligationsWithDetails.filter((o) => inPeriod(o.competencyMonth) && o.status !== "completed").length,
-      taxes: taxes.filter((t) => inPeriod(t.competencyMonth) && t.status !== "completed").length,
-      services: services.filter((s) => inPeriod(s.dueDate) && s.status !== "completed").length,
+      total: dues.length,
+      atrasados,
+      noPrazo: dues.length - atrasados,
+      mesVencimento: mesVenc !== undefined ? MESES[mesVenc] : null,
     }
   }, [obligationsWithDetails, taxes, services, period])
-  const totalPending = pending.obligations + pending.taxes + pending.services
+  const totalPending = pending.total
 
   if (showAll || !/^\d{4}-\d{2}$/.test(period)) return null
 
@@ -94,24 +116,24 @@ export function PeriodLockControl() {
             variant="ghost"
             size="sm"
             onClick={() => setOpen(true)}
-            aria-label={locked ? `Reabrir competência de ${label}` : `Fechar competência de ${label}`}
+            aria-label={locked ? `Reabrir a competência ${compLabel(period)}` : `Fechar a competência ${compLabel(period)}`}
             className={cn(
               "h-9 gap-1.5 rounded-full px-3 text-[11px] font-semibold",
               locked && "border border-gold/50 bg-gold/10 text-foreground hover:bg-gold/20",
             )}
           >
             {locked ? <Lock className="size-3.5" /> : <LockOpen className="size-3.5 text-muted-foreground" />}
-            <span className="hidden xl:inline">{locked ? "Fechada" : "Fechar mês"}</span>
+            <span className="hidden xl:inline">{locked ? `Comp. ${compLabel(period)} fechada` : `Fechar comp. ${compLabel(period)}`}</span>
           </Button>
         </TooltipTrigger>
-        <TooltipContent>{locked ? lockedTitle : `Fechar a competência de ${label}`}</TooltipContent>
+        <TooltipContent>{locked ? lockedTitle : `Fechar a competência ${compLabel(period)} (fatos de ${label})`}</TooltipContent>
       </Tooltip>
 
       <AlertDialog open={open} onOpenChange={(o) => !busy && setOpen(o)}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              {locked ? `Reabrir ${label}?` : `Fechar a competência de ${label}?`}
+              {locked ? `Reabrir a competência ${compLabel(period)}?` : `Fechar a competência ${compLabel(period)}?`}
             </AlertDialogTitle>
             <AlertDialogDescription asChild>
               <div className="space-y-3 text-sm text-muted-foreground">
@@ -123,17 +145,26 @@ export function PeriodLockControl() {
                 ) : (
                   <>
                     <p>
-                      Depois de fechada, ninguém consegue criar, editar ou excluir obrigações, guias e
-                      serviços desta competência até que ela seja reaberta.
+                      A competência {compLabel(period)} reúne as obrigações e guias referentes a {label}{" "}
+                      — a maioria vence no mês seguinte. Depois de fechada, ninguém consegue criar,
+                      editar ou excluir esses itens até que ela seja reaberta.
                     </p>
                     {totalPending > 0 ? (
                       <div className="rounded-md border border-warning/40 bg-warning/10 p-3 text-foreground">
-                        <p className="font-medium">Ainda há {totalPending} {totalPending === 1 ? "item pendente" : "itens pendentes"} nesta competência:</p>
+                        <p className="font-medium">
+                          {totalPending} {totalPending === 1 ? "item desta competência ainda não foi concluído" : "itens desta competência ainda não foram concluídos"}:
+                        </p>
                         <ul className="mt-1 list-disc pl-5 text-xs text-muted-foreground">
-                          {pending.obligations > 0 && <li>{pending.obligations} obrigação(ões)</li>}
-                          {pending.taxes > 0 && <li>{pending.taxes} guia(s)</li>}
-                          {pending.services > 0 && <li>{pending.services} serviço(s)</li>}
+                          {pending.atrasados > 0 && <li><b className="text-destructive">{pending.atrasados} atrasado(s)</b> — o prazo já passou</li>}
+                          {pending.noPrazo > 0 && (
+                            <li>{pending.noPrazo} ainda no prazo{pending.mesVencimento ? ` (vencem em ${pending.mesVencimento})` : ""}</li>
+                          )}
                         </ul>
+                        {pending.atrasados === 0 && pending.noPrazo > 0 && (
+                          <p className="mt-2 text-xs text-muted-foreground">
+                            Nada está atrasado: o fechamento costuma ser feito depois que esses vencimentos passarem.
+                          </p>
+                        )}
                       </div>
                     ) : (
                       <p className="rounded-md border border-success/40 bg-success/10 p-3 text-foreground">

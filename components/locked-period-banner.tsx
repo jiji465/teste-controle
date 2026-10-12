@@ -20,7 +20,7 @@ export function LockedPeriodBanner() {
     >
       <Lock className="size-3.5 shrink-0" aria-hidden />
       <span>
-        <strong className="font-semibold">Competência {periodLabel ?? period} fechada</strong>
+        <strong className="font-semibold">Competência {period.slice(5, 7)}/{period.slice(0, 4)} ({periodLabel ?? period}) fechada</strong>
         {info.lockedByName ? ` por ${info.lockedByName}` : ""}
         {info.lockedAt ? ` em ${new Date(info.lockedAt).toLocaleDateString("pt-BR")}` : ""}. Itens deste mês
         estão somente para leitura — reabra pelo cadeado no topo para alterar.
