@@ -22,11 +22,13 @@ import {
  * duplica.
  */
 
-/** Passo em meses de cada tipo de recorrência. */
+/** Passo em meses de cada tipo de recorrência. O `interval` só vale para
+ *  "custom" — um valor residual (usuário escolheu Personalizado e voltou para
+ *  Mensal) não pode fazer uma série mensal pular competências. */
 export function stepMonths(recurrence: RecurrenceType, interval?: number): number {
   switch (recurrence) {
     case "monthly":
-      return Math.max(1, interval ?? 1)
+      return 1
     case "bimonthly":
       return 2
     case "quarterly":
@@ -40,6 +42,16 @@ export function stepMonths(recurrence: RecurrenceType, interval?: number): numbe
     default:
       return 1
   }
+}
+
+/** Intervalo a GRAVAR: só existe para recorrência "custom" (padrão 1). */
+export function normalizeRecurrenceInterval(
+  recurrence: RecurrenceType | undefined | null,
+  interval: number | undefined | null,
+): number | undefined {
+  if (recurrence !== "custom") return undefined
+  const n = Number(interval)
+  return Number.isFinite(n) && n >= 1 ? Math.floor(n) : 1
 }
 
 /** Guarda de segurança: nunca gera mais que isso, mesmo com datas absurdas. */
@@ -115,6 +127,11 @@ export function buildRecurringTaxes(master: Tax): Tax[] {
  * serviço base. Os clones viram avulsos (recurrence limpa) — quem dispara a
  * geração é sempre o formulário, então clone não gera clone.
  *
+ * Id da ocorrência = mestre + MÊS da ocorrência ("YYYY-MM"). Antes era a data
+ * crua ("YYYY-MM-DD"): ao criar, a base era a data digitada (ex.: sábado 07);
+ * ao editar, o form recarregava a data JÁ ajustada (segunda 09) → ids novos →
+ * ocorrências duplicadas. Ids antigos: ver `legacyServiceOccurrenceIds`.
+ *
  * @param master  serviço base (com recurrence + recurrenceEndDate)
  * @param baseYmd data digitada no formulário ("YYYY-MM-DD"), antes do ajuste
  */
@@ -138,7 +155,7 @@ export function buildRecurringServices(master: Service, baseYmd: string): Servic
     const adjusted = rule === "keep" ? raw : adjustForWeekend(raw, rule)
     out.push({
       ...master,
-      id: deterministicAutoId(master.id, rawYmd),
+      id: deterministicAutoId(master.id, rawYmd.slice(0, 7)),
       dueDate: toYmd(adjusted),
       status: "pending",
       completedAt: undefined,
@@ -163,4 +180,15 @@ export function buildRecurringServices(master: Service, baseYmd: string): Servic
     k++
   }
   return out
+}
+
+/**
+ * Ids que o esquema ANTIGO (por data crua "YYYY-MM-DD") pode ter dado à
+ * ocorrência do mês `period` — usados para reconhecer séries criadas antes da
+ * troca para ids por mês e não duplicá-las ao editar.
+ */
+export function legacyServiceOccurrenceIds(masterId: string, period: string): string[] {
+  const ids: string[] = []
+  for (let d = 1; d <= 31; d++) ids.push(deterministicAutoId(masterId, `${period}-${String(d).padStart(2, "0")}`))
+  return ids
 }
