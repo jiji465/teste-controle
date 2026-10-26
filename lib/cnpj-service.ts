@@ -73,6 +73,15 @@ export async function lookupCNPJ(
       "rate_limit",
     )
   }
+  if (response.status === 401 || response.status === 403) {
+    // A rota exige login com perfil liberado (app/api/cnpj).
+    throw new CNPJLookupError(
+      response.status === 401
+        ? "Sua sessão expirou. Entre de novo para consultar o CNPJ."
+        : "Sua conta ainda não tem acesso liberado para consultar CNPJ.",
+      "unknown",
+    )
+  }
   if (!response.ok) {
     throw new CNPJLookupError(
       "Não foi possível consultar agora. Tente novamente em instantes.",
