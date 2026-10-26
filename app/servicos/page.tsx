@@ -135,6 +135,7 @@ export default function ServicosPage() {
             onUpdate={updateData}
             activeTab={activeTab || "all"}
             onTabChange={setActiveTab}
+            canCreate={dbAvailable}
           />
         </div>
       </div>

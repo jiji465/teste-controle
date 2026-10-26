@@ -56,6 +56,8 @@ type ServiceListProps = {
   /** Aba de status ativa (cartões no topo, contando a lista já filtrada). */
   activeTab?: string
   onTabChange?: (tab: string) => void
+  /** false = sem banco (modo local): Serviços não podem ser criados */
+  canCreate?: boolean
 }
 
 export type ServiceListHandle = {
@@ -91,7 +93,7 @@ function effectiveServiceStatus(s: Service): Service["status"] {
 }
 
 export const ServiceList = forwardRef<ServiceListHandle, ServiceListProps>(function ServiceList(
-  { services, clients, onUpdate, activeTab, onTabChange }: ServiceListProps,
+  { services, clients, onUpdate, activeTab, onTabChange, canCreate = true }: ServiceListProps,
   ref,
 ) {
   const { userName } = useAuth()
@@ -784,7 +786,7 @@ export const ServiceList = forwardRef<ServiceListHandle, ServiceListProps>(funct
                         : "Cadastre o primeiro serviço clicando no botão abaixo."}
                     </p>
                     {!search && clientFilter === "all" && categoryFilter === "all" && priorityFilter === "all" && (
-                      <Button onClick={handleNew} className="mt-2 gap-2">
+                      <Button onClick={handleNew} disabled={!canCreate} className="mt-2 gap-2">
                         Novo Serviço
                       </Button>
                     )}
