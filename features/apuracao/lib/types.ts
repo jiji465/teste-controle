@@ -23,7 +23,9 @@ export interface ClientData {
   equipHospitalar?: boolean
   ret?: Record<string, string>
   extraTaxes?: ExtraTax[]
-  repartManual?: Record<string, string>
+  /** Segregação do DAS lida do PGDAS-D: valores por tributo (número), `total`,
+   *  `exata` (Total Geral 2.8 ou soma de todas as atividades) e `fonte`. */
+  repartManual?: Record<string, number | string | boolean>
   dasOfficial?: string
   // ---- campos opcionais do design v1 (mostra se preencher) ----
   recProdutos?: string
