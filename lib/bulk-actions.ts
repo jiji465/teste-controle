@@ -12,13 +12,35 @@ export type BulkResult<T> = {
 }
 
 export async function settleAll<T>(items: T[], fn: (item: T) => Promise<unknown>): Promise<BulkResult<T>> {
-  const results = await Promise.allSettled(items.map((item) => fn(item)))
+  // async wrapper: um throw síncrono vira rejeição em vez de derrubar o lote
+  const results = await Promise.allSettled(items.map(async (item) => fn(item)))
   const out: BulkResult<T> = { succeeded: [], failed: [] }
   results.forEach((r, i) => {
     if (r.status === "fulfilled") out.succeeded.push(items[i])
     else out.failed.push({ item: items[i], error: r.reason })
   })
   return out
+}
+
+/**
+ * Roda uma ação em lote: itens em competência fechada (isLocked) são
+ * ignorados antes de começar; o restante roda com allSettled. Devolve o
+ * resultado e o toast pronto ("X concluídas, Y falharam (motivo), Z ignorados").
+ */
+export async function runBulk<T>(
+  items: T[],
+  action: (item: T) => Promise<unknown>,
+  opts: { done: string | { one: string; many: string }; isLocked?: (item: T) => boolean },
+): Promise<{ result: BulkResult<T>; locked: T[]; toast: BulkToast }> {
+  const locked = opts.isLocked ? items.filter((i) => opts.isLocked!(i)) : []
+  const allowed = opts.isLocked ? items.filter((i) => !opts.isLocked!(i)) : items
+  const result = await settleAll(allowed, action)
+  const toast = bulkResultToast(
+    result,
+    opts.done,
+    locked.length > 0 ? { count: locked.length, reason: "competência fechada" } : undefined,
+  )
+  return { result, locked, toast }
 }
 
 export type BulkToast = { kind: "success" | "warning" | "error"; message: string }

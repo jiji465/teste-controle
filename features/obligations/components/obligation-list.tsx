@@ -1,6 +1,13 @@
 "use client"
 
 import { usePagination } from "@/hooks/use-pagination"
+import { useListSelection } from "@/hooks/use-list-selection"
+import { useSelectedPeriod } from "@/hooks/use-selected-period"
+import { StatFilterBar } from "@/components/stat-filter-bar"
+import { runBulk } from "@/lib/bulk-actions"
+import { notifyBulk } from "@/lib/notify-bulk"
+import { countByStatus, filterByStatusTab } from "@/lib/obligation-status"
+import { duplicateObligationToNextPeriod } from "@/features/obligations/duplicate"
 import { ListPagination } from "@/components/list-pagination"
 import { forwardRef, useImperativeHandle, useMemo, useState } from "react"
 import { Button } from "@/components/ui/button"
@@ -34,6 +41,7 @@ import {
   RotateCcw,
   Copy,
   FileText,
+  Lock,
 } from "lucide-react"
 import type { Obligation, ObligationWithDetails, Client, Tax, Priority, TaxRegime } from "@/lib/types"
 import { TAX_REGIME_LABELS, TAX_REGIME_COLORS } from "@/lib/types"
@@ -55,6 +63,10 @@ type ObligationListProps = {
   clients: Client[]
   taxes: Tax[]
   onUpdate: () => void
+  /** Aba de status ativa (cartões no topo). Contagens e aba usam a lista já
+   *  filtrada por busca/cliente/prioridade/esfera, então batem com o que se vê. */
+  activeTab?: string
+  onTabChange?: (tab: string) => void
 }
 
 export type ObligationListHandle = {
@@ -80,11 +92,14 @@ const EMPTY_BULK_FORM: BulkEditForm = {
 }
 
 export const ObligationList = forwardRef<ObligationListHandle, ObligationListProps>(function ObligationList(
-  { obligations, clients, taxes, onUpdate }: ObligationListProps,
+  { obligations, clients, taxes, onUpdate, activeTab, onTabChange }: ObligationListProps,
   ref,
 ) {
   const { userName } = useAuth()
   const { obligations: allObligations, isPeriodLocked } = useData()
+  const { period } = useSelectedPeriod()
+  const isLocked = (o: Obligation) => isPeriodLocked(o.competencyMonth)
+  const LOCKED_HINT = "Competência fechada — reabra a competência para alterar"
   const [search, setSearch] = useState("")
   const [clientFilter, setClientFilter] = useState<string>("all")
   const [priorityFilter, setPriorityFilter] = useState<string>("all")
@@ -97,7 +112,6 @@ export const ObligationList = forwardRef<ObligationListHandle, ObligationListPro
   const [isDetailsOpen, setIsDetailsOpen] = useState(false)
   const [sortBy, setSortBy] = useState<"dueDate" | "client" | "status" | "name">("dueDate")
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc")
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [bulkEditOpen, setBulkEditOpen] = useState(false)
   const [bulkForm, setBulkForm] = useState<BulkEditForm>(EMPTY_BULK_FORM)
   const [bulkLoading, setBulkLoading] = useState(false)
@@ -163,6 +177,22 @@ export const ObligationList = forwardRef<ObligationListHandle, ObligationListPro
     })
   }, [filteredObligations, sortBy, sortOrder])
 
+  // Cartões de status contam a lista JÁ filtrada (busca/cliente/prioridade/
+  // esfera/regime) — mesma regra da aba (effectiveStatus, sem contagem dupla).
+  const statusCounts = useMemo(() => countByStatus(filteredObligations), [filteredObligations])
+  const tabObligations = useMemo(() => filterByStatusTab(sortedObligations, activeTab), [sortedObligations, activeTab])
+
+  // Paginação: renderiza 50 linhas por vez (listas com centenas de itens travavam)
+  const pagination = usePagination(tabObligations)
+  const visibleIds = pagination.items.map((o) => o.id)
+
+  // Seleção some ao trocar aba/filtro/busca/período/página: ação em lote
+  // nunca atinge item que não está na tela.
+  const selection = useListSelection(
+    [activeTab, search, clientFilter, priorityFilter, competencyFilter, scopeFilter, regimeFilter, period, pagination.page].join("|"),
+  )
+  const { selectedIds, toggle: toggleSelect, clear: clearSelection } = selection
+
   const handleSave = async (obligation: Obligation) => {
     try {
       // Ids que já existiam ANTES de salvar: ocorrências da série que já
@@ -220,149 +250,131 @@ export const ObligationList = forwardRef<ObligationListHandle, ObligationListPro
     })
   }
 
-  const toggleSelect = (id: string) => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
-  }
-
-  const clearSelection = () => setSelectedIds(new Set())
 
   const selectedList = useMemo(
     () => obligations.filter((o) => selectedIds.has(o.id)),
     [obligations, selectedIds],
   )
 
+  /** Roda a ação em lote (itens de competência fechada são ignorados com
+   *  aviso), mostra "X ok, Y falharam (motivo)" e SEMPRE recarrega a lista. */
+  const runObligationBulk = async (
+    targets: ObligationWithDetails[],
+    action: (o: ObligationWithDetails) => Promise<unknown>,
+    done: { one: string; many: string },
+  ) => {
+    setBulkLoading(true)
+    try {
+      const { toast: t, result } = await runBulk(targets, action, { done, isLocked })
+      notifyBulk(t)
+      return result
+    } finally {
+      clearSelection()
+      onUpdate()
+      setBulkLoading(false)
+    }
+  }
+
   const handleBulkComplete = () => {
-    if (selectedIds.size === 0) return
+    if (selectedList.length === 0) return
     setConfirmState({
-      title: `Concluir ${selectedIds.size} obrigações`,
-      description: `Marcar ${selectedIds.size} obrigações como concluídas?`,
+      title: `Concluir ${selectedList.length} obrigações`,
+      description: `Marcar ${selectedList.length} obrigações como concluídas? Itens de competência fechada são ignorados.`,
       confirmLabel: "Concluir",
       onConfirm: async () => {
-        setBulkLoading(true)
-        try {
-          const now = new Date().toISOString()
-          await Promise.all(
-            selectedList
-              .filter((o) => o.status !== "completed")
-              .map((o) =>
-                saveObligation({
-                  ...o,
-                  status: "completed",
-                  completedAt: now,
-                  completedBy: userName,
-                  history: [
-                    ...(o.history || []),
-                    { id: crypto.randomUUID(), action: "completed", description: "Concluída via ação em lote", timestamp: now },
-                  ],
-                }),
-              ),
-          )
-          toast.success(`${selectedIds.size} obrigações concluídas`)
+        const now = new Date().toISOString()
+        const result = await runObligationBulk(
+          selectedList.filter((o) => o.status !== "completed"),
+          (o) =>
+            saveObligation({
+              ...o,
+              status: "completed",
+              completedAt: now,
+              completedBy: userName,
+              history: [
+                ...(o.history || []),
+                { id: crypto.randomUUID(), action: "completed", description: "Concluída via ação em lote", timestamp: now },
+              ],
+            }),
+          { one: "obrigação concluída", many: "obrigações concluídas" },
+        )
+        if (result.succeeded.length > 0) {
           checkAndGenerateRecurrences(true).catch((e) =>
             console.warn("[obligations] auto-regen pós-bulk falhou:", e),
           )
-          clearSelection()
-          onUpdate()
-        } finally {
-          setBulkLoading(false)
         }
       },
     })
   }
 
   const handleBulkReopen = () => {
-    if (selectedIds.size === 0) return
+    if (selectedList.length === 0) return
     setConfirmState({
-      title: `Reabrir ${selectedIds.size} obrigações`,
+      title: `Reabrir ${selectedList.length} obrigações`,
       description: `Volta para "Pendente" e limpa a data de conclusão.`,
       confirmLabel: "Reabrir",
       onConfirm: async () => {
-        setBulkLoading(true)
-        try {
-          const now = new Date().toISOString()
-          const targets = selectedList.filter((o) => o.status === "completed")
-          await Promise.all(
-            targets.map((o) =>
-              saveObligation({
-                ...o,
-                status: "pending",
-                completedAt: undefined,
-                completedBy: undefined,
-                realizationDate: undefined,
-                history: [
-                  ...(o.history || []),
-                  { id: crypto.randomUUID(), action: "status_changed", description: "Reaberta via ação em lote", timestamp: now },
-                ],
-              }),
-            ),
-          )
-          toast.success(`${targets.length} obrigações reabertas`)
-          clearSelection()
-          onUpdate()
-        } finally {
-          setBulkLoading(false)
-        }
+        const now = new Date().toISOString()
+        await runObligationBulk(
+          selectedList.filter((o) => o.status === "completed"),
+          (o) =>
+            saveObligation({
+              ...o,
+              status: "pending",
+              completedAt: undefined,
+              completedBy: undefined,
+              realizationDate: undefined,
+              history: [
+                ...(o.history || []),
+                { id: crypto.randomUUID(), action: "status_changed", description: "Reaberta via ação em lote", timestamp: now },
+              ],
+            }),
+          { one: "obrigação reaberta", many: "obrigações reabertas" },
+        )
       },
     })
   }
 
   const handleBulkInProgress = () => {
-    if (selectedIds.size === 0) return
+    if (selectedList.length === 0) return
     setConfirmState({
-      title: `Iniciar ${selectedIds.size} obrigações`,
-      description: `Marcar ${selectedIds.size} obrigações como "Em andamento"?`,
+      title: `Iniciar ${selectedList.length} obrigações`,
+      description: `Marcar ${selectedList.length} obrigações como "Em andamento"?`,
       confirmLabel: "Iniciar",
       onConfirm: async () => {
-        setBulkLoading(true)
-        try {
-          const now = new Date().toISOString()
-          const targets = selectedList.filter((o) => o.status !== "in_progress")
-          await Promise.all(
-            targets.map((o) =>
-              saveObligation({
-                ...o,
-                status: "in_progress",
-                completedAt: undefined,
-                completedBy: undefined,
-                history: [
-                  ...(o.history || []),
-                  { id: crypto.randomUUID(), action: "status_changed", description: "Marcada como em andamento via lote", timestamp: now },
-                ],
-              }),
-            ),
-          )
-          toast.success(`${targets.length} obrigações em andamento`)
-          clearSelection()
-          onUpdate()
-        } finally {
-          setBulkLoading(false)
-        }
+        const now = new Date().toISOString()
+        await runObligationBulk(
+          selectedList.filter((o) => o.status !== "in_progress"),
+          (o) =>
+            saveObligation({
+              ...o,
+              status: "in_progress",
+              completedAt: undefined,
+              completedBy: undefined,
+              history: [
+                ...(o.history || []),
+                { id: crypto.randomUUID(), action: "status_changed", description: "Marcada como em andamento via lote", timestamp: now },
+              ],
+            }),
+          { one: "obrigação em andamento", many: "obrigações em andamento" },
+        )
       },
     })
   }
 
   const handleBulkDelete = () => {
-    if (selectedIds.size === 0) return
+    if (selectedList.length === 0) return
     setConfirmState({
-      title: `Excluir ${selectedIds.size} obrigações`,
-      description: "Esta ação não pode ser desfeita.",
+      title: `Excluir ${selectedList.length} obrigações`,
+      description: "Esta ação não pode ser desfeita. Itens de competência fechada são ignorados.",
       confirmLabel: "Excluir",
       destructive: true,
       onConfirm: async () => {
-        setBulkLoading(true)
-        try {
-          await Promise.all(Array.from(selectedIds).map((id) => deleteObligation(id)))
-          toast.success(`${selectedIds.size} obrigações excluídas`)
-          clearSelection()
-          onUpdate()
-        } finally {
-          setBulkLoading(false)
-        }
+        // Mesma lista dos outros botões (selecionados E visíveis), não o set cru
+        await runObligationBulk(selectedList, (o) => deleteObligation(o.id), {
+          one: "obrigação excluída",
+          many: "obrigações excluídas",
+        })
       },
     })
   }
@@ -388,46 +400,53 @@ export const ObligationList = forwardRef<ObligationListHandle, ObligationListPro
       toast.info("Preencha pelo menos um campo para aplicar")
       return
     }
-    setBulkLoading(true)
-    try {
-      const now = new Date().toISOString()
-      const changes: string[] = []
-      if (priority) changes.push(`prioridade: ${priority}`)
-      if (status) changes.push(`status: ${status}`)
-      if (dueDayNum) changes.push(`dia do vencimento: ${dueDayNum}`)
-      if (weekendRule) changes.push(`regra fim de semana: ${weekendRule}`)
-      if (competencyMonth) changes.push(`competência: ${competencyMonth}`)
-      if (scope) changes.push(`esfera: ${scope}`)
-      const description = `Edição em lote — ${changes.join(", ")}`
-
-      await Promise.all(
-        selectedList.map((o) => {
-          const updated: ObligationWithDetails = { ...o }
-          if (priority) updated.priority = priority as Priority
-          if (status) updated.status = status
-          if (dueDayNum) updated.dueDay = dueDayNum
-          if (weekendRule) updated.weekendRule = weekendRule
-          if (competencyMonth) updated.competencyMonth = competencyMonth
-          if (scope) updated.scope = scope as "federal" | "estadual" | "municipal"
-          updated.history = [
-            ...(o.history || []),
-            {
-              id: crypto.randomUUID(),
-              action: "updated",
-              description,
-              timestamp: now,
-            },
-          ]
-          return saveObligation(updated)
-        }),
-      )
-      toast.success(`${selectedIds.size} obrigações atualizadas`)
-      setBulkEditOpen(false)
-      clearSelection()
-      onUpdate()
-    } finally {
-      setBulkLoading(false)
+    if (competencyMonth && isPeriodLocked(competencyMonth)) {
+      toast.error(`A competência ${competencyMonth} está fechada. Reabra-a para mover itens para ela.`)
+      return
     }
+    const now = new Date().toISOString()
+    const changes: string[] = []
+    if (priority) changes.push(`prioridade: ${priority}`)
+    if (status) changes.push(`status: ${status}`)
+    if (dueDayNum) changes.push(`dia do vencimento: ${dueDayNum}`)
+    if (weekendRule) changes.push(`regra fim de semana: ${weekendRule}`)
+    if (competencyMonth) changes.push(`competência: ${competencyMonth}`)
+    if (scope) changes.push(`esfera: ${scope}`)
+    const description = `Edição em lote — ${changes.join(", ")}`
+
+    await runObligationBulk(
+      selectedList,
+      (o) => {
+        const updated: ObligationWithDetails = { ...o }
+        if (priority) updated.priority = priority as Priority
+        if (status) {
+          updated.status = status
+          if (status === "completed") {
+            updated.completedAt = o.completedAt ?? now
+            updated.completedBy = o.completedBy ?? userName
+          } else {
+            updated.completedAt = undefined
+            updated.completedBy = undefined
+          }
+        }
+        if (dueDayNum) updated.dueDay = dueDayNum
+        if (weekendRule) updated.weekendRule = weekendRule
+        if (competencyMonth) updated.competencyMonth = competencyMonth
+        if (scope) updated.scope = scope as "federal" | "estadual" | "municipal"
+        updated.history = [
+          ...(o.history || []),
+          {
+            id: crypto.randomUUID(),
+            action: "updated",
+            description,
+            timestamp: now,
+          },
+        ]
+        return saveObligation(updated)
+      },
+      { one: "obrigação atualizada", many: "obrigações atualizadas" },
+    )
+    setBulkEditOpen(false)
   }
 
   const handleComplete = async (obligation: ObligationWithDetails) => {
@@ -493,27 +512,16 @@ export const ObligationList = forwardRef<ObligationListHandle, ObligationListPro
   }
 
   const handleDuplicate = async (obligation: ObligationWithDetails) => {
-    const now = new Date().toISOString()
-    const duplicated = {
-      ...obligation,
-      id: crypto.randomUUID(),
-      status: "pending" as const,
-      completedAt: undefined,
-      completedBy: undefined,
-      protocol: undefined,
-      createdAt: now,
-      history: [
-        {
-          id: crypto.randomUUID(),
-          action: "created" as const,
-          description: `Duplicada de "${obligation.name}"`,
-          timestamp: now,
-        },
-      ],
+    // Cópia vai para a PRÓXIMA competência (nunca idêntica à original)
+    const { client: _client, tax: _tax, calculatedDueDate: _due, ...plain } = obligation
+    const dup = duplicateObligationToNextPeriod(plain, allObligations, { isPeriodLocked })
+    if (!dup.ok) {
+      toast.error(dup.reason)
+      return
     }
     try {
-      await saveObligation(duplicated)
-      toast.success("Obrigação duplicada")
+      await saveObligation(dup.obligation)
+      toast.success(`Obrigação duplicada para a competência ${dup.obligation.competencyMonth}`)
       onUpdate()
     } catch (error) {
       console.error("[obligations] duplicate error:", error)
@@ -578,6 +586,14 @@ export const ObligationList = forwardRef<ObligationListHandle, ObligationListPro
     if (obligation.status === "completed") {
       return null
     }
+    if (isLocked(obligation)) {
+      return (
+        <span title={LOCKED_HINT} className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+          <Lock className="size-3" />
+          Fechada
+        </span>
+      )
+    }
 
     return (
       <div className="flex gap-1">
@@ -600,12 +616,23 @@ export const ObligationList = forwardRef<ObligationListHandle, ObligationListPro
     )
   }
 
-  // Paginação: renderiza 50 linhas por vez (listas com centenas de itens travavam)
-  const pagination = usePagination(sortedObligations)
 
   return (
     <div className="space-y-4">
       <ConfirmDialog state={confirmState} onClose={() => setConfirmState(null)} />
+      {onTabChange && (
+        <StatFilterBar
+          value={activeTab || "all"}
+          onChange={onTabChange}
+          items={[
+            { value: "all", label: "Todas", count: statusCounts.all, icon: FileText, tone: "neutral" },
+            { value: "pending", label: "Pendentes", count: statusCounts.pending, icon: Clock, tone: "warning" },
+            { value: "in_progress", label: "Em Andamento", count: statusCounts.in_progress, icon: PlayCircle, tone: "info" },
+            { value: "completed", label: "Concluídas", count: statusCounts.completed, icon: CheckCircle2, tone: "success" },
+            { value: "overdue", label: "Atrasadas", count: statusCounts.overdue, icon: AlertTriangle, tone: "danger" },
+          ]}
+        />
+      )}
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div className="relative flex-1 min-w-[280px]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
@@ -699,7 +726,7 @@ export const ObligationList = forwardRef<ObligationListHandle, ObligationListPro
 
       {/* Mobile: cards (até md) */}
       <div className="md:hidden space-y-2">
-        {sortedObligations.length === 0 ? (
+        {tabObligations.length === 0 ? (
           <div className="border rounded-lg py-12 text-center">
             <div className="size-12 rounded-full bg-muted flex items-center justify-center mx-auto mb-2">
               <CheckCircle2 className="size-6 text-muted-foreground" />
@@ -712,7 +739,7 @@ export const ObligationList = forwardRef<ObligationListHandle, ObligationListPro
             </p>
           </div>
         ) : (
-          sortedObligations.map((obligation) => {
+          pagination.items.map((obligation) => {
             const overdue = isOverdue(obligation.calculatedDueDate) && obligation.status !== "completed"
             return (
               <div
@@ -735,6 +762,11 @@ export const ObligationList = forwardRef<ObligationListHandle, ObligationListPro
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-medium text-sm">{obligation.name}</span>
+                      {isLocked(obligation) && (
+                        <span title={LOCKED_HINT} aria-label={LOCKED_HINT} className="inline-flex text-muted-foreground">
+                          <Lock className="size-3" />
+                        </span>
+                      )}
                       {obligation.priority && obligation.priority !== "medium" && (
                         <Badge variant="outline" className={
                           obligation.priority === "urgent" ? "border-red-500 text-red-700 text-[10px]"
@@ -758,13 +790,13 @@ export const ObligationList = forwardRef<ObligationListHandle, ObligationListPro
                         <DropdownMenuItem onClick={() => handleView(obligation)}>
                           <Eye className="size-4 mr-2" /> Ver detalhes
                         </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => handleEdit(obligation)}>
+                        <DropdownMenuItem onClick={() => handleEdit(obligation)} disabled={isLocked(obligation)} title={isLocked(obligation) ? LOCKED_HINT : undefined}>
                           <Pencil className="size-4 mr-2" /> Editar
                         </DropdownMenuItem>
                         <DropdownMenuItem onClick={() => handleDuplicate(obligation)}>
                           <Copy className="size-4 mr-2" /> Duplicar
                         </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => handleDelete(obligation.id)} className="text-destructive">
+                        <DropdownMenuItem onClick={() => handleDelete(obligation.id)} className="text-destructive" disabled={isLocked(obligation)} title={isLocked(obligation) ? LOCKED_HINT : undefined}>
                           <Trash2 className="size-4 mr-2" /> Excluir
                         </DropdownMenuItem>
                       </DropdownMenuContent>
@@ -798,18 +830,10 @@ export const ObligationList = forwardRef<ObligationListHandle, ObligationListPro
             <TableRow>
               <TableHead className="w-10">
                 <Checkbox
-                  checked={
-                    sortedObligations.length > 0 &&
-                    sortedObligations.every((o) => selectedIds.has(o.id))
-                  }
-                  onCheckedChange={(checked) => {
-                    if (checked) {
-                      setSelectedIds(new Set(sortedObligations.map((o) => o.id)))
-                    } else {
-                      clearSelection()
-                    }
-                  }}
-                  aria-label="Selecionar todas"
+                  checked={selection.isAllVisibleSelected(visibleIds)}
+                  onCheckedChange={(checked) => selection.setAllVisible(visibleIds, !!checked)}
+                  aria-label={`Selecionar as ${visibleIds.length} obrigações desta página`}
+                  title={`Selecionar as ${visibleIds.length} obrigações desta página`}
                 />
               </TableHead>
               <ResizableTableHead defaultWidth={240} storageKey="obrigacoes-name">
@@ -842,7 +866,7 @@ export const ObligationList = forwardRef<ObligationListHandle, ObligationListPro
             </TableRow>
           </TableHeader>
           <TableBody>
-            {sortedObligations.length === 0 ? (
+            {tabObligations.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={8} className="py-12">
                   <div className="flex flex-col items-center justify-center text-center gap-2">
@@ -888,6 +912,11 @@ export const ObligationList = forwardRef<ObligationListHandle, ObligationListPro
                     <div className="space-y-1">
                       <div className="flex items-center gap-2 flex-wrap">
                         <div className="font-medium hover:underline truncate max-w-full">{obligation.name}</div>
+                        {isLocked(obligation) && (
+                          <span title={LOCKED_HINT} aria-label={LOCKED_HINT} className="inline-flex text-muted-foreground">
+                            <Lock className="size-3.5" />
+                          </span>
+                        )}
                         {obligation.scope && (
                           <Badge
                             variant="outline"
@@ -982,7 +1011,7 @@ export const ObligationList = forwardRef<ObligationListHandle, ObligationListPro
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        {obligation.status !== "completed" && (
+                        {obligation.status !== "completed" && !isLocked(obligation) && (
                           <>
                             {obligation.status === "pending" && (
                               <DropdownMenuItem onClick={() => handleInProgress(obligation)}>
@@ -1000,7 +1029,7 @@ export const ObligationList = forwardRef<ObligationListHandle, ObligationListPro
                           <Eye className="size-4 mr-2" />
                           Ver detalhes
                         </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => handleEdit(obligation)}>
+                        <DropdownMenuItem onClick={() => handleEdit(obligation)} disabled={isLocked(obligation)} title={isLocked(obligation) ? LOCKED_HINT : undefined}>
                           <Pencil className="size-4 mr-2" />
                           Editar
                         </DropdownMenuItem>
@@ -1008,7 +1037,7 @@ export const ObligationList = forwardRef<ObligationListHandle, ObligationListPro
                           <Copy className="size-4 mr-2" />
                           Duplicar
                         </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => handleDelete(obligation.id)} className="text-destructive">
+                        <DropdownMenuItem onClick={() => handleDelete(obligation.id)} className="text-destructive" disabled={isLocked(obligation)} title={isLocked(obligation) ? LOCKED_HINT : undefined}>
                           <Trash2 className="size-4 mr-2" />
                           Excluir
                         </DropdownMenuItem>

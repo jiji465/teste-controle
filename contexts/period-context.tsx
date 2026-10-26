@@ -2,6 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react"
 import { parseLocalDate } from "@/lib/date-utils"
+import { isInPeriodWithCarryOver } from "@/lib/period-filter"
 
 const MONTH_NAMES = [
   "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
@@ -45,6 +46,9 @@ type PeriodContextValue = {
   isCurrentMonth: boolean
   /** Verifica se uma data cai no período selecionado */
   isInPeriod: (date: string | Date | null | undefined) => boolean
+  /** Como isInPeriod, mas com o mês ATUAL selecionado também inclui itens não
+   *  concluídos vencidos em meses anteriores (atrasados não somem na virada). */
+  isInPeriodOrOverdue: (date: string | Date | null | undefined, status: string) => boolean
 }
 
 const PeriodContext = createContext<PeriodContextValue | null>(null)
@@ -106,6 +110,12 @@ export function PeriodProvider({ children }: { children: ReactNode }) {
     [period, showAll],
   )
 
+  const isInPeriodOrOverdue = useCallback(
+    (date: string | Date | null | undefined, status: string): boolean =>
+      isInPeriodWithCarryOver(date, status, period),
+    [period],
+  )
+
   const value: PeriodContextValue = {
     period,
     setPeriod,
@@ -116,6 +126,7 @@ export function PeriodProvider({ children }: { children: ReactNode }) {
     showAll,
     isCurrentMonth,
     isInPeriod,
+    isInPeriodOrOverdue,
   }
 
   return <PeriodContext.Provider value={value}>{children}</PeriodContext.Provider>
