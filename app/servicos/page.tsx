@@ -9,25 +9,23 @@
  * bulk actions (concluir, em andamento, reabrir, editar, excluir).
  */
 
-import { useMemo, useRef, useState } from "react"
+import { useMemo, useRef } from "react"
 import { useUrlState } from "@/hooks/use-url-state"
 import { ServiceList, type ServiceListHandle } from "@/features/services/components/service-list"
-import { StatFilterBar } from "@/components/stat-filter-bar"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { PageHeader } from "@/components/page-header"
 import {
   Briefcase,
-  CheckCircle2,
-  Clock,
-  PlayCircle,
   AlertTriangle,
   Plus,
   CalendarDays,
 } from "lucide-react"
 import { useData } from "@/contexts/data-context"
 import { useSelectedPeriod } from "@/hooks/use-selected-period"
-import { isOverdue, parseLocalDate } from "@/lib/date-utils"
+import { parseLocalDate } from "@/lib/date-utils"
+import { hasSupabaseConfig } from "@/lib/supabase/core"
+import { filterByStatusTab, statusBucket } from "@/lib/obligation-status"
 import { SERVICE_CATEGORY_LABELS, type Service } from "@/lib/types"
 import { ExportButton } from "@/components/export-button"
 import type { ExportColumn } from "@/lib/export-utils"
@@ -39,46 +37,31 @@ const STATUS_EXPORT_LABEL: Record<Service["status"], string> = {
   overdue: "Atrasado",
 }
 
+/** Mesma regra de effectiveStatus: pendente ou em andamento vencido = atrasado. */
 function effectiveServiceStatus(s: Service): Service["status"] {
-  if (s.status === "completed") return "completed"
-  if (s.status === "in_progress") return "in_progress"
-  return isOverdue(s.dueDate) ? "overdue" : "pending"
+  return statusBucket({ status: s.status, calculatedDueDate: s.dueDate })
 }
 
 export default function ServicosPage() {
   const { services: rawServices, clients, refreshData } = useData()
   const [activeTab, setActiveTab] = useUrlState("tab")
   const listRef = useRef<ServiceListHandle>(null)
-  const { isInPeriod, periodLabel, isFiltering } = useSelectedPeriod()
+  const { isInPeriodOrOverdue, periodLabel, isFiltering } = useSelectedPeriod()
+  // Serviços só existem com banco (não há armazenamento local para eles)
+  const dbAvailable = hasSupabaseConfig()
 
+  // Período do topo; no mês atual, atrasados de meses anteriores continuam aqui
   const services = useMemo(
-    () => rawServices.filter((s) => isInPeriod(s.dueDate)),
-    [rawServices, isInPeriod],
+    () => rawServices.filter((s) => isInPeriodOrOverdue(s.dueDate, s.status)),
+    [rawServices, isInPeriodOrOverdue],
   )
 
   const updateData = async () => {
     await refreshData()
   }
 
-  const pendingServices = services.filter((s) => effectiveServiceStatus(s) === "pending")
-  const inProgressServices = services.filter((s) => s.status === "in_progress")
-  const completedServices = services.filter((s) => s.status === "completed")
-  const overdueServices = services.filter((s) => effectiveServiceStatus(s) === "overdue")
-
-  const getFilteredServices = () => {
-    switch (activeTab) {
-      case "pending":
-        return pendingServices
-      case "in_progress":
-        return inProgressServices
-      case "completed":
-        return completedServices
-      case "overdue":
-        return overdueServices
-      default:
-        return services
-    }
-  }
+  const getFilteredServices = () =>
+    filterByStatusTab(services.map((x) => ({ ...x, calculatedDueDate: x.dueDate })), activeTab)
 
   const clientName = (id: string) => clients.find((c) => c.id === id)?.name ?? ""
   const serviceExportColumns: ExportColumn<Service>[] = [
@@ -118,32 +101,40 @@ export default function ServicosPage() {
               columns={serviceExportColumns}
               rows={getFilteredServices()}
             />
-            <Button onClick={() => listRef.current?.openNewForm()}>
+            <Button
+              onClick={() => listRef.current?.openNewForm()}
+              disabled={!dbAvailable}
+              title={dbAvailable ? undefined : "Serviços exigem o banco de dados (Supabase) configurado"}
+            >
               <Plus className="size-4 mr-2" />
               Novo Serviço
             </Button>
           </div>
         </div>
 
-        {/* Cartões de status = resumo + filtro (estilo Dashboard). */}
-        <StatFilterBar
-          value={activeTab || "all"}
-          onChange={setActiveTab}
-          items={[
-            { value: "all", label: "Todos", count: services.length, icon: Briefcase, tone: "neutral" },
-            { value: "pending", label: "Pendentes", count: pendingServices.length, icon: Clock, tone: "warning" },
-            { value: "in_progress", label: "Em Andamento", count: inProgressServices.length, icon: PlayCircle, tone: "info" },
-            { value: "completed", label: "Concluídos", count: completedServices.length, icon: CheckCircle2, tone: "success" },
-            { value: "overdue", label: "Atrasados", count: overdueServices.length, icon: AlertTriangle, tone: "danger" },
-          ]}
-        />
+        {!dbAvailable && (
+          <div role="status" className="flex items-start gap-3 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-800 dark:text-amber-300">
+            <AlertTriangle className="size-4 mt-0.5 shrink-0" />
+            <div>
+              <p className="font-medium">Serviços exigem o banco de dados</p>
+              <p className="text-xs">
+                O app está em modo local (sem Supabase configurado). Obrigações, guias e parcelamentos funcionam
+                no navegador, mas Serviços só podem ser cadastrados com o banco conectado.
+              </p>
+            </div>
+          </div>
+        )}
 
+        {/* Cartões de status (resumo + filtro) ficam dentro da lista: contam
+            a lista já filtrada por busca/cliente/categoria/prioridade. */}
         <div className="mt-6">
           <ServiceList
             ref={listRef}
-            services={getFilteredServices()}
+            services={services}
             clients={clients}
             onUpdate={updateData}
+            activeTab={activeTab || "all"}
+            onTabChange={setActiveTab}
           />
         </div>
       </div>

@@ -8,6 +8,8 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { CheckCircle2, FileText, Receipt, Loader2, Sparkles, Layers, CalendarRange } from "lucide-react"
 import Link from "next/link"
+import { toast } from "sonner"
+import { errorMessage } from "@/lib/utils"
 import {
   getCustomTemplates,
   findBestTemplateMatch,
@@ -150,6 +152,10 @@ export function TemplateApplyDialog({
       const chosen = allItems.filter((t) => selected.has(itemKey(t)))
       await onConfirm(chosen, { start: competencyStart, end: competencyEnd })
       onOpenChange(false)
+    } catch (error) {
+      // Mantém o diálogo aberto e mostra o motivo (antes a falha sumia)
+      console.error("[template-apply] falhou:", error)
+      toast.error(errorMessage(error, "Não foi possível aplicar o template"))
     } finally {
       setLoading(false)
     }

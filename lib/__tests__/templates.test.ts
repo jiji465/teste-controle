@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest"
 import type { Client } from "../types"
-import { applyTemplateToClient } from "../template-applier"
+import { applyTemplateToClient, summarizeApplyResult } from "../template-applier"
+import * as local from "../storage"
 import { getObligations } from "@/features/obligations/services"
 import { getTemplateForClient, seedDefaultTemplates, type ObligationTemplate } from "../obligation-templates"
 import { getCustomTemplatesAsync } from "@/features/templates/services"
@@ -34,6 +35,31 @@ describe("template anual reaplicado (dedupe por exercício)", () => {
     await applyTemplateToClient(client, [DEFIS], { start: "2026-01", end: "2026-01" })
     const r = await applyTemplateToClient(client, [DEFIS], { start: "2026-04", end: "2026-12" })
     expect(r.obligationsCreated).toBe(0)
+  })
+})
+
+describe("aplicar template com competência fechada", () => {
+  it("pula a competência fechada (sem falhar o resto) e informa no resumo", async () => {
+    local.lockPeriod("2026-03")
+    const PGDAS: ObligationTemplate = {
+      name: "PGDAS-D", description: "", category: "declaration", dueDay: 20, frequency: "monthly",
+      recurrence: "monthly", weekendRule: "postpone", priority: "high",
+    }
+    const r = await applyTemplateToClient(client, [PGDAS], { start: "2026-01", end: "2026-04" })
+    expect(r.obligationsCreated).toBe(3)
+    expect(r.lockedSkipped).toBe(1)
+    expect(r.failed).toBe(0)
+    expect(summarizeApplyResult(r)).toBe("3 obrigações criada(s) · 1 em competência fechada (ignorada)")
+    expect((await getObligations()).map((o) => o.competencyMonth).sort()).toEqual(["2026-01", "2026-02", "2026-04"])
+  })
+
+  it("resumo com itens já existentes usa a concordância certa", () => {
+    expect(summarizeApplyResult({ taxesCreated: 0, obligationsCreated: 0, totalSkipped: 1, lockedSkipped: 0, failed: 0 })).toBe(
+      "Nada criado (todos já existiam)",
+    )
+    expect(summarizeApplyResult({ taxesCreated: 1, obligationsCreated: 0, totalSkipped: 2, lockedSkipped: 0, failed: 1, failedReason: "x" })).toBe(
+      "1 guia criada(s) · 2 já existiam · 1 falhou (x)",
+    )
   })
 })
 

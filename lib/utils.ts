@@ -32,6 +32,11 @@ export function matchesCnpj(cnpj: string | null | undefined, query: string): boo
   return false
 }
 
+/** "1 guia" / "3 guias" — contagem com concordância de número. */
+export function plural(n: number, one: string, many: string): string {
+  return `${n} ${n === 1 ? one : many}`
+}
+
 /** Mensagem legível de um erro desconhecido (Error, PostgrestError, string). */
 export function errorMessage(e: unknown, fallback: string): string {
   if (e instanceof Error && e.message) return e.message

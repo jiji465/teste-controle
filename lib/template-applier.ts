@@ -1,13 +1,22 @@
 import { saveObligation } from "@/features/obligations/services"
 import { saveTax } from "@/features/taxes/services"
 import { getObligations, getTaxes } from "@/lib/supabase/database"
+import { getLockedPeriods } from "@/features/periods/services"
+import { settleAll } from "@/lib/bulk-actions"
+import { errorMessage } from "@/lib/utils"
 import type { Client, Tax, Obligation, RecurrenceType } from "@/lib/types"
 import type { TemplateItem } from "@/lib/obligation-templates"
 
 export type ApplyTemplateResult = {
   taxesCreated: number
   obligationsCreated: number
+  /** Já existiam (dedupe) */
   totalSkipped: number
+  /** Competência fechada — não gravados */
+  lockedSkipped: number
+  /** Falharam ao gravar (os demais seguem gravados) */
+  failed: number
+  failedReason?: string
 }
 
 export type CompetencyRange = {
@@ -106,10 +115,12 @@ export async function applyTemplateToClient(
   const now = new Date().toISOString()
   const regime = client.taxRegime
 
-  const [existingObligations, existingTaxes] = await Promise.all([
+  const [existingObligations, existingTaxes, lockedPeriods] = await Promise.all([
     getObligations(),
     getTaxes(),
+    getLockedPeriods(),
   ])
+  const locked = new Set(lockedPeriods.map((p) => p.period))
 
   // Chaves de dedupe: "nome|competência" (lowercase)
   const existingObligationKeys = new Set(
@@ -135,6 +146,7 @@ export async function applyTemplateToClient(
   const taxesToSave: Tax[] = []
   const obligationsToSave: Obligation[] = []
   let totalSkipped = 0
+  let lockedSkipped = 0
 
   for (const item of items) {
     const competencies = generateCompetencies(range, item.recurrence, undefined)
@@ -143,6 +155,11 @@ export async function applyTemplateToClient(
     for (const rawCompetency of competencies) {
       const competency = normalizeAnnualCompetency(item, rawCompetency)
       const key = `${item.name.toLowerCase()}|${competency}`
+      // Competência fechada: o banco recusaria — pula e informa no resumo
+      if (locked.has(competency)) {
+        lockedSkipped++
+        continue
+      }
       if (item.recurrence === "annual") {
         const yearKey = annualKey(item.name, competency)
         if (existingAnnualKeys.has(yearKey)) {
@@ -210,15 +227,17 @@ export async function applyTemplateToClient(
     }
   }
 
-  await Promise.all([
-    ...taxesToSave.map((t) => saveTax(t)),
-    ...obligationsToSave.map((o) => saveObligation(o)),
-  ])
+  // allSettled: uma falha não interrompe nem esconde o resto do lote
+  const [taxRes, oblRes] = await Promise.all([settleAll(taxesToSave, saveTax), settleAll(obligationsToSave, saveObligation)])
+  const failures = [...taxRes.failed, ...oblRes.failed]
 
   return {
-    taxesCreated: taxesToSave.length,
-    obligationsCreated: obligationsToSave.length,
+    taxesCreated: taxRes.succeeded.length,
+    obligationsCreated: oblRes.succeeded.length,
     totalSkipped,
+    lockedSkipped,
+    failed: failures.length,
+    failedReason: failures.length > 0 ? errorMessage(failures[0].error, "erro desconhecido") : undefined,
   }
 }
 
@@ -240,8 +259,12 @@ export function summarizeApplyResult(result: ApplyTemplateResult): string {
     parts.push(`${result.taxesCreated} guia${result.taxesCreated > 1 ? "s" : ""}`)
   if (result.obligationsCreated > 0)
     parts.push(`${result.obligationsCreated} obrigaç${result.obligationsCreated > 1 ? "ões" : "ão"}`)
-  if (parts.length === 0) return "Nada criado (todos já existiam)"
-  let msg = parts.join(" + ") + " criada(s)"
-  if (result.totalSkipped > 0) msg += ` · ${result.totalSkipped} já existiam`
+  const locked = result.lockedSkipped ?? 0
+  const failed = result.failed ?? 0
+  if (parts.length === 0 && locked === 0 && failed === 0) return "Nada criado (todos já existiam)"
+  let msg = parts.length > 0 ? parts.join(" + ") + " criada(s)" : "Nada criado"
+  if (result.totalSkipped > 0) msg += ` · ${result.totalSkipped} já existia${result.totalSkipped > 1 ? "m" : ""}`
+  if (locked > 0) msg += ` · ${locked} em competência fechada (ignorada${locked > 1 ? "s" : ""})`
+  if (failed > 0) msg += ` · ${failed} ${failed > 1 ? "falharam" : "falhou"} (${result.failedReason ?? "erro"})`
   return msg
 }

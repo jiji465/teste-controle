@@ -167,13 +167,14 @@ export function ClientForm({ client, open, onOpenChange, onSave, onObligationsCr
 
   const handleTemplateConfirm = async (templates: TemplateItem[], range: CompetencyRange) => {
     if (!pendingClient) return
-    const result = await applyTemplateToClient(pendingClient, templates, range)
-    const summary = summarizeApplyResult(result)
-    if (summary) toast.success(summary)
-    if (result.totalSkipped > 0) {
-      toast.info(`${result.totalSkipped} já existia${result.totalSkipped > 1 ? "m" : ""} e foi ignorad${result.totalSkipped > 1 ? "as" : "a"}`)
+    try {
+      const result = await applyTemplateToClient(pendingClient, templates, range)
+      const summary = summarizeApplyResult(result)
+      if (result.failed > 0) toast.warning(summary)
+      else toast.success(summary)
+    } finally {
+      onObligationsCreated?.()
     }
-    onObligationsCreated?.()
     setPendingClient(null)
     setPendingActivity(null)
     onOpenChange(false)

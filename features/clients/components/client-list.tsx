@@ -33,7 +33,9 @@ import { applyTemplateToClient, summarizeApplyResult, type CompetencyRange } fro
 import { useData } from "@/contexts/data-context"
 import { useAuth } from "@/contexts/auth-context"
 import { toast } from "sonner"
-import { matchesText, matchesCnpj , errorMessage} from "@/lib/utils"
+import { runBulk } from "@/lib/bulk-actions"
+import { notifyBulk } from "@/lib/notify-bulk"
+import { plural, matchesText, matchesCnpj , errorMessage} from "@/lib/utils"
 
 type ClientListProps = {
   clients: Client[]
@@ -207,10 +209,10 @@ export function ClientList({ clients, onUpdate }: ClientListProps) {
       cInsts.filter((i) => (i.paidInstallments ?? []).some((p) => p.paidAt || p.sentAt)).length
 
     const removalParts: string[] = []
-    if (obrigsToRemove) removalParts.push(`${obrigsToRemove} obrig.`)
-    if (taxesToRemove) removalParts.push(`${taxesToRemove} guias`)
-    if (instsToRemove) removalParts.push(`${instsToRemove} parc.`)
-    const removalText = removalParts.length > 0 ? removalParts.join(", ") : "nada"
+    if (obrigsToRemove) removalParts.push(plural(obrigsToRemove, "obrigação", "obrigações"))
+    if (taxesToRemove) removalParts.push(plural(taxesToRemove, "guia", "guias"))
+    if (instsToRemove) removalParts.push(plural(instsToRemove, "parcelamento", "parcelamentos"))
+    const removalText = removalParts.length > 0 ? removalParts.join(", ") : "nenhum"
 
     setConfirmState({
       title: "Arquivar empresa",
@@ -223,12 +225,12 @@ export function ClientList({ clients, onUpdate }: ClientListProps) {
         try {
           const result = await archiveClient(id)
           const parts: string[] = []
-          if (result.obrigacoesDeleted) parts.push(`${result.obrigacoesDeleted} obrig.`)
-          if (result.guiasDeleted) parts.push(`${result.guiasDeleted} guias`)
-          if (result.parcelasDeleted) parts.push(`${result.parcelasDeleted} parc.`)
-          const removed = parts.length > 0 ? parts.join(", ") : "nada"
+          if (result.obrigacoesDeleted) parts.push(plural(result.obrigacoesDeleted, "obrigação", "obrigações"))
+          if (result.guiasDeleted) parts.push(plural(result.guiasDeleted, "guia", "guias"))
+          if (result.parcelasDeleted) parts.push(plural(result.parcelasDeleted, "parcelamento", "parcelamentos"))
+          const removed = parts.length > 0 ? `removidos: ${parts.join(", ")}` : "nenhum item pendente removido"
           toast.success(
-            `Empresa arquivada · ${removed} removidos · ${result.preservedCount} preservados no histórico`,
+            `Empresa arquivada · ${removed} · ${plural(result.preservedCount, "item preservado", "itens preservados")} no histórico`,
             { duration: 6000 },
           )
           onUpdate()
@@ -271,11 +273,14 @@ export function ClientList({ clients, onUpdate }: ClientListProps) {
       onConfirm: async () => {
         setBulkLoading(true)
         try {
-          await Promise.all(Array.from(selectedIds).map((id) => deleteClient(id)))
-          toast.success(`${selectedIds.size} empresas excluídas`)
+          const targets = clients.filter((c) => selectedIds.has(c.id))
+          const { toast: t } = await runBulk(targets, (c) => deleteClient(c.id), {
+            done: { one: "empresa excluída", many: "empresas excluídas" },
+          })
+          notifyBulk(t)
+        } finally {
           clearSelection()
           onUpdate()
-        } finally {
           setBulkLoading(false)
         }
       },
@@ -294,14 +299,13 @@ export function ClientList({ clients, onUpdate }: ClientListProps) {
         setBulkLoading(true)
         try {
           const targets = clients.filter((c) => selectedIds.has(c.id) && c.status !== newStatus)
-          await Promise.all(targets.map((c) => saveClient({ ...c, status: newStatus })))
-          toast.success(`${targets.length} empresas ${verbPast}`)
+          const { toast: t } = await runBulk(targets, (c) => saveClient({ ...c, status: newStatus }), {
+            done: { one: `empresa ${verbPast.slice(0, -1)}`, many: `empresas ${verbPast}` },
+          })
+          notifyBulk(t)
+        } finally {
           clearSelection()
           onUpdate()
-        } catch (error) {
-          toast.error(`Erro ao ${verb} empresas`)
-          console.error(error)
-        } finally {
           setBulkLoading(false)
         }
       },
@@ -320,15 +324,15 @@ export function ClientList({ clients, onUpdate }: ClientListProps) {
 
   const handleApplyTemplate = async (templatesSelected: TemplateItem[], range: CompetencyRange) => {
     if (!templateClient) return
-    const result = await applyTemplateToClient(templateClient, templatesSelected, range)
-    const summary = summarizeApplyResult(result)
-    if (summary) toast.success(summary)
-    else toast.info("Nenhum item novo: tudo já estava cadastrado")
-    if (result.totalSkipped > 0) {
-      toast.info(`${result.totalSkipped} já existia${result.totalSkipped > 1 ? "m" : ""} e foi ignorad${result.totalSkipped > 1 ? "as" : "a"}`)
+    try {
+      const result = await applyTemplateToClient(templateClient, templatesSelected, range)
+      const summary = summarizeApplyResult(result)
+      if (result.failed > 0) toast.warning(summary)
+      else toast.success(summary)
+      setTemplateClient(null)
+    } finally {
+      onUpdate()
     }
-    setTemplateClient(null)
-    onUpdate()
   }
 
   const openBulkApplyTemplate = () => {
@@ -346,19 +350,34 @@ export function ClientList({ clients, onUpdate }: ClientListProps) {
     try {
       let totalCreated = 0
       let totalSkipped = 0
+      let totalLocked = 0
+      let totalFailed = 0
+      const reasons = new Set<string>()
       for (const c of bulkTemplateClients) {
-        const result = await applyTemplateToClient(c, templatesSelected, range)
-        totalCreated += result.taxesCreated + result.obligationsCreated
-        totalSkipped += result.totalSkipped
+        try {
+          const result = await applyTemplateToClient(c, templatesSelected, range)
+          totalCreated += result.taxesCreated + result.obligationsCreated
+          totalSkipped += result.totalSkipped
+          totalLocked += result.lockedSkipped
+          totalFailed += result.failed
+          if (result.failedReason) reasons.add(result.failedReason)
+        } catch (error) {
+          // Uma empresa com erro não interrompe as demais
+          totalFailed++
+          reasons.add(`${c.name}: ${errorMessage(error, "erro")}`)
+        }
       }
-      toast.success(
-        `Template aplicado em ${bulkTemplateClients.length} empresa${bulkTemplateClients.length > 1 ? "s" : ""}: ${totalCreated} criado${totalCreated !== 1 ? "s" : ""}` +
-          (totalSkipped > 0 ? ` · ${totalSkipped} já existia${totalSkipped > 1 ? "m" : ""}` : ""),
-      )
+      const msg =
+        `Template aplicado em ${plural(bulkTemplateClients.length, "empresa", "empresas")}: ${plural(totalCreated, "item criado", "itens criados")}` +
+        (totalSkipped > 0 ? ` · ${totalSkipped} já existia${totalSkipped > 1 ? "m" : ""}` : "") +
+        (totalLocked > 0 ? ` · ${totalLocked} em competência fechada (ignorado${totalLocked > 1 ? "s" : ""})` : "") +
+        (totalFailed > 0 ? ` · ${totalFailed} ${totalFailed > 1 ? "falharam" : "falhou"} (${Array.from(reasons).slice(0, 2).join("; ")})` : "")
+      if (totalFailed > 0) toast.warning(msg)
+      else toast.success(msg)
       setBulkTemplateClients(null)
+    } finally {
       clearSelection()
       onUpdate()
-    } finally {
       setBulkLoading(false)
     }
   }
