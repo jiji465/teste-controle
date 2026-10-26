@@ -8,5 +8,8 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\.(?:svg|png|jpg|jpeg|gif|webp|otf|woff2?)$).*)"],
+  // Barra dupla no TS = "\." na regex (ponto literal). Com uma barra só, o
+  // ponto virava curinga e qualquer rota terminada em "svg", "png"… (ex.:
+  // /clientesvg) escapava do proxy — sem sessão nem redirecionamento ao /login.
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|otf|woff2?)$).*)"],
 }
