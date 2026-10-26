@@ -16,11 +16,19 @@ create table if not exists public.office_holidays (
 
 alter table public.office_holidays enable row level security;
 
-drop policy if exists "read all authenticated" on public.office_holidays;
-drop policy if exists "write non-viewer insert" on public.office_holidays;
-drop policy if exists "write non-viewer update" on public.office_holidays;
-drop policy if exists "write non-viewer delete" on public.office_holidays;
-create policy "read all authenticated" on public.office_holidays for select to authenticated using (true);
-create policy "write non-viewer insert" on public.office_holidays for insert to authenticated with check (not public.is_viewer());
-create policy "write non-viewer update" on public.office_holidays for update to authenticated using (not public.is_viewer()) with check (not public.is_viewer());
-create policy "write non-viewer delete" on public.office_holidays for delete to authenticated using (not public.is_viewer());
+-- Depois do 023, as políticas são governadas por ele (não recria aqui).
+do $$
+begin
+  if to_regprocedure('public.is_staff()') is not null then
+    raise notice '021: 023 já aplicado — políticas de office_holidays mantidas.';
+    return;
+  end if;
+  drop policy if exists "read all authenticated" on public.office_holidays;
+  drop policy if exists "write non-viewer insert" on public.office_holidays;
+  drop policy if exists "write non-viewer update" on public.office_holidays;
+  drop policy if exists "write non-viewer delete" on public.office_holidays;
+  create policy "read all authenticated" on public.office_holidays for select to authenticated using (true);
+  create policy "write non-viewer insert" on public.office_holidays for insert to authenticated with check (not public.is_viewer());
+  create policy "write non-viewer update" on public.office_holidays for update to authenticated using (not public.is_viewer()) with check (not public.is_viewer());
+  create policy "write non-viewer delete" on public.office_holidays for delete to authenticated using (not public.is_viewer());
+end $$;

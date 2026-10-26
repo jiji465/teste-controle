@@ -119,37 +119,59 @@ create index if not exists apuracao_mensal_comp_idx on public.apuracao_mensal (c
 -- ─── 5. Trava de competência fechada ──────────────────────────────────
 -- Colunas que mudam a cada save mas não são "conteúdo".
 create or replace function public.apuracao_conteudo(r jsonb)
-returns jsonb language sql immutable as $$
+returns jsonb
+language sql
+immutable
+set search_path = ''
+as $$
   select r - array['updated_at', 'updated_by', 'updated_by_name', 'version', 'engine_version',
                    'competence_short', 'retificacao_motivo', 'created_at', 'created_by']
 $$;
 
 create or replace function public.enforce_apuracao_lock()
-returns trigger language plpgsql as $$
+returns trigger
+language plpgsql
+set search_path = ''
+as $$
 begin
   if tg_op = 'UPDATE'
      and public.apuracao_conteudo(to_jsonb(NEW)) = public.apuracao_conteudo(to_jsonb(OLD)) then
     return NEW;  -- save idêntico passa (mesma regra do 020)
   end if;
 
+  -- upsert de uma apuração que já existe: o gatilho de UPDATE decide
+  if tg_op = 'INSERT' and exists (select 1 from public.apuracao_mensal where id = NEW.id) then
+    return NEW;
+  end if;
+
   if tg_op in ('UPDATE', 'DELETE')
      and exists (select 1 from public.locked_periods where period = OLD.comp_key) then
-    raise exception 'Competência % está fechada. Reabra a competência para alterar esta apuração.', OLD.comp_key
+    raise exception 'Competência % está fechada. Reabra a competência para alterar ou excluir esta apuração.', OLD.comp_key
       using errcode = 'check_violation';
   end if;
 
-  if tg_op in ('INSERT', 'UPDATE')
+  if tg_op = 'UPDATE'
+     and exists (select 1 from public.locked_periods where period = NEW.comp_key) then
+    raise exception 'Competência % está fechada. Reabra a competência para alterar esta apuração.', NEW.comp_key
+      using errcode = 'check_violation';
+  end if;
+
+  if tg_op = 'INSERT'
      and exists (select 1 from public.locked_periods where period = NEW.comp_key) then
     raise exception 'Competência % está fechada. Reabra a competência para incluir esta apuração.', NEW.comp_key
       using errcode = 'check_violation';
   end if;
 
   return coalesce(NEW, OLD);
-end $$;
+end;
+$$;
 
 -- ─── 6. Carimbo do servidor + controle otimista de versão ─────────────
 create or replace function public.apuracao_before_write()
-returns trigger language plpgsql as $$
+returns trigger
+language plpgsql
+set search_path = ''
+as $$
 begin
   NEW.competence_short := substr(NEW.comp_key, 6, 2) || '/' || left(NEW.comp_key, 4);
 
@@ -181,7 +203,8 @@ begin
   NEW.updated_by      := auth.uid();
   NEW.updated_by_name := coalesce(auth.jwt() ->> 'email', 'Sistema');
   return NEW;
-end $$;
+end;
+$$;
 
 -- ─── 7. Revisões (append-only) ────────────────────────────────────────
 create table if not exists public.apuracao_mensal_revisoes (
@@ -201,14 +224,25 @@ create index if not exists apuracao_rev_client_comp_idx
   on public.apuracao_mensal_revisoes (client_id, comp_key, version desc);
 
 alter table public.apuracao_mensal_revisoes enable row level security;
-drop policy if exists "read non-viewer" on public.apuracao_mensal_revisoes;
-create policy "read non-viewer" on public.apuracao_mensal_revisoes
-  for select to authenticated using (not public.is_viewer());
+do $$
+begin
+  if to_regprocedure('public.is_staff()') is not null then
+    raise notice '022: 023 já aplicado — política de apuracao_mensal_revisoes mantida.';
+    return;
+  end if;
+  drop policy if exists "read non-viewer" on public.apuracao_mensal_revisoes;
+  create policy "read non-viewer" on public.apuracao_mensal_revisoes
+    for select to authenticated using (not public.is_viewer());
+end $$;
 -- sem políticas de escrita: só o trigger (security definer) grava
 revoke insert, update, delete, truncate on public.apuracao_mensal_revisoes from anon, authenticated;
 
 create or replace function public.apuracao_log_revisao()
-returns trigger language plpgsql security definer set search_path = public as $$
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
 begin
   if tg_op = 'UPDATE' and NEW.version = OLD.version then
     return NEW;  -- no-op, nada a registrar
@@ -220,7 +254,8 @@ begin
      case when tg_op = 'UPDATE' then NEW.retificacao_motivo end,
      to_jsonb(OLD), auth.uid(), coalesce(auth.jwt() ->> 'email', 'Sistema'));
   return coalesce(NEW, OLD);
-end $$;
+end;
+$$;
 revoke all on function public.apuracao_log_revisao() from public, anon, authenticated;
 
 -- ─── 8. Gatilhos (ordem alfabética: lock → stamp; revisão AFTER) ──────
@@ -259,10 +294,9 @@ join public.clients c on c.id = a.client_id;
 
 commit;
 
--- ─── 11. OPCIONAL (LGPD) — DECISÃO DO ESCRITÓRIO ──────────────────────
--- Hoje o perfil somente leitura (viewer) lê a apuração inteira, inclusive o
--- payload com NOME e PRÓ-LABORE de cada sócio (dado pessoal). Descomente se o
--- viewer NÃO deve ver esse detalhe — ele passa a ver só um resumo por empresa.
+-- ─── 11. OPCIONAL (LGPD) — já resolvido pelo 023 ─────────────────────
+-- O 023 (papéis) tira do viewer a leitura de apuracao_mensal inteira; este
+-- bloco comentado fica só como referência histórica — não precisa rodar.
 -- drop policy if exists "read all authenticated" on public.apuracao_mensal;
 -- create policy "read non-viewer" on public.apuracao_mensal
 --   for select to authenticated using (not public.is_viewer());

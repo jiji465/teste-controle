@@ -22,14 +22,22 @@ create table if not exists public.locked_periods (
 
 alter table public.locked_periods enable row level security;
 
-drop policy if exists "read all authenticated" on public.locked_periods;
-drop policy if exists "write non-viewer insert" on public.locked_periods;
-drop policy if exists "write non-viewer update" on public.locked_periods;
-drop policy if exists "write non-viewer delete" on public.locked_periods;
-create policy "read all authenticated" on public.locked_periods for select to authenticated using (true);
-create policy "write non-viewer insert" on public.locked_periods for insert to authenticated with check (not public.is_viewer());
-create policy "write non-viewer update" on public.locked_periods for update to authenticated using (not public.is_viewer()) with check (not public.is_viewer());
-create policy "write non-viewer delete" on public.locked_periods for delete to authenticated using (not public.is_viewer());
+-- Depois do 023, as políticas são governadas por ele (não recria aqui).
+do $$
+begin
+  if to_regprocedure('public.is_staff()') is not null then
+    raise notice '020: 023 já aplicado — políticas de locked_periods mantidas.';
+    return;
+  end if;
+  drop policy if exists "read all authenticated" on public.locked_periods;
+  drop policy if exists "write non-viewer insert" on public.locked_periods;
+  drop policy if exists "write non-viewer update" on public.locked_periods;
+  drop policy if exists "write non-viewer delete" on public.locked_periods;
+  create policy "read all authenticated" on public.locked_periods for select to authenticated using (true);
+  create policy "write non-viewer insert" on public.locked_periods for insert to authenticated with check (not public.is_viewer());
+  create policy "write non-viewer update" on public.locked_periods for update to authenticated using (not public.is_viewer()) with check (not public.is_viewer());
+  create policy "write non-viewer delete" on public.locked_periods for delete to authenticated using (not public.is_viewer());
+end $$;
 
 -- Competência de uma linha: competency_month (obrigações/guias) ou o mês
 -- de due_date (serviços).
@@ -37,6 +45,7 @@ create or replace function public.row_competency(r jsonb)
 returns text
 language sql
 immutable
+set search_path = ''
 as $$
   select coalesce(
     nullif(left(r ->> 'competency_month', 7), ''),
@@ -48,24 +57,44 @@ $$;
 create or replace function public.enforce_period_lock()
 returns trigger
 language plpgsql
+set search_path = ''
 as $$
 declare
-  comp_old text;
-  comp_new text;
+  comp_old  text;
+  comp_new  text;
+  ja_existe boolean;
 begin
   if tg_op = 'UPDATE' and to_jsonb(NEW) = to_jsonb(OLD) then
-    return NEW;
+    return NEW;  -- upsert idêntico: nada muda
+  end if;
+
+  -- INSERT ... ON CONFLICT (upsert do app/PostgREST) de um id que JÁ existe:
+  -- vira UPDATE (ou erro de chave) — quem decide é o gatilho de UPDATE.
+  if tg_op = 'INSERT' then
+    execute format('select exists (select 1 from %I.%I where id = $1)', tg_table_schema, tg_table_name)
+      into ja_existe using NEW.id;
+    if ja_existe then
+      return NEW;
+    end if;
   end if;
 
   if tg_op in ('UPDATE', 'DELETE') then
     comp_old := public.row_competency(to_jsonb(OLD));
     if comp_old is not null and exists (select 1 from public.locked_periods where period = comp_old) then
-      raise exception 'Competência % está fechada. Reabra a competência para alterar este item.', comp_old
+      raise exception 'Competência % está fechada. Reabra a competência para alterar ou excluir este item.', comp_old
         using errcode = 'check_violation';
     end if;
   end if;
 
-  if tg_op in ('INSERT', 'UPDATE') then
+  if tg_op = 'UPDATE' then
+    comp_new := public.row_competency(to_jsonb(NEW));
+    if comp_new is not null and exists (select 1 from public.locked_periods where period = comp_new) then
+      raise exception 'Competência % está fechada. Reabra a competência para mover este item para ela.', comp_new
+        using errcode = 'check_violation';
+    end if;
+  end if;
+
+  if tg_op = 'INSERT' then
     comp_new := public.row_competency(to_jsonb(NEW));
     if comp_new is not null and exists (select 1 from public.locked_periods where period = comp_new) then
       raise exception 'Competência % está fechada. Reabra a competência para incluir itens nela.', comp_new
