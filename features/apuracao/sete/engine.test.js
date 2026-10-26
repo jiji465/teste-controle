@@ -390,13 +390,14 @@ describe("IRPJ/CSLL — provisão × recolhimento (dois perfis)", () => {
   it("provisão sai do total do mês mas entra na carga do período", () => {
     const out = run({ ...base, compMonth: "5" })
     const R = resumoApuracao(out, 100000)
-    // IRPJ (4.800) + CSLL (2.880) provisionados. Adicional = 0 no mês (limite
-    // trimestral R$ 60k sobre a base mensal de R$ 32k → sem excedente).
-    expect(R.totalProvisao).toBeCloseTo(7680, 2)
+    // IRPJ (4.800) + Adicional (1.200) + CSLL (2.880) provisionados. O adicional do mês
+    // usa o limite mensal de R$ 20 mil sobre a base de R$ 32 mil (QA out/2026 — antes
+    // usava o limite trimestral de R$ 60 mil e o adicional nunca era provisionado).
+    expect(R.totalProvisao).toBeCloseTo(8880, 2)
     // não entram no caixa do mês
     expect(R.totalRecolherMes).toBeGreaterThan(0)
     // mas contam na carga efetiva (base sobre receita)
-    expect(R.baseCarga).toBeGreaterThanOrEqual(7680)
+    expect(R.baseCarga).toBeGreaterThanOrEqual(8880)
   })
 })
 

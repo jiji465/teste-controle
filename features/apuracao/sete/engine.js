@@ -456,6 +456,10 @@ export const getBasePresumidaLP = (revenue, taxName, atividade, irpjCsllMode, eq
     return revenue;
 };
 
+// Modo cujo limite do adicional é de UM mês (R$ 20 mil) — usado na provisão/carga mensal
+// do LP trimestral, onde a base é a receita do próprio mês.
+const MODO_LIMITE_MES = 'Mensal (Provisão)';
+
 export const formatBRLDisplay = (num) => {
     if (!num && num !== 0) return '';
     return num.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -765,7 +769,12 @@ export const autoFillTaxes = (data, currentTaxes) => {
                     updated.base = "";
                 } else {
                     const baseRevenueToUse = usaAcumulado ? periodoRevenue : totalRevenue;
-                    updated.base = baseRevenueToUse > 0 ? formatBRLDisplay(getBasePresumidaLP(baseRevenueToUse, t.tax, atividade, irpjMode, receitaEquip)) : "";
+                    // Adicional (Lei 9.249/95, art. 3º, § 1º: R$ 20 mil × meses do período): no
+                    // mês comum do trimestral a provisão é do MÊS → limite de R$ 20 mil (antes
+                    // usava os R$ 60 mil do trimestre e o adicional nunca era provisionado).
+                    // O DARF do fechamento mantém o limite trimestral.
+                    const modoLimite = isTrimestral && !fechamentoTrim ? MODO_LIMITE_MES : irpjMode;
+                    updated.base = baseRevenueToUse > 0 ? formatBRLDisplay(getBasePresumidaLP(baseRevenueToUse, t.tax, atividade, modoLimite, receitaEquip)) : "";
                 }
             } else if (baseCPP.includes(t.tax)) {
                 const totalFolhaEProLabore = proLabore + folhaMensal;
@@ -789,10 +798,11 @@ export const autoFillTaxes = (data, currentTaxes) => {
             }
 
             // Fechamento do trimestre: apurado = trimestre inteiro, mas a carga do mês
-            // considera só a receita do mês (mesma conta da provisão dos meses comuns).
+            // considera só a receita do mês (mesma conta da provisão dos meses comuns,
+            // inclusive o limite MENSAL de R$ 20 mil do adicional).
             updated.cargaMes = undefined;
             if (basePres.includes(t.tax) && isRegimeNormal && usaAcumulado) {
-                const baseMes = totalRevenue > 0 ? getBasePresumidaLP(totalRevenue, t.tax, atividade, irpjMode, receitaEquip) : 0;
+                const baseMes = totalRevenue > 0 ? getBasePresumidaLP(totalRevenue, t.tax, atividade, MODO_LIMITE_MES, receitaEquip) : 0;
                 updated.cargaMes = formatBRLDisplay(baseMes * r / 100);
             }
             if (basePres.includes(t.tax) && realTrimestral) {
@@ -1122,10 +1132,13 @@ export const calcEconomia = (clientData, taxes) => {
         // mensal e estimativa usam a receita do mês com limite de R$ 20 mil.
         const trimestral = clientData.irpjCsllMode === 'Trimestral (Apuração)';
         const fech = trimestral && [3, 6, 9, 12].includes(parseInt(clientData.compMonth));
-        const baseRev = fech && parseNumBR(clientData.periodRevenue) > 0 ? parseNumBR(clientData.periodRevenue) : revenue;
+        const usaTrimestre = fech && parseNumBR(clientData.periodRevenue) > 0;
+        const baseRev = usaTrimestre ? parseNumBR(clientData.periodRevenue) : revenue;
         const eqRev = Math.min(Math.max(parseNumBR(clientData.receitaEquiparacao), 0), baseRev);
         const normRev = baseRev - eqRev;
-        const adicLimit = trimestral ? 60000 : 20000;
+        // Limite do adicional acompanha o período da base: trimestre acumulado = R$ 60 mil;
+        // receita de um mês (inclusive mês comum do trimestral) = R$ 20 mil.
+        const adicLimit = usaTrimestre ? 60000 : 20000;
         const baseIrpjSem = baseRev * 0.32, baseCsllSem = baseRev * 0.32;
         const semVal = (baseIrpjSem * 0.15) + (baseCsllSem * 0.09) + (Math.max(0, baseIrpjSem - adicLimit) * 0.10);
         const baseIrpjCom = eqRev * 0.08 + normRev * 0.32, baseCsllCom = eqRev * 0.12 + normRev * 0.32;

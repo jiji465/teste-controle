@@ -80,15 +80,18 @@ describe("B2 — LP trimestral, mês comum: provisão sobre a receita do própri
   }
   const out = autoFillTaxes(data, withIds(lpDefaults("Serviços")))
 
-  it("provisão IRPJ 4.800 + CSLL 2.880 (sem adicional: limite trimestral)", () => {
+  // QA out/2026: a provisão do mês usa o limite MENSAL do adicional (R$ 20 mil — Lei
+  // 9.249/95, art. 3º, § 1º). Antes usava o trimestral (R$ 60 mil) sobre a base de um mês
+  // e o adicional nunca era provisionado: 10% × (32.000 − 20.000) = 1.200.
+  it("provisão IRPJ 4.800 + Adicional 1.200 + CSLL 2.880", () => {
     expect(num(out, "IRPJ")).toBeCloseTo(4800, 2)
     expect(num(out, "CSLL")).toBeCloseTo(2880, 2)
-    expect(num(out, "Adicional IRPJ")).toBe(0)
+    expect(num(out, "Adicional IRPJ")).toBeCloseTo(1200, 2)
   })
-  it("carga do mês = (650 + 3.000 + 5.000 + 4.800 + 2.880) / 100.000 = 16,33%", () => {
+  it("carga do mês = (650 + 3.000 + 5.000 + 4.800 + 1.200 + 2.880) / 100.000 = 17,53%", () => {
     const R = resumoApuracao(out, 100000)
-    expect(R.totalProvisao).toBeCloseTo(7680, 2)
-    expect(R.cargaEfetiva).toBeCloseTo(16.33, 2)
+    expect(R.totalProvisao).toBeCloseTo(8880, 2)
+    expect(R.cargaEfetiva).toBeCloseTo(17.53, 2)
   })
 })
 
@@ -123,9 +126,11 @@ describe("A4 — LP trimestral, fechamento (jun): DARF do trimestre com retenç�
   it("Adicional do trimestre = 3.600", () => {
     expect(num(out, "Adicional IRPJ")).toBeCloseTo(3600, 2)
   })
-  it("carga efetiva mostra só o mês (16,33%), não o trimestre dividido pela receita do mês", () => {
+  it("carga efetiva mostra só o mês (17,53%, com o adicional do mês), não o trimestre dividido pela receita do mês", () => {
+    // QA out/2026: a carga do mês inclui o adicional do mês (limite R$ 20 mil):
+    // (650 + 3.000 + 5.000 + 4.800 + 1.200 + 2.880) / 100.000 = 17,53%.
     const R = resumoApuracao(out, 100000)
-    expect(R.cargaEfetiva).toBeCloseTo(16.33, 2)
+    expect(R.cargaEfetiva).toBeCloseTo(17.53, 2)
   })
 })
 
