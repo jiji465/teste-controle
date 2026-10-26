@@ -31,13 +31,17 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form"
-import { Loader2, Plus } from "lucide-react"
+import { Loader2, Plus, Lock } from "lucide-react"
 import { toast } from "sonner"
 import type { Service, Client, RecurrenceType } from "@/lib/types"
 import { SERVICE_CATEGORY_LABELS } from "@/lib/types"
 import { serviceSchema, type ServiceFormData } from "@/features/services/schemas"
 import { saveService } from "@/features/services/services"
-import { buildRecurringServices } from "@/lib/recurrence-generate"
+import { buildRecurringServices, legacyServiceOccurrenceIds } from "@/lib/recurrence-generate"
+import { saveNewOccurrences, describeOccurrencePlan } from "@/lib/recurrence-sync"
+import { serviceFromForm } from "@/features/services/form-mapping"
+import { useAuth } from "@/contexts/auth-context"
+import { selectableClients } from "@/lib/client-options"
 import { saveClient, DuplicateClientError } from "@/features/clients/services"
 import { useData } from "@/contexts/data-context"
 import { adjustForWeekend, buildSafeDate, formatDate, isWeekendOrHoliday, getHolidayName } from "@/lib/date-utils"
@@ -50,19 +54,10 @@ type Props = {
   onSave: () => void
 }
 
-/** Aplica a regra de fim de semana numa string "AAAA-MM-DD" e devolve outra
- *  string "AAAA-MM-DD". Usa buildSafeDate pra evitar problemas de timezone. */
-function applyWeekendRuleToYmd(ymd: string, rule: "postpone" | "anticipate" | "keep"): string {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return ymd
-  if (rule === "keep") return ymd
-  const [y, m, d] = ymd.split("-").map(Number)
-  const adjusted = adjustForWeekend(buildSafeDate(y, m - 1, d), rule)
-  return `${adjusted.getFullYear()}-${String(adjusted.getMonth() + 1).padStart(2, "0")}-${String(adjusted.getDate()).padStart(2, "0")}`
-}
-
 export function ServiceForm({ service, clients, open, onOpenChange, onSave }: Props) {
   const [isSaving, setIsSaving] = useState(false)
-  const { refreshData } = useData()
+  const { refreshData, services: allServices, isPeriodLocked } = useData()
+  const { userName } = useAuth()
 
   // Cadastro rápido de cliente sem sair do formulário de serviço.
   const [quickOpen, setQuickOpen] = useState(false)
@@ -74,10 +69,12 @@ export function ServiceForm({ service, clients, open, onOpenChange, onSave }: Pr
   const [extraClients, setExtraClients] = useState<Client[]>([])
 
   // Mescla a lista do contexto com os recém-criados (sem duplicar por id).
+  // Empresas arquivadas ficam fora (exceto a já vinculada ao serviço em edição)
   const clientOptions = useMemo(() => {
-    const ids = new Set(clients.map((c) => c.id))
-    return [...clients, ...extraClients.filter((c) => !ids.has(c.id))]
-  }, [clients, extraClients])
+    const base = selectableClients(clients, service?.clientId)
+    const ids = new Set(base.map((c) => c.id))
+    return [...base, ...extraClients.filter((c) => !ids.has(c.id))]
+  }, [clients, extraClients, service?.clientId])
 
   // Seleção à prova de corrida: ao criar um cliente, guardamos o id como
   // "pendente" e só o selecionamos QUANDO ele já existe nas opções do Select.
@@ -164,49 +161,39 @@ export function ServiceForm({ service, clients, open, onOpenChange, onSave }: Pr
 
     setIsSaving(true)
     try {
-      // Aplica a regra de fim de semana / feriado na data digitada.
-      // O que fica salvo no DB é a data EFETIVA (após o ajuste), igual ao
-      // padrão das outras abas. Assim toda a app vê uma única data certa.
-      const adjustedDueDate = applyWeekendRuleToYmd(data.dueDate, data.weekendRule)
+      // Ids que já existiam ANTES de salvar: ocorrências já existentes
+      // (concluídas, com histórico…) nunca são sobrescritas.
+      const existingIds = new Set(allServices.map((s) => s.id))
 
-      const payload: Service = {
-        id: data.id || crypto.randomUUID(),
-        name: data.name,
-        clientId: data.clientId,
-        description: data.description || undefined,
-        category: data.category,
-        dueDate: adjustedDueDate,
-        weekendRule: data.weekendRule,
-        status: data.status,
-        priority: data.priority,
-        recurrence: data.recurrence,
-        recurrenceInterval: data.recurrenceInterval,
-        recurrenceEndDate: data.recurrenceEndDate || undefined,
-        autoGenerate: data.autoGenerate,
-        notes: data.notes || undefined,
-        tags: data.tags || [],
-        completedAt: data.completedAt ?? undefined,
-        completedBy: data.completedBy ?? undefined,
-        createdAt: data.createdAt || new Date().toISOString(),
-      }
+      // A data salva é a EFETIVA (após o ajuste de fim de semana/feriado);
+      // campos fora do formulário (histórico…) vêm do serviço original.
+      const payload: Service = serviceFromForm(data, service, { userName })
       await saveService(payload)
 
-      // Geração antecipada: cria TODAS as ocorrências até "Repetir até".
-      // Passa a data DIGITADA (data.dueDate, antes do ajuste) como base, pra
-      // não acumular drift do ajuste de fim de semana a cada mês.
-      const occurrences = buildRecurringServices(payload, data.dueDate)
-      if (occurrences.length > 0) {
-        await Promise.all(occurrences.map((s) => saveService(s)))
-      }
-
-      const extra = occurrences.length
-      toast.success(
-        service
-          ? "Serviço atualizado"
-          : extra > 0
-            ? `Serviço criado + ${extra} ocorrência${extra > 1 ? "s" : ""} recorrente${extra > 1 ? "s" : ""}`
-            : "Serviço criado",
+      // Geração antecipada: cria as ocorrências que ainda faltam até
+      // "Repetir até". Passa a data DIGITADA (data.dueDate, antes do ajuste)
+      // como base, pra não acumular drift do ajuste de fim de semana. Ids por
+      // mês → editar não duplica; mês fechado é pulado.
+      const series = await saveNewOccurrences(
+        buildRecurringServices(payload, data.dueDate),
+        {
+          existingIds,
+          periodOf: (o) => o.dueDate.slice(0, 7),
+          isPeriodLocked,
+          aliasIds: (o) => legacyServiceOccurrenceIds(payload.id, o.dueDate.slice(0, 7)),
+        },
+        saveService,
       )
+
+      const extra = describeOccurrencePlan(series, { one: "ocorrência", many: "ocorrências" })
+      if (series.failed.length > 0) {
+        toast.warning(
+          `Serviço salvo, mas ${series.failed.length} ocorrência(s) falharam: ${errorMessage(series.failed[0].error, "erro")}`,
+        )
+      } else {
+        const base = service ? "Serviço atualizado" : "Serviço criado"
+        toast.success(extra ? `${base} · ${extra}` : base)
+      }
       onSave()
       onOpenChange(false)
     } catch (err) {
@@ -218,6 +205,14 @@ export function ServiceForm({ service, clients, open, onOpenChange, onSave }: Pr
   }
 
   const recurrence = form.watch("recurrence")
+  // Serviço não tem competência: vale o MÊS do vencimento (mesma regra do banco)
+  const watchedMonth = form.watch("dueDate")?.slice(0, 7)
+  const lockMessage =
+    service && isPeriodLocked(service.dueDate?.slice(0, 7))
+      ? `A competência ${service.dueDate.slice(0, 7)} está fechada — reabra-a para alterar este serviço.`
+      : isPeriodLocked(watchedMonth)
+        ? `A competência ${watchedMonth} está fechada — escolha outra data ou reabra-a.`
+        : null
   const watchedDueDate = form.watch("dueDate")
   const watchedRule = form.watch("weekendRule")
 
@@ -312,6 +307,12 @@ export function ServiceForm({ service, clients, open, onOpenChange, onSave }: Pr
             })}
             className="grid gap-4 py-2"
           >
+            {lockMessage && (
+              <div role="alert" className="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-800 dark:text-amber-300">
+                <Lock className="size-4 mt-0.5 shrink-0" />
+                <span>{lockMessage}</span>
+              </div>
+            )}
             <FormField
               control={form.control}
               name="name"
@@ -591,7 +592,7 @@ export function ServiceForm({ service, clients, open, onOpenChange, onSave }: Pr
               >
                 Cancelar
               </Button>
-              <Button type="submit" disabled={isSaving}>
+              <Button type="submit" disabled={isSaving || !!lockMessage} title={lockMessage ?? undefined}>
                 {isSaving ? (
                   <>
                     <Loader2 className="size-4 mr-2 animate-spin" />

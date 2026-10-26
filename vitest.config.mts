@@ -10,6 +10,6 @@ export default defineConfig({
     // de São Paulo pra pegar regressões de UTC (ex.: "2026-02-01" virando janeiro).
     env: { TZ: "America/Sao_Paulo" },
     include: ["**/*.test.{ts,js}"],
-    exclude: ["node_modules/**", ".next/**"],
+    exclude: ["node_modules/**", ".next/**", ".claude/**"],
   },
 })

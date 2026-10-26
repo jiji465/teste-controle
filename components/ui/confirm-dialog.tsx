@@ -1,5 +1,6 @@
 "use client"
 
+import { toast } from "sonner"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -10,7 +11,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import { cn } from "@/lib/utils"
+import { cn, errorMessage } from "@/lib/utils"
 
 export type ConfirmState = {
   title: string
@@ -29,8 +30,15 @@ export function ConfirmDialog({ state, onClose }: Props) {
   if (!state) return null
 
   const handleConfirm = async () => {
-    await state.onConfirm()
-    onClose()
+    try {
+      await state.onConfirm()
+    } catch (error) {
+      // Uma falha não tratada pelo chamador não pode sumir em silêncio.
+      console.error("[confirm-dialog] ação falhou:", error)
+      toast.error(errorMessage(error, "Não foi possível concluir a ação"))
+    } finally {
+      onClose()
+    }
   }
 
   return (

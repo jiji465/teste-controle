@@ -505,7 +505,52 @@ async function cleanupLegacyMeiAndRealTemplates(
   return targets.length > 0
 }
 
-export const seedDefaultTemplates = async (): Promise<void> => {
+// Trava de concorrência: duas chamadas simultâneas (StrictMode, voltar à
+// página durante o seed, "Restaurar padrões") liam a mesma lista vazia e
+// criavam cada padrão duas vezes. Quem chega durante um seed espera o mesmo.
+let seedPromise: Promise<void> | null = null
+
+export const seedDefaultTemplates = (): Promise<void> => {
+  if (!seedPromise) {
+    seedPromise = seedDefaultTemplatesInner().finally(() => {
+      seedPromise = null
+    })
+  }
+  return seedPromise
+}
+
+/** Remove cópias IDÊNTICAS de um mesmo template padrão (criadas pela corrida
+ *  antiga do seed). Mantém a mais antiga; cópias editadas não são tocadas. */
+async function dedupeDefaultTemplates(
+  allTemplates: CustomTemplatePackage[],
+  deleteAsync: (id: string) => Promise<void>,
+): Promise<boolean> {
+  const defaultNames = new Set(DEFAULT_TEMPLATE_DEFINITIONS.map((d) => d.name))
+  const byName = new Map<string, CustomTemplatePackage[]>()
+  for (const t of allTemplates) {
+    if (!defaultNames.has(t.name)) continue
+    byName.set(t.name, [...(byName.get(t.name) ?? []), t])
+  }
+  let removed = false
+  for (const copies of byName.values()) {
+    if (copies.length < 2) continue
+    const sorted = [...copies].sort((a, b) => (a.createdAt ?? "").localeCompare(b.createdAt ?? ""))
+    const keep = sorted[0]
+    const keepItems = JSON.stringify(keep.obligations)
+    for (const dup of sorted.slice(1)) {
+      if (JSON.stringify(dup.obligations) !== keepItems) continue
+      try {
+        await deleteAsync(dup.id)
+        removed = true
+      } catch (err) {
+        console.error("[templates] dedupe falhou:", err)
+      }
+    }
+  }
+  return removed
+}
+
+const seedDefaultTemplatesInner = async (): Promise<void> => {
   if (typeof window === "undefined") return
 
   // 1. Carrega templates existentes (preferindo Supabase, pra evitar duplicar
@@ -517,6 +562,10 @@ export const seedDefaultTemplates = async (): Promise<void> => {
   // 1.5. Cleanup one-shot de MEI/Lucro Real (a pedido do usuário, não usamos por enquanto)
   const cleaned = await cleanupLegacyMeiAndRealTemplates(allTemplates, deleteCustomTemplateAsync)
   if (cleaned) allTemplates = await getCustomTemplatesAsync()
+
+  // 1.6. Dedupe por nome dos padrões duplicados pela corrida antiga
+  const deduped = await dedupeDefaultTemplates(allTemplates, deleteCustomTemplateAsync)
+  if (deduped) allTemplates = await getCustomTemplatesAsync()
 
   const existingNames = new Map(allTemplates.map((p) => [p.name, p]))
 
@@ -548,7 +597,7 @@ export const seedDefaultTemplates = async (): Promise<void> => {
     // Cria do zero
     const obligations = TEMPLATES[def.key] ?? COMMON_ALL
     const now = new Date().toISOString()
-    await saveCustomTemplateAsync({
+    const pkg: CustomTemplatePackage = {
       id: crypto.randomUUID(),
       name: def.name,
       description: def.description,
@@ -557,8 +606,10 @@ export const seedDefaultTemplates = async (): Promise<void> => {
       obligations,
       createdAt: now,
       updatedAt: now,
-    })
+    }
+    await saveCustomTemplateAsync(pkg)
     seeded.add(def.name)
+    existingNames.set(def.name, pkg)
     changed = true
   }
   if (changed) saveSeededNames(seeded)

@@ -7,16 +7,18 @@ import type { ObligationTemplate } from "./obligation-templates"
  *
  * Convenções:
  *  - Federal       → weekendRule: anticipate
+ *    EXCEÇÃO: DAS / DAS-MEI / PGDAS-D → postpone (Res. CGSN 140/18), igual
+ *    aos templates padrão de lib/obligation-templates.ts
  *  - Estadual/Mun. → weekendRule: postpone
  */
 export type CatalogItem = ObligationTemplate & { /** Categoria pra agrupar visualmente */ group: string }
 
 export const TEMPLATE_ITEM_CATALOG: CatalogItem[] = [
   // ── Federais — Simples Nacional ────────────────────────────────────────────
-  { group: "Simples Nacional", name: "DAS", description: "Documento de Arrecadação do Simples Nacional", category: "tax_guide", scope: "federal", dueDay: 20, frequency: "monthly", recurrence: "monthly", weekendRule: "anticipate", priority: "urgent" },
-  { group: "Simples Nacional", name: "PGDAS-D", description: "Programa Gerador do Documento de Arrecadação - Declaração", category: "declaration", scope: "federal", dueDay: 20, frequency: "monthly", recurrence: "monthly", weekendRule: "anticipate", priority: "high" },
+  { group: "Simples Nacional", name: "DAS", description: "Documento de Arrecadação do Simples Nacional", category: "tax_guide", scope: "federal", dueDay: 20, frequency: "monthly", recurrence: "monthly", weekendRule: "postpone", priority: "urgent" },
+  { group: "Simples Nacional", name: "PGDAS-D", description: "Programa Gerador do Documento de Arrecadação - Declaração", category: "declaration", scope: "federal", dueDay: 20, frequency: "monthly", recurrence: "monthly", weekendRule: "postpone", priority: "high" },
   { group: "Simples Nacional", name: "DEFIS", description: "DEFIS - vence 31/03 do ano seguinte ao exercício", category: "declaration", scope: "federal", dueDay: 31, dueMonth: 3, frequency: "annual", recurrence: "annual", weekendRule: "anticipate", priority: "high" },
-  { group: "Simples Nacional", name: "DAS-MEI", description: "Documento de Arrecadação do MEI", category: "tax_guide", scope: "federal", dueDay: 20, frequency: "monthly", recurrence: "monthly", weekendRule: "anticipate", priority: "urgent" },
+  { group: "Simples Nacional", name: "DAS-MEI", description: "Documento de Arrecadação do MEI", category: "tax_guide", scope: "federal", dueDay: 20, frequency: "monthly", recurrence: "monthly", weekendRule: "postpone", priority: "urgent" },
   { group: "Simples Nacional", name: "DASN-SIMEI", description: "DASN-SIMEI - vence 31/05 do ano seguinte ao exercício", category: "declaration", scope: "federal", dueDay: 31, dueMonth: 5, frequency: "annual", recurrence: "annual", weekendRule: "anticipate", priority: "high" },
 
   // ── Federais — Lucro Presumido / Real ──────────────────────────────────────
@@ -54,4 +56,11 @@ export function groupedCatalog(): Map<string, CatalogItem[]> {
     map.get(item.group)!.push(item)
   }
   return map
+}
+
+/** Item do catálogo → item de template (sem o `group`, mantendo TODOS os
+ *  campos — antes o mapeamento manual perdia o dueMonth da DEFIS/DASN-SIMEI). */
+export function catalogItemToTemplate(c: CatalogItem): ObligationTemplate {
+  const { group: _group, ...item } = c
+  return { ...item }
 }

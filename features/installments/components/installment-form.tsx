@@ -18,11 +18,15 @@ import {
   FormMessage,
 } from "@/components/ui/form"
 import { getClients, getTaxes, saveInstallment } from "@/lib/supabase/database"
-import type { Installment, Client, Tax, WeekendRule, Priority, RecurrenceType } from "@/lib/types"
+import type { Installment, Client, Tax } from "@/lib/types"
 import { AlertCircle, Flame, TrendingUp, Zap, CalendarDays } from "lucide-react"
 import { installmentSchema, type InstallmentFormData } from "@/features/installments/schemas"
-import { adjustForWeekend, buildSafeDate, formatDate, toLocalDateString } from "@/lib/date-utils"
+import { formatDate } from "@/lib/date-utils"
+import { firstDueFromCurrentParcela, previewParcelaDue } from "@/lib/installment-dates"
 import { toast } from "sonner"
+import { errorMessage } from "@/lib/utils"
+import { installmentFromForm } from "@/features/installments/form-mapping"
+import { selectableClients } from "@/lib/client-options"
 
 interface InstallmentFormProps {
   installment?: Installment
@@ -125,32 +129,16 @@ export function InstallmentForm({ installment, open, onOpenChange, onSave }: Ins
   }, [installment, open, form])
 
   const onSubmit = async (data: InstallmentFormData) => {
-    const installmentData: Installment = {
-      id: data.id || crypto.randomUUID(),
-      name: data.name,
-      description: data.description || undefined,
-      clientId: data.clientId,
-      taxId: data.taxId === "none" || !data.taxId ? undefined : data.taxId,
-      installmentCount: data.installmentCount,
-      currentInstallment: data.currentInstallment,
-      dueDay: data.dueDay,
-      firstDueDate: data.firstDueDate,
-      weekendRule: data.weekendRule as WeekendRule,
-      status: data.status as any,
-      priority: data.priority as Priority,
-      protocol: data.protocol || undefined,
-      notes: data.notes || undefined,
-      createdAt: data.createdAt || new Date().toISOString(),
-      completedAt: installment?.completedAt,
-      completedBy: installment?.completedBy,
-      history: installment?.history || [],
-      tags: data.tags || [],
-      autoGenerate: data.autoGenerate,
-      recurrence: data.recurrence as RecurrenceType,
-      recurrenceInterval: data.recurrenceInterval,
+    // Parte do parcelamento original: parcelas pagas, responsável, valores…
+    // não estão no formulário e não podem ser perdidos ao editar.
+    const installmentData: Installment = installmentFromForm(data, installment)
+    try {
+      await saveInstallment(installmentData)
+    } catch (error) {
+      console.error("[installment-form] save failed:", error)
+      toast.error(errorMessage(error, "Erro ao salvar parcelamento"))
+      return // mantém o formulário aberto pra tentar de novo
     }
-
-    await saveInstallment(installmentData)
     onSave()
     onOpenChange(false)
   }
@@ -168,42 +156,31 @@ export function InstallmentForm({ installment, open, onOpenChange, onSave }: Ins
   const watchCurrentInstallment = form.watch("currentInstallment")
   const watchInstallmentCount = form.watch("installmentCount")
   const watchWeekendRule = form.watch("weekendRule")
+  const watchDueDay = form.watch("dueDay")
 
-  const currentDuePreview = useMemo(() => {
-    if (!watchFirstDueDate) return null
-    const m = watchFirstDueDate.match(/^(\d{4})-(\d{2})-(\d{2})$/)
-    if (!m) return null
-    const year = Number(m[1])
-    const monthIdx = Number(m[2]) - 1
-    const day = Number(m[3])
-    const current = Number(watchCurrentInstallment) || 1
-    const total = Number(watchInstallmentCount) || 1
-    if (current < 1 || current > total) return null
-    const monthsToAdd = current - 1
-    const raw = buildSafeDate(year, monthIdx + monthsToAdd, day)
-    const adjusted = adjustForWeekend(raw, (watchWeekendRule as WeekendRule) || "postpone")
-    return {
-      current,
-      total,
-      date: adjusted,
-      isFirst: current === 1,
-    }
-  }, [watchFirstDueDate, watchCurrentInstallment, watchInstallmentCount, watchWeekendRule])
+  // Mesma conta do cronograma salvo (getParcelaDueDate): parcela 1 = data
+  // digitada; as seguintes caem no "Dia do vencimento".
+  const currentDuePreview = useMemo(
+    () =>
+      previewParcelaDue({
+        firstDueDate: watchFirstDueDate,
+        dueDay: watchDueDay,
+        weekendRule: watchWeekendRule,
+        currentInstallment: watchCurrentInstallment,
+        installmentCount: watchInstallmentCount,
+      }),
+    [watchFirstDueDate, watchDueDay, watchCurrentInstallment, watchInstallmentCount, watchWeekendRule],
+  )
 
   // Atalho: preencher o "Primeiro vencimento" a partir da data da parcela atual.
   // Se o usuário sabe quando a parcela 6 vence, mas não lembra quando foi a 1,
-  // ele clica nesse botão e a gente calcula firstDueDate = nextDue - (current-1) meses.
+  // ele clica nesse botão e a gente calcula firstDueDate = nextDue - (current-1)
+  // meses — e alinha o "Dia do vencimento" com o dia informado.
   const fillFirstDueFromCurrent = (currentDueIso: string) => {
-    const m = currentDueIso.match(/^(\d{4})-(\d{2})-(\d{2})$/)
-    if (!m) return
-    const year = Number(m[1])
-    const monthIdx = Number(m[2]) - 1
-    const day = Number(m[3])
-    const current = Number(form.getValues("currentInstallment")) || 1
-    if (current < 1) return
-    const firstDate = buildSafeDate(year, monthIdx - (current - 1), day)
-    const iso = toLocalDateString(firstDate)
-    form.setValue("firstDueDate", iso, { shouldDirty: true, shouldValidate: true })
+    const r = firstDueFromCurrentParcela(currentDueIso, Number(form.getValues("currentInstallment")) || 1)
+    if (!r) return
+    form.setValue("firstDueDate", r.firstDueDate, { shouldDirty: true, shouldValidate: true })
+    form.setValue("dueDay", r.dueDay, { shouldDirty: true, shouldValidate: true })
   }
 
   const [quickCurrentDate, setQuickCurrentDate] = useState("")
@@ -269,7 +246,7 @@ export function InstallmentForm({ installment, open, onOpenChange, onSave }: Ins
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          {clients.map((client) => (
+                          {selectableClients(clients, installment?.clientId).map((client) => (
                             <SelectItem key={client.id} value={client.id}>{client.name}</SelectItem>
                           ))}
                         </SelectContent>

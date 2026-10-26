@@ -1,6 +1,13 @@
 "use client"
 
 import { usePagination } from "@/hooks/use-pagination"
+import { useListSelection } from "@/hooks/use-list-selection"
+import { useSelectedPeriod } from "@/hooks/use-selected-period"
+import { useData } from "@/contexts/data-context"
+import { StatFilterBar } from "@/components/stat-filter-bar"
+import { runBulk } from "@/lib/bulk-actions"
+import { notifyBulk } from "@/lib/notify-bulk"
+import { countByStatus, filterByStatusTab, statusBucket } from "@/lib/obligation-status"
 import { ListPagination } from "@/components/list-pagination"
 import { forwardRef, useImperativeHandle, useMemo, useState } from "react"
 import { Button } from "@/components/ui/button"
@@ -31,6 +38,7 @@ import {
   RotateCcw,
   Copy,
   Briefcase,
+  Lock,
 } from "lucide-react"
 import type { Service, Client, Priority, ServiceCategory, WeekendRule } from "@/lib/types"
 import { SERVICE_CATEGORY_LABELS, SERVICE_CATEGORY_COLORS } from "@/lib/types"
@@ -45,6 +53,11 @@ type ServiceListProps = {
   services: Service[]
   clients: Client[]
   onUpdate: () => void
+  /** Aba de status ativa (cartões no topo, contando a lista já filtrada). */
+  activeTab?: string
+  onTabChange?: (tab: string) => void
+  /** false = sem banco (modo local): Serviços não podem ser criados */
+  canCreate?: boolean
 }
 
 export type ServiceListHandle = {
@@ -74,17 +87,21 @@ function applyWeekendRuleToYmd(ymd: string, rule: WeekendRule): string {
   return `${adjusted.getFullYear()}-${String(adjusted.getMonth() + 1).padStart(2, "0")}-${String(adjusted.getDate()).padStart(2, "0")}`
 }
 
+/** Mesma regra de effectiveStatus: pendente ou em andamento vencido = atrasado. */
 function effectiveServiceStatus(s: Service): Service["status"] {
-  if (s.status === "completed") return "completed"
-  if (s.status === "in_progress") return "in_progress"
-  return isOverdue(s.dueDate) ? "overdue" : "pending"
+  return statusBucket({ status: s.status, calculatedDueDate: s.dueDate })
 }
 
 export const ServiceList = forwardRef<ServiceListHandle, ServiceListProps>(function ServiceList(
-  { services, clients, onUpdate }: ServiceListProps,
+  { services, clients, onUpdate, activeTab, onTabChange, canCreate = true }: ServiceListProps,
   ref,
 ) {
   const { userName } = useAuth()
+  const { isPeriodLocked } = useData()
+  const { period } = useSelectedPeriod()
+  // Serviço não tem competência: o trigger usa o MÊS do vencimento
+  const isLocked = (s: Service) => isPeriodLocked(s.dueDate?.slice(0, 7))
+  const LOCKED_HINT = "Competência fechada — reabra a competência para alterar"
   const [search, setSearch] = useState("")
   const [clientFilter, setClientFilter] = useState<string>("all")
   const [categoryFilter, setCategoryFilter] = useState<string>("all")
@@ -93,7 +110,6 @@ export const ServiceList = forwardRef<ServiceListHandle, ServiceListProps>(funct
   const [isFormOpen, setIsFormOpen] = useState(false)
   const [sortBy, setSortBy] = useState<"dueDate" | "client" | "status" | "name">("dueDate")
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc")
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [bulkEditOpen, setBulkEditOpen] = useState(false)
   const [bulkForm, setBulkForm] = useState<BulkEditForm>(EMPTY_BULK_FORM)
   const [bulkLoading, setBulkLoading] = useState(false)
@@ -150,6 +166,27 @@ export const ServiceList = forwardRef<ServiceListHandle, ServiceListProps>(funct
     })
   }, [filteredServices, sortBy, sortOrder, clients])
 
+  // Cartões contam a lista já filtrada (busca/cliente/categoria/prioridade)
+  const statusCounts = useMemo(
+    () => countByStatus(filteredServices.map((x) => ({ status: x.status, calculatedDueDate: x.dueDate }))),
+    [filteredServices],
+  )
+  const tabServices = useMemo(() => {
+    const ids = new Set(
+      filterByStatusTab(sortedServices.map((x) => ({ id: x.id, status: x.status, calculatedDueDate: x.dueDate })), activeTab).map((x) => x.id),
+    )
+    return sortedServices.filter((x) => ids.has(x.id))
+  }, [sortedServices, activeTab])
+
+  // Paginação: renderiza 50 linhas por vez (listas com centenas de itens travavam)
+  const pagination = usePagination(tabServices)
+  const visibleIds = pagination.items.map((x) => x.id)
+  // Seleção some ao trocar aba/filtro/busca/período/página
+  const selection = useListSelection(
+    [activeTab, search, clientFilter, categoryFilter, priorityFilter, period, pagination.page].join("|"),
+  )
+  const { selectedIds, toggle: toggleSelect, clear: clearSelection } = selection
+
   const handleDelete = (id: string) => {
     setConfirmState({
       title: "Excluir serviço",
@@ -169,145 +206,123 @@ export const ServiceList = forwardRef<ServiceListHandle, ServiceListProps>(funct
     })
   }
 
-  const toggleSelect = (id: string) => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
-  }
-
-  const clearSelection = () => setSelectedIds(new Set())
 
   const selectedList = useMemo(
     () => services.filter((s) => selectedIds.has(s.id)),
     [services, selectedIds],
   )
 
+  /** Ação em lote: ignora competência fechada (com aviso), relata falhas e
+   *  SEMPRE recarrega a lista. */
+  const runServiceBulk = async (
+    targets: Service[],
+    action: (x: Service) => Promise<unknown>,
+    done: { one: string; many: string },
+  ) => {
+    setBulkLoading(true)
+    try {
+      const { toast: t } = await runBulk(targets, action, { done, isLocked })
+      notifyBulk(t)
+    } finally {
+      clearSelection()
+      onUpdate()
+      setBulkLoading(false)
+    }
+  }
+
   const handleBulkComplete = () => {
-    if (selectedIds.size === 0) return
+    if (selectedList.length === 0) return
     setConfirmState({
-      title: `Concluir ${selectedIds.size} serviços`,
-      description: `Marcar ${selectedIds.size} serviços como concluídos?`,
+      title: `Concluir ${selectedList.length} serviços`,
+      description: `Marcar ${selectedList.length} serviços como concluídos? Itens de competência fechada são ignorados.`,
       confirmLabel: "Concluir",
       onConfirm: async () => {
-        setBulkLoading(true)
-        try {
-          const now = new Date().toISOString()
-          await Promise.all(
-            selectedList
-              .filter((s) => s.status !== "completed")
-              .map((s) =>
-                saveService({
-                  ...s,
-                  status: "completed",
-                  completedAt: now,
-                  completedBy: userName,
-                  history: [
-                    ...(s.history || []),
-                    { id: crypto.randomUUID(), action: "completed", description: "Concluído via ação em lote", timestamp: now },
-                  ],
-                }),
-              ),
-          )
-          toast.success(`${selectedIds.size} serviços concluídos`)
-          clearSelection()
-          onUpdate()
-        } finally {
-          setBulkLoading(false)
-        }
+        const now = new Date().toISOString()
+        await runServiceBulk(
+          selectedList.filter((x) => x.status !== "completed"),
+          (x) =>
+            saveService({
+              ...x,
+              status: "completed",
+              completedAt: now,
+              completedBy: userName,
+              history: [
+                ...(x.history || []),
+                { id: crypto.randomUUID(), action: "completed", description: "Concluído via ação em lote", timestamp: now },
+              ],
+            }),
+          { one: "serviço concluído", many: "serviços concluídos" },
+        )
       },
     })
   }
 
   const handleBulkReopen = () => {
-    if (selectedIds.size === 0) return
+    if (selectedList.length === 0) return
     setConfirmState({
-      title: `Reabrir ${selectedIds.size} serviços`,
+      title: `Reabrir ${selectedList.length} serviços`,
       description: `Volta para "Pendente" e limpa a data de conclusão.`,
       confirmLabel: "Reabrir",
       onConfirm: async () => {
-        setBulkLoading(true)
-        try {
-          const now = new Date().toISOString()
-          const targets = selectedList.filter((s) => s.status === "completed")
-          await Promise.all(
-            targets.map((s) =>
-              saveService({
-                ...s,
-                status: "pending",
-                completedAt: undefined,
-                completedBy: undefined,
-                history: [
-                  ...(s.history || []),
-                  { id: crypto.randomUUID(), action: "status_changed", description: "Reaberto via ação em lote", timestamp: now },
-                ],
-              }),
-            ),
-          )
-          toast.success(`${targets.length} serviços reabertos`)
-          clearSelection()
-          onUpdate()
-        } finally {
-          setBulkLoading(false)
-        }
+        const now = new Date().toISOString()
+        await runServiceBulk(
+          selectedList.filter((x) => x.status === "completed"),
+          (x) =>
+            saveService({
+              ...x,
+              status: "pending",
+              completedAt: undefined,
+              completedBy: undefined,
+              history: [
+                ...(x.history || []),
+                { id: crypto.randomUUID(), action: "status_changed", description: "Reaberto via ação em lote", timestamp: now },
+              ],
+            }),
+          { one: "serviço reaberto", many: "serviços reabertos" },
+        )
       },
     })
   }
 
   const handleBulkInProgress = () => {
-    if (selectedIds.size === 0) return
+    if (selectedList.length === 0) return
     setConfirmState({
-      title: `Iniciar ${selectedIds.size} serviços`,
-      description: `Marcar ${selectedIds.size} serviços como "Em andamento"?`,
+      title: `Iniciar ${selectedList.length} serviços`,
+      description: `Marcar ${selectedList.length} serviços como "Em andamento"?`,
       confirmLabel: "Iniciar",
       onConfirm: async () => {
-        setBulkLoading(true)
-        try {
-          const now = new Date().toISOString()
-          const targets = selectedList.filter((s) => s.status !== "in_progress")
-          await Promise.all(
-            targets.map((s) =>
-              saveService({
-                ...s,
-                status: "in_progress",
-                completedAt: undefined,
-                completedBy: undefined,
-                history: [
-                  ...(s.history || []),
-                  { id: crypto.randomUUID(), action: "status_changed", description: "Marcado como em andamento via lote", timestamp: now },
-                ],
-              }),
-            ),
-          )
-          toast.success(`${targets.length} serviços em andamento`)
-          clearSelection()
-          onUpdate()
-        } finally {
-          setBulkLoading(false)
-        }
+        const now = new Date().toISOString()
+        await runServiceBulk(
+          selectedList.filter((x) => x.status !== "in_progress"),
+          (x) =>
+            saveService({
+              ...x,
+              status: "in_progress",
+              completedAt: undefined,
+              completedBy: undefined,
+              history: [
+                ...(x.history || []),
+                { id: crypto.randomUUID(), action: "status_changed", description: "Marcado como em andamento via lote", timestamp: now },
+              ],
+            }),
+          { one: "serviço em andamento", many: "serviços em andamento" },
+        )
       },
     })
   }
 
   const handleBulkDelete = () => {
-    if (selectedIds.size === 0) return
+    if (selectedList.length === 0) return
     setConfirmState({
-      title: `Excluir ${selectedIds.size} serviços`,
-      description: "Esta ação não pode ser desfeita.",
+      title: `Excluir ${selectedList.length} serviços`,
+      description: "Esta ação não pode ser desfeita. Itens de competência fechada são ignorados.",
       confirmLabel: "Excluir",
       destructive: true,
       onConfirm: async () => {
-        setBulkLoading(true)
-        try {
-          await Promise.all(Array.from(selectedIds).map((id) => deleteService(id)))
-          toast.success(`${selectedIds.size} serviços excluídos`)
-          clearSelection()
-          onUpdate()
-        } finally {
-          setBulkLoading(false)
-        }
+        await runServiceBulk(selectedList, (x) => deleteService(x.id), {
+          one: "serviço excluído",
+          many: "serviços excluídos",
+        })
       },
     })
   }
@@ -318,57 +333,56 @@ export const ServiceList = forwardRef<ServiceListHandle, ServiceListProps>(funct
   }
 
   const handleBulkEditApply = async () => {
-    if (selectedIds.size === 0) return
+    if (selectedList.length === 0) return
     const { priority, status, category, weekendRule } = bulkForm
     if (!priority && !status && !category && !weekendRule) {
       toast.info("Preencha pelo menos um campo para aplicar")
       return
     }
-    setBulkLoading(true)
-    try {
-      const now = new Date().toISOString()
-      const changes: string[] = []
-      if (priority) changes.push(`prioridade: ${priority}`)
-      if (status) changes.push(`status: ${status}`)
-      if (category) changes.push(`categoria: ${category}`)
-      if (weekendRule) changes.push(`regra fim de semana: ${weekendRule}`)
-      const description = `Edição em lote — ${changes.join(", ")}`
+    const now = new Date().toISOString()
+    const changes: string[] = []
+    if (priority) changes.push(`prioridade: ${priority}`)
+    if (status) changes.push(`status: ${status}`)
+    if (category) changes.push(`categoria: ${category}`)
+    if (weekendRule) changes.push(`regra fim de semana: ${weekendRule}`)
+    const description = `Edição em lote — ${changes.join(", ")}`
 
-      await Promise.all(
-        selectedList.map((s) => {
-          const updated: Service = { ...s }
-          if (priority) updated.priority = priority as Priority
-          if (status) updated.status = status
-          if (category) updated.category = category as ServiceCategory
-          if (weekendRule) {
-            // Aplica a nova regra na data já salva. Importante usar a data
-            // ORIGINAL caso o usuário esteja mudando de "postpone" pra
-            // "anticipate" — mas como só guardamos a data efetiva, o que dá
-            // pra fazer é: se o rule novo for "keep", mantém a data; se for
-            // postpone/anticipate, reaplicar a partir da data atual. Em 99%
-            // dos casos a data já é dia útil então não muda nada.
-            updated.weekendRule = weekendRule as WeekendRule
-            updated.dueDate = applyWeekendRuleToYmd(s.dueDate, weekendRule as WeekendRule)
+    await runServiceBulk(
+      selectedList,
+      (x) => {
+        const updated: Service = { ...x }
+        if (priority) updated.priority = priority as Priority
+        if (status) {
+          updated.status = status
+          if (status === "completed") {
+            updated.completedAt = x.completedAt ?? now
+            updated.completedBy = x.completedBy ?? userName
+          } else {
+            updated.completedAt = undefined
+            updated.completedBy = undefined
           }
-          updated.history = [
-            ...(s.history || []),
-            {
-              id: crypto.randomUUID(),
-              action: "updated",
-              description,
-              timestamp: now,
-            },
-          ]
-          return saveService(updated)
-        }),
-      )
-      toast.success(`${selectedIds.size} serviços atualizados`)
-      setBulkEditOpen(false)
-      clearSelection()
-      onUpdate()
-    } finally {
-      setBulkLoading(false)
-    }
+        }
+        if (category) updated.category = category as ServiceCategory
+        if (weekendRule) {
+          // Só guardamos a data efetiva: reaplica a nova regra a partir dela
+          // (em 99% dos casos a data já é dia útil e não muda).
+          updated.weekendRule = weekendRule as WeekendRule
+          updated.dueDate = applyWeekendRuleToYmd(x.dueDate, weekendRule as WeekendRule)
+        }
+        updated.history = [
+          ...(x.history || []),
+          {
+            id: crypto.randomUUID(),
+            action: "updated",
+            description,
+            timestamp: now,
+          },
+        ]
+        return saveService(updated)
+      },
+      { one: "serviço atualizado", many: "serviços atualizados" },
+    )
+    setBulkEditOpen(false)
   }
 
   const handleComplete = async (service: Service) => {
@@ -504,6 +518,14 @@ export const ServiceList = forwardRef<ServiceListHandle, ServiceListProps>(funct
 
   const QuickActionButtons = ({ service }: { service: Service }) => {
     if (service.status === "completed") return null
+    if (isLocked(service)) {
+      return (
+        <span title={LOCKED_HINT} className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+          <Lock className="size-3" />
+          Fechada
+        </span>
+      )
+    }
     return (
       <div className="flex gap-1">
         {service.status === "pending" && (
@@ -525,12 +547,23 @@ export const ServiceList = forwardRef<ServiceListHandle, ServiceListProps>(funct
     )
   }
 
-  // Paginação: renderiza 50 linhas por vez (listas com centenas de itens travavam)
-  const pagination = usePagination(sortedServices)
 
   return (
     <div className="space-y-4">
       <ConfirmDialog state={confirmState} onClose={() => setConfirmState(null)} />
+      {onTabChange && (
+        <StatFilterBar
+          value={activeTab || "all"}
+          onChange={onTabChange}
+          items={[
+            { value: "all", label: "Todos", count: statusCounts.all, icon: Briefcase, tone: "neutral" },
+            { value: "pending", label: "Pendentes", count: statusCounts.pending, icon: Clock, tone: "warning" },
+            { value: "in_progress", label: "Em Andamento", count: statusCounts.in_progress, icon: PlayCircle, tone: "info" },
+            { value: "completed", label: "Concluídos", count: statusCounts.completed, icon: CheckCircle2, tone: "success" },
+            { value: "overdue", label: "Atrasados", count: statusCounts.overdue, icon: AlertTriangle, tone: "danger" },
+          ]}
+        />
+      )}
 
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div className="relative flex-1 min-w-[280px]">
@@ -603,7 +636,7 @@ export const ServiceList = forwardRef<ServiceListHandle, ServiceListProps>(funct
 
       {/* Mobile: cards (até md) */}
       <div className="md:hidden space-y-2">
-        {sortedServices.length === 0 ? (
+        {tabServices.length === 0 ? (
           <div className="border rounded-lg py-12 text-center">
             <div className="size-12 rounded-full bg-muted flex items-center justify-center mx-auto mb-2">
               <Briefcase className="size-6 text-muted-foreground" />
@@ -637,6 +670,11 @@ export const ServiceList = forwardRef<ServiceListHandle, ServiceListProps>(funct
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-medium text-sm">{service.name}</span>
+                      {isLocked(service) && (
+                        <span title={LOCKED_HINT} aria-label={LOCKED_HINT} className="inline-flex text-muted-foreground">
+                          <Lock className="size-3" />
+                        </span>
+                      )}
                       {service.priority && service.priority !== "medium" && (
                         <Badge variant="outline" className={
                           service.priority === "urgent" ? "border-red-500 text-red-700 text-[10px]"
@@ -659,13 +697,13 @@ export const ServiceList = forwardRef<ServiceListHandle, ServiceListProps>(funct
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
-                      <DropdownMenuItem onClick={() => handleEdit(service)}>
+                      <DropdownMenuItem onClick={() => handleEdit(service)} disabled={isLocked(service)} title={isLocked(service) ? LOCKED_HINT : undefined}>
                         <Pencil className="size-4 mr-2" /> Editar
                       </DropdownMenuItem>
                       <DropdownMenuItem onClick={() => handleDuplicate(service)}>
                         <Copy className="size-4 mr-2" /> Duplicar
                       </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => handleDelete(service.id)} className="text-destructive">
+                      <DropdownMenuItem onClick={() => handleDelete(service.id)} className="text-destructive" disabled={isLocked(service)} title={isLocked(service) ? LOCKED_HINT : undefined}>
                         <Trash2 className="size-4 mr-2" /> Excluir
                       </DropdownMenuItem>
                     </DropdownMenuContent>
@@ -698,18 +736,10 @@ export const ServiceList = forwardRef<ServiceListHandle, ServiceListProps>(funct
             <TableRow>
               <TableHead className="w-10">
                 <Checkbox
-                  checked={
-                    sortedServices.length > 0 &&
-                    sortedServices.every((s) => selectedIds.has(s.id))
-                  }
-                  onCheckedChange={(checked) => {
-                    if (checked) {
-                      setSelectedIds(new Set(sortedServices.map((s) => s.id)))
-                    } else {
-                      clearSelection()
-                    }
-                  }}
-                  aria-label="Selecionar todos"
+                  checked={selection.isAllVisibleSelected(visibleIds)}
+                  onCheckedChange={(checked) => selection.setAllVisible(visibleIds, !!checked)}
+                  aria-label={`Selecionar os ${visibleIds.length} serviços desta página`}
+                  title={`Selecionar os ${visibleIds.length} serviços desta página`}
                 />
               </TableHead>
               <ResizableTableHead defaultWidth={240} storageKey="servicos-name">
@@ -742,7 +772,7 @@ export const ServiceList = forwardRef<ServiceListHandle, ServiceListProps>(funct
             </TableRow>
           </TableHeader>
           <TableBody>
-            {sortedServices.length === 0 ? (
+            {tabServices.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={8} className="py-12">
                   <div className="flex flex-col items-center justify-center text-center gap-2">
@@ -756,7 +786,7 @@ export const ServiceList = forwardRef<ServiceListHandle, ServiceListProps>(funct
                         : "Cadastre o primeiro serviço clicando no botão abaixo."}
                     </p>
                     {!search && clientFilter === "all" && categoryFilter === "all" && priorityFilter === "all" && (
-                      <Button onClick={handleNew} className="mt-2 gap-2">
+                      <Button onClick={handleNew} disabled={!canCreate} className="mt-2 gap-2">
                         Novo Serviço
                       </Button>
                     )}
@@ -790,6 +820,11 @@ export const ServiceList = forwardRef<ServiceListHandle, ServiceListProps>(funct
                       <div className="space-y-1">
                         <div className="flex items-center gap-2 flex-wrap">
                           <div className="font-medium truncate max-w-full">{service.name}</div>
+                          {isLocked(service) && (
+                            <span title={LOCKED_HINT} aria-label={LOCKED_HINT} className="inline-flex text-muted-foreground">
+                              <Lock className="size-3.5" />
+                            </span>
+                          )}
                           {service.priority && service.priority !== "medium" && (
                             <Badge
                               variant="outline"
@@ -842,7 +877,7 @@ export const ServiceList = forwardRef<ServiceListHandle, ServiceListProps>(funct
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
-                          {service.status !== "completed" && (
+                          {service.status !== "completed" && !isLocked(service) && (
                             <>
                               {service.status === "pending" && (
                                 <DropdownMenuItem onClick={() => handleInProgress(service)}>
@@ -856,7 +891,7 @@ export const ServiceList = forwardRef<ServiceListHandle, ServiceListProps>(funct
                               </DropdownMenuItem>
                             </>
                           )}
-                          <DropdownMenuItem onClick={() => handleEdit(service)}>
+                          <DropdownMenuItem onClick={() => handleEdit(service)} disabled={isLocked(service)} title={isLocked(service) ? LOCKED_HINT : undefined}>
                             <Pencil className="size-4 mr-2" />
                             Editar
                           </DropdownMenuItem>
@@ -864,7 +899,7 @@ export const ServiceList = forwardRef<ServiceListHandle, ServiceListProps>(funct
                             <Copy className="size-4 mr-2" />
                             Duplicar
                           </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => handleDelete(service.id)} className="text-destructive">
+                          <DropdownMenuItem onClick={() => handleDelete(service.id)} className="text-destructive" disabled={isLocked(service)} title={isLocked(service) ? LOCKED_HINT : undefined}>
                             <Trash2 className="size-4 mr-2" />
                             Excluir
                           </DropdownMenuItem>

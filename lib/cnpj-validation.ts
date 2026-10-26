@@ -62,3 +62,25 @@ export function formatDocument(input: string | null | undefined): string {
   if (v.length === 11 && /^\d+$/.test(v)) return `${v.slice(0, 3)}.${v.slice(3, 6)}.${v.slice(6, 9)}-${v.slice(9)}`
   return input ?? ""
 }
+
+/**
+ * Máscara de digitação do campo CNPJ/CPF: até 11 dígitos numéricos usa a
+ * máscara de CPF (000.000.000-00); com 12+ caracteres (ou letras) vira CNPJ
+ * (00.000.000/0000-00, aceitando letras nas 12 primeiras posições).
+ */
+export function formatDocumentInput(value: string): string {
+  const v = normalizeCnpj(value).slice(0, 14)
+  if (v.length <= 11 && /^\d*$/.test(v)) {
+    let out = v.slice(0, 3)
+    if (v.length > 3) out += "." + v.slice(3, 6)
+    if (v.length > 6) out += "." + v.slice(6, 9)
+    if (v.length > 9) out += "-" + v.slice(9)
+    return out
+  }
+  let out = v.slice(0, 2)
+  if (v.length > 2) out += "." + v.slice(2, 5)
+  if (v.length > 5) out += "." + v.slice(5, 8)
+  if (v.length > 8) out += "/" + v.slice(8, 12)
+  if (v.length > 12) out += "-" + v.slice(12)
+  return out
+}

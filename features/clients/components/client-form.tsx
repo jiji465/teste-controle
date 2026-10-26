@@ -1,6 +1,6 @@
 "use client"
 
-import { normalizeCnpj } from "@/lib/cnpj-validation"
+import { formatDocumentInput, normalizeCnpj } from "@/lib/cnpj-validation"
 import type React from "react"
 import { useEffect, useState } from "react"
 import { useForm } from "react-hook-form"
@@ -36,18 +36,6 @@ import { lookupCNPJ, CNPJLookupError } from "@/lib/cnpj-service"
 import { inferBusinessActivityFromCNAE } from "@/lib/cnae-mapping"
 import { Search, Loader2 } from "lucide-react"
 import { toast } from "sonner"
-
-/** Máscara 00.000.000/0000-00 aceitando letras nas 12 primeiras posições
- *  (CNPJ alfanumérico, em vigor desde jul/2026). */
-const formatCNPJ = (value: string) => {
-  const v = normalizeCnpj(value).slice(0, 14)
-  let out = v.slice(0, 2)
-  if (v.length > 2) out += "." + v.slice(2, 5)
-  if (v.length > 5) out += "." + v.slice(5, 8)
-  if (v.length > 8) out += "/" + v.slice(8, 12)
-  if (v.length > 12) out += "-" + v.slice(12)
-  return out
-}
 
 type ClientFormProps = {
   client?: Client
@@ -167,13 +155,14 @@ export function ClientForm({ client, open, onOpenChange, onSave, onObligationsCr
 
   const handleTemplateConfirm = async (templates: TemplateItem[], range: CompetencyRange) => {
     if (!pendingClient) return
-    const result = await applyTemplateToClient(pendingClient, templates, range)
-    const summary = summarizeApplyResult(result)
-    if (summary) toast.success(summary)
-    if (result.totalSkipped > 0) {
-      toast.info(`${result.totalSkipped} já existia${result.totalSkipped > 1 ? "m" : ""} e foi ignorad${result.totalSkipped > 1 ? "as" : "a"}`)
+    try {
+      const result = await applyTemplateToClient(pendingClient, templates, range)
+      const summary = summarizeApplyResult(result)
+      if (result.failed > 0) toast.warning(summary)
+      else toast.success(summary)
+    } finally {
+      onObligationsCreated?.()
     }
-    onObligationsCreated?.()
     setPendingClient(null)
     setPendingActivity(null)
     onOpenChange(false)
@@ -227,14 +216,14 @@ export function ClientForm({ client, open, onOpenChange, onSave, onObligationsCr
                 name="cnpj"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>CNPJ <span className="text-muted-foreground font-normal">(opcional)</span></FormLabel>
+                    <FormLabel>CNPJ / CPF <span className="text-muted-foreground font-normal">(opcional)</span></FormLabel>
                     <div className="flex gap-2">
                       <FormControl>
                         <Input
-                          placeholder="00.000.000/0000-00 — deixe vazio p/ pessoa física"
+                          placeholder="CNPJ ou CPF (pessoa física) — pode deixar vazio"
                           {...field}
                           value={field.value ?? ""}
-                          onChange={(e) => field.onChange(formatCNPJ(e.target.value))}
+                          onChange={(e) => field.onChange(formatDocumentInput(e.target.value))}
                         />
                       </FormControl>
                       <Button
@@ -439,7 +428,14 @@ export function ClientForm({ client, open, onOpenChange, onSave, onObligationsCr
                     <FormItem>
                       <FormLabel>UF</FormLabel>
                       <FormControl>
-                        <Input maxLength={2} placeholder="SP" className="uppercase" {...field} />
+                        <Input
+                          maxLength={2}
+                          placeholder="SP"
+                          className="uppercase"
+                          {...field}
+                          value={field.value ?? ""}
+                          onChange={(e) => field.onChange(e.target.value.toUpperCase())}
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>

@@ -101,6 +101,10 @@ export function generateObligationForPeriod(
     completedAt: undefined,
     completedBy: undefined,
     realizationDate: undefined,
+    // Dados da ENTREGA anterior não valem para a nova competência.
+    protocol: undefined,
+    attachments: [],
+    notes: undefined,
     parentObligationId: obligation.id,
     generatedFor: period,
     competencyMonth: period,
@@ -131,6 +135,9 @@ export function generateTaxForPeriod(
     completedAt: undefined,
     completedBy: undefined,
     realizationDate: undefined,
+    // Dados do PAGAMENTO anterior não valem para a nova competência.
+    protocol: undefined,
+    notes: undefined,
     competencyMonth: period,
     // Clone NÃO é candidato a gerar outros clones (evita cascata). O motor
     // só clona originais com autoGenerate=true.

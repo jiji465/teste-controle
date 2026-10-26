@@ -1,5 +1,6 @@
 import type { Tax } from "@/lib/types"
 import { hasSupabaseConfig, getSupabaseClient, fetchAll, local, toDbError, assertAffected } from "@/lib/supabase/core"
+import { assertLocalWriteAllowed } from "@/lib/period-lock"
 
 function mapTaxToDb(tax: Tax) {
   return {
@@ -65,14 +66,23 @@ export async function getTaxes(): Promise<Tax[]> {
 }
 
 export async function saveTax(tax: Tax): Promise<void> {
-  if (!hasSupabaseConfig()) { local.saveTax(tax); return }
+  if (!hasSupabaseConfig()) {
+    // Sem banco não há trigger de fechamento: aplica a mesma regra aqui.
+    assertLocalWriteAllowed(local.getTaxes().find((x) => x.id === tax.id), tax, local.getLockedPeriods())
+    local.saveTax(tax)
+    return
+  }
   const supabase = getSupabaseClient()
   const { error } = await supabase.from("taxes").upsert(mapTaxToDb(tax))
   if (error) { console.error("[db] Error saving tax:", error); throw toDbError(error) }
 }
 
 export async function deleteTax(id: string): Promise<void> {
-  if (!hasSupabaseConfig()) { local.deleteTax(id); return }
+  if (!hasSupabaseConfig()) {
+    assertLocalWriteAllowed(local.getTaxes().find((x) => x.id === id), undefined, local.getLockedPeriods())
+    local.deleteTax(id)
+    return
+  }
   const supabase = getSupabaseClient()
   const { data, error } = await supabase.from("taxes").delete().eq("id", id).select("id")
   if (error) { console.error("[db] Error deleting tax:", error); throw toDbError(error) }

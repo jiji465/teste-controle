@@ -15,6 +15,10 @@
  */
 
 import { usePagination } from "@/hooks/use-pagination"
+import { useListSelection } from "@/hooks/use-list-selection"
+import { runBulk } from "@/lib/bulk-actions"
+import { notifyBulk } from "@/lib/notify-bulk"
+import { installmentParcelaForPeriod } from "@/lib/period-filter"
 import { ListPagination } from "@/components/list-pagination"
 import { getCurrentParcelaDueDate, getParcelaDueDate } from "@/lib/installment-dates"
 import { useState, useEffect, useMemo } from "react"
@@ -92,7 +96,7 @@ export default function ParcelamentosPage() {
     obligationsWithDetails,
     refreshData,
   } = useData()
-  const { isInPeriod, periodLabel, isFiltering, showAll } = useSelectedPeriod()
+  const { period, periodLabel, isFiltering, showAll } = useSelectedPeriod()
 
   // ─── Estado de filtro / ordenação / UI ───────────────────────────────────
   // Filtros persistidos no URL pra permitir compartilhar links com filtros
@@ -110,7 +114,6 @@ export default function ParcelamentosPage() {
   const [viewing, setViewing] = useState<Installment | undefined>()
   const [isDetailsOpen, setIsDetailsOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [bulkLoading, setBulkLoading] = useState(false)
   const [confirmState, setConfirmState] = useState<ConfirmState>(null)
 
@@ -134,37 +137,17 @@ export default function ParcelamentosPage() {
   const calculateParcelaDueDate = (i: Installment, parcelNumber: number): Date =>
     getParcelaDueDate(i, parcelNumber)
 
-  /** O parcelamento "encosta" no período se QUALQUER parcela dele cair nele.
-   *  Antes o filtro usava só a parcela atual — pagar a parcela 5 em Março
-   *  fazia o parcelamento sumir do filtro de Março (currentInstallment já
-   *  era 6/Abril). Agora ele continua aparecendo enquanto qualquer parcela
-   *  do período estiver registrada (paga ou não). */
-  const installmentTouchesPeriod = (i: Installment): boolean => {
-    for (let n = 1; n <= i.installmentCount; n++) {
-      if (isInPeriod(calculateParcelaDueDate(i, n))) return true
-    }
-    return false
-  }
+  /** Parcela que representa o parcelamento no período selecionado (null =
+   *  não aparece). Qualquer parcela do mês faz o registro aparecer (pagar a
+   *  parcela 5 em Março não o esconde de Março); no mês ATUAL, uma parcela não
+   *  paga vencida em mês anterior também (o atraso não some na virada). */
+  const periodParcela = (i: Installment) => installmentParcelaForPeriod(i, period)
+  const installmentTouchesPeriod = (i: Installment): boolean => periodParcela(i) !== null
 
-  /** Qual parcela MOSTRAR na linha? Quando filtra um mês específico,
-   *  mostra a parcela DAQUELE mês (não a current). Quando filtro é "all",
-   *  usa a current (próxima a concluir).
-   *
-   *  Bug reportado: filtro Maio mostrava vencimento de Junho (current) com
-   *  status "Em Andamento", quando o usuário esperava ver a parcela de Maio
-   *  (já concluída) marcada como concluída. */
-  const getDisplayParcela = (i: Installment): { number: number; dueDate: Date } => {
-    if (showAll) {
-      return { number: i.currentInstallment, dueDate: calculateDueDate(i) }
-    }
-    for (let n = 1; n <= i.installmentCount; n++) {
-      const date = calculateParcelaDueDate(i, n)
-      if (isInPeriod(date)) return { number: n, dueDate: date }
-    }
-    // Fallback: nenhuma parcela cai no período (não deveria acontecer
-    // porque já filtramos por installmentTouchesPeriod). Usa a atual.
-    return { number: i.currentInstallment, dueDate: calculateDueDate(i) }
-  }
+  /** Qual parcela MOSTRAR na linha? Em "all", a atual (próxima a concluir);
+   *  com um mês filtrado, a parcela daquele mês (ou a atrasada arrastada). */
+  const getDisplayParcela = (i: Installment): { number: number; dueDate: Date } =>
+    periodParcela(i) ?? { number: i.currentInstallment, dueDate: calculateDueDate(i) }
 
   /** Status visual da parcela DA LINHA (não do parcelamento todo).
    *  - completed: parcela X tem sentAt OU paidAt
@@ -233,7 +216,7 @@ export default function ParcelamentosPage() {
       return true
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [installments, searchTerm, clientFilter, priorityFilter, clients, taxes, isInPeriod])
+  }, [installments, searchTerm, clientFilter, priorityFilter, clients, taxes, period])
 
   const sortedInstallments = useMemo(() => {
     const arr = [...filteredInstallments]
@@ -254,16 +237,15 @@ export default function ParcelamentosPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filteredInstallments, sortBy, sortOrder, clients, taxes])
 
-  // Stats por status — respeita PeriodSwitcher (qualquer parcela no período)
+  // Cartões contam a MESMA lista exibida (período + busca + cliente + prioridade)
   const statusCounts = useMemo(() => {
-    const inPeriod = installments.filter((i) => installmentTouchesPeriod(i))
-    const counts = { all: inPeriod.length, pending: 0, in_progress: 0, completed: 0, overdue: 0 }
-    inPeriod.forEach((i) => {
+    const counts = { all: filteredInstallments.length, pending: 0, in_progress: 0, completed: 0, overdue: 0 }
+    filteredInstallments.forEach((i) => {
       counts[getStatus(i)]++
     })
     return counts
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [installments, isInPeriod])
+  }, [filteredInstallments, period])
 
   // Lista exibida varia por aba ativa
   const getFilteredByTab = () => {
@@ -361,130 +343,95 @@ export default function ParcelamentosPage() {
 
   // ─── Bulk actions ───────────────────────────────────────────────────────
 
-  const toggleSelect = (id: string) => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
+  /** Ação em lote: allSettled, toast "X ok, Y falharam (motivo)", refresh sempre. */
+  const runInstallmentBulk = async (
+    targets: Installment[],
+    action: (i: Installment) => Promise<unknown>,
+    done: { one: string; many: string },
+    extraNote?: string,
+  ) => {
+    setBulkLoading(true)
+    try {
+      const { toast: t } = await runBulk(targets, action, { done })
+      notifyBulk(extraNote ? { ...t, kind: t.kind === "success" ? "warning" : t.kind, message: `${t.message} · ${extraNote}` } : t)
+    } finally {
+      clearSelection()
+      await refreshData()
+      setBulkLoading(false)
+    }
   }
-  const clearSelection = () => setSelectedIds(new Set())
+
 
   const handleBulkComplete = () => {
-    if (selectedIds.size === 0) return
+    if (selectedList.length === 0) return
     setConfirmState({
-      title: `Concluir parcela atual de ${selectedIds.size} parcelamentos`,
+      title: `Concluir parcela atual de ${selectedList.length} parcelamentos`,
       description:
         "Marca a parcela atual de cada parcelamento selecionado como paga. Se for a última, finaliza o parcelamento.",
       confirmLabel: "Concluir",
       onConfirm: async () => {
-        setBulkLoading(true)
-        try {
-          // Filtra também por currentInstallment válido pra evitar erro
-          // do guard em registros inconsistentes (silencia em vez de
-          // explodir o lote inteiro). Reportamos quantos foram pulados.
-          const all = installments.filter((i) => selectedIds.has(i.id) && i.status !== "completed")
-          const targets = all.filter(
-            (i) => i.currentInstallment >= 1 && i.currentInstallment <= i.installmentCount,
-          )
-          const skipped = all.length - targets.length
-          await Promise.all(
-            targets.map((i) => {
-              const result = payCurrentInstallment(i, userName)
-              return saveInstallment(result.updated)
-            }),
-          )
-          toast.success(
-            skipped > 0
-              ? `${targets.length} parcelas pagas · ${skipped} ignorada${skipped > 1 ? "s" : ""} (registro inconsistente)`
-              : `${targets.length} parcelas pagas`,
-          )
-          clearSelection()
-          await refreshData()
-        } finally {
-          setBulkLoading(false)
-        }
+        // Registros inconsistentes (parcela atual fora do intervalo) são
+        // ignorados e reportados, em vez de explodir o lote inteiro.
+        const all = selectedList.filter((i) => i.status !== "completed")
+        const targets = all.filter((i) => i.currentInstallment >= 1 && i.currentInstallment <= i.installmentCount)
+        const skipped = all.length - targets.length
+        await runInstallmentBulk(
+          targets,
+          (i) => saveInstallment(payCurrentInstallment(i, userName).updated),
+          { one: "parcela paga", many: "parcelas pagas" },
+          skipped > 0 ? `${skipped} ignorado${skipped > 1 ? "s" : ""} (registro inconsistente)` : undefined,
+        )
       },
     })
   }
 
   const handleBulkInProgress = () => {
-    if (selectedIds.size === 0) return
+    if (selectedList.length === 0) return
     setConfirmState({
-      title: `Iniciar ${selectedIds.size} parcelamentos`,
+      title: `Iniciar ${selectedList.length} parcelamentos`,
       description: `Marcar como "Em Andamento"?`,
       confirmLabel: "Iniciar",
       onConfirm: async () => {
-        setBulkLoading(true)
-        try {
-          const targets = installments.filter(
-            (i) => selectedIds.has(i.id) && i.status !== "in_progress",
-          )
-          await Promise.all(
-            targets.map((i) => saveInstallment({ ...i, status: "in_progress" })),
-          )
-          toast.success(`${targets.length} parcelamentos em andamento`)
-          clearSelection()
-          await refreshData()
-        } finally {
-          setBulkLoading(false)
-        }
+        await runInstallmentBulk(
+          selectedList.filter((i) => i.status !== "in_progress"),
+          (i) => saveInstallment({ ...i, status: "in_progress" }),
+          { one: "parcelamento em andamento", many: "parcelamentos em andamento" },
+        )
       },
     })
   }
 
   const handleBulkReopen = () => {
-    if (selectedIds.size === 0) return
+    if (selectedList.length === 0) return
     setConfirmState({
-      title: `Reabrir ${selectedIds.size} parcelamentos`,
+      title: `Reabrir ${selectedList.length} parcelamentos`,
       description: `Volta para "Pendente" e desfaz o último pagamento, se houver.`,
       confirmLabel: "Reabrir",
       onConfirm: async () => {
-        setBulkLoading(true)
-        try {
-          const targets = installments.filter((i) => selectedIds.has(i.id))
-          await Promise.all(
-            targets.map((i) => {
-              const records = i.paidInstallments ?? []
-              if (records.length > 0) {
-                return saveInstallment(undoLastSent(i))
-              }
-              return saveInstallment({
-                ...i,
-                status: "pending",
-                completedAt: undefined,
-                completedBy: undefined,
-              })
-            }),
-          )
-          toast.success(`${targets.length} parcelamentos reabertos`)
-          clearSelection()
-          await refreshData()
-        } finally {
-          setBulkLoading(false)
-        }
+        await runInstallmentBulk(
+          selectedList,
+          (i) =>
+            (i.paidInstallments ?? []).length > 0
+              ? saveInstallment(undoLastSent(i))
+              : saveInstallment({ ...i, status: "pending", completedAt: undefined, completedBy: undefined }),
+          { one: "parcelamento reaberto", many: "parcelamentos reabertos" },
+        )
       },
     })
   }
 
   const handleBulkDelete = () => {
-    if (selectedIds.size === 0) return
+    if (selectedList.length === 0) return
     setConfirmState({
-      title: `Excluir ${selectedIds.size} parcelamentos`,
+      title: `Excluir ${selectedList.length} parcelamentos`,
       description: "Esta ação não pode ser desfeita.",
       confirmLabel: "Excluir",
       destructive: true,
       onConfirm: async () => {
-        setBulkLoading(true)
-        try {
-          await Promise.all(Array.from(selectedIds).map((id) => deleteInstallment(id)))
-          toast.success(`${selectedIds.size} parcelamentos excluídos`)
-          clearSelection()
-          await refreshData()
-        } finally {
-          setBulkLoading(false)
-        }
+        await runInstallmentBulk(selectedList, (i) => deleteInstallment(i.id), {
+          one: "parcelamento excluído",
+          many: "parcelamentos excluídos",
+        })
       },
     })
   }
@@ -573,6 +520,13 @@ export default function ParcelamentosPage() {
 
   // Paginação: renderiza 50 linhas por vez (listas com centenas de itens travavam)
   const pagination = usePagination(visibleInstallments)
+  const visibleIds = pagination.items.map((i) => i.id)
+  // Seleção some ao trocar aba/filtro/busca/período/página
+  const selection = useListSelection(
+    [statusFilter, clientFilter, priorityFilter, searchTerm, period, pagination.page].join("|"),
+  )
+  const { selectedIds, toggle: toggleSelect, clear: clearSelection } = selection
+  const selectedList = pagination.items.filter((i) => selectedIds.has(i.id))
 
   return (
     <div className="px-4 lg:px-6 xl:px-8 py-5">
@@ -859,16 +813,10 @@ export default function ParcelamentosPage() {
                   <TableRow>
                     <TableHead className="w-10">
                       <Checkbox
-                        checked={
-                          visibleInstallments.length > 0 &&
-                          visibleInstallments.every((i) => selectedIds.has(i.id))
-                        }
-                        onCheckedChange={(checked) => {
-                          if (checked)
-                            setSelectedIds(new Set(visibleInstallments.map((i) => i.id)))
-                          else clearSelection()
-                        }}
-                        aria-label="Selecionar todos"
+                        checked={selection.isAllVisibleSelected(visibleIds)}
+                        onCheckedChange={(checked) => selection.setAllVisible(visibleIds, !!checked)}
+                        aria-label={`Selecionar os ${visibleIds.length} parcelamentos desta página`}
+                        title={`Selecionar os ${visibleIds.length} parcelamentos desta página`}
                       />
                     </TableHead>
                     <ResizableTableHead defaultWidth={240} storageKey="parc-name">

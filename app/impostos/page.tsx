@@ -1,6 +1,10 @@
 "use client"
 
 import { usePagination } from "@/hooks/use-pagination"
+import { useListSelection } from "@/hooks/use-list-selection"
+import { runBulk } from "@/lib/bulk-actions"
+import { notifyBulk } from "@/lib/notify-bulk"
+import { countByStatus, filterByStatusTab } from "@/lib/obligation-status"
 import { ListPagination } from "@/components/list-pagination"
 import { useEffect, useMemo, useState } from "react"
 import { ConfirmDialog, type ConfirmState } from "@/components/ui/confirm-dialog"
@@ -26,6 +30,7 @@ import { ExportButton } from "@/components/export-button"
 import type { ExportColumn } from "@/lib/export-utils"
 import { saveTax, deleteTax } from "@/lib/supabase/database"
 import { buildRecurringTaxes } from "@/lib/recurrence-generate"
+import { saveNewOccurrences, describeOccurrencePlan } from "@/lib/recurrence-sync"
 import { calculateDueDateFromCompetency, formatDate, isOverdue } from "@/lib/date-utils"
 import { checkAndGenerateRecurrences } from "@/lib/auto-recurrence"
 import { matchesText , errorMessage} from "@/lib/utils"
@@ -53,6 +58,7 @@ import {
   AlertCircle as PriorityIcon,
   Eye,
   Receipt,
+  Lock,
 } from "lucide-react"
 import { FilterBar, FilterPill, FilterPillMonth } from "@/components/filter-panel"
 import type { Tax, TaxRegime } from "@/lib/types"
@@ -85,8 +91,10 @@ function getRelativeDate(date: Date): string {
 
 export default function ImpostosPage() {
   const { userName } = useAuth()
-  const { taxes, clients, obligations: rawObligations, obligationsWithDetails, refreshData } = useData()
-  const { isInPeriod, periodLabel, isFiltering } = useSelectedPeriod()
+  const { taxes, clients, obligationsWithDetails, refreshData, isPeriodLocked } = useData()
+  const { isInPeriodOrOverdue, period, periodLabel, isFiltering } = useSelectedPeriod()
+  const isLocked = (t: Tax) => isPeriodLocked(t.competencyMonth)
+  const LOCKED_HINT = "Competência fechada — reabra a competência para alterar"
   const [editingTax, setEditingTax] = useState<Tax | undefined>()
   const [isFormOpen, setIsFormOpen] = useState(false)
   const [viewingTax, setViewingTax] = useState<Tax | undefined>()
@@ -98,7 +106,6 @@ export default function ImpostosPage() {
   const [clientFilter, setClientFilter] = useUrlState("clientId")
   const [competencyFilter, setCompetencyFilter] = useUrlState("competency", "")
   const [searchOpen, setSearchOpen] = useState(false)
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [bulkLoading, setBulkLoading] = useState(false)
   const [bulkEditOpen, setBulkEditOpen] = useState(false)
   const [bulkDueDay, setBulkDueDay] = useState("")
@@ -140,41 +147,52 @@ export default function ImpostosPage() {
 
   const handleSave = async (tax: Tax) => {
     try {
+      // Ids que já existiam ANTES de salvar: competências da série que já
+      // existem (pagas, com protocolo…) nunca são sobrescritas.
+      const existingIds = new Set(taxes.map((t) => t.id))
       await saveTax(tax)
 
       // Geração antecipada: com "Gerar Automaticamente" ligado + "Gerar até",
-      // cria TODAS as competências até a data final de uma vez (ids
-      // determinísticos → o motor diário não duplica).
-      const occurrences = tax.autoGenerate ? buildRecurringTaxes(tax) : []
-      if (occurrences.length > 0) {
-        await Promise.all(occurrences.map((t) => saveTax(t)))
-      }
+      // cria as competências que ainda faltam até a data final (ids
+      // determinísticos → o motor diário não duplica). Competência fechada é
+      // pulada em vez de interromper a série no meio.
+      const series = tax.autoGenerate
+        ? await saveNewOccurrences(
+            buildRecurringTaxes(tax),
+            { existingIds, periodOf: (t) => t.competencyMonth, isPeriodLocked },
+            saveTax,
+          )
+        : null
 
-      const extra = occurrences.length
-      toast.success(
-        extra > 0
-          ? `Imposto salvo + ${extra} competência${extra > 1 ? "s" : ""} gerada${extra > 1 ? "s" : ""}`
-          : "Imposto salvo com sucesso",
-      )
+      const extra = series ? describeOccurrencePlan(series, { one: "competência", many: "competências" }) : ""
+      if (series && series.failed.length > 0) {
+        toast.warning(
+          `Guia salva, mas ${series.failed.length} competência(s) falharam: ${errorMessage(series.failed[0].error, "erro")}`,
+        )
+      } else {
+        toast.success(extra ? `Guia salva · ${extra}` : "Guia salva com sucesso")
+      }
       await updateData()
       setEditingTax(undefined)
       setIsFormOpen(false)
     } catch (error) {
-      console.error("[impostos] Erro ao salvar imposto:", error)
-      toast.error(errorMessage(error, "Erro ao salvar imposto. Tente novamente."))
+      console.error("[impostos] Erro ao salvar guia:", error)
+      toast.error(errorMessage(error, "Erro ao salvar a guia. Tente novamente."))
+      // Mantém o formulário aberto (o form só fecha se onSave resolver)
+      throw error
     }
   }
 
   const handleDelete = (id: string) => {
     setConfirmState({
-      title: "Excluir imposto",
-      description: "Tem certeza que deseja excluir este imposto? Esta ação não pode ser desfeita.",
+      title: "Excluir guia",
+      description: "Tem certeza que deseja excluir esta guia? Esta ação não pode ser desfeita.",
       confirmLabel: "Excluir",
       destructive: true,
       onConfirm: async () => {
         try {
           await deleteTax(id)
-          toast.success("Imposto excluído")
+          toast.success("Guia excluída")
           await updateData()
         } catch (error) {
           console.error("[impostos] Erro ao excluir imposto:", error)
@@ -231,111 +249,89 @@ export default function ImpostosPage() {
     }
   }
 
-  const toggleSelect = (id: string) => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
+
+  /** Ação em lote: ignora competência fechada (com aviso), relata falhas e
+   *  SEMPRE recarrega a lista. */
+  const runTaxBulk = async (
+    targets: Tax[],
+    action: (t: Tax) => Promise<unknown>,
+    done: { one: string; many: string },
+  ) => {
+    setBulkLoading(true)
+    try {
+      const { toast: t, result } = await runBulk(targets, action, { done, isLocked })
+      notifyBulk(t)
+      return result
+    } finally {
+      clearSelection()
+      await updateData()
+      setBulkLoading(false)
+    }
   }
-  const clearSelection = () => setSelectedIds(new Set())
 
   const handleBulkComplete = () => {
-    if (selectedIds.size === 0) return
+    if (selectedTaxes.length === 0) return
     setConfirmState({
-      title: `Concluir ${selectedIds.size} impostos`,
-      description: `Marcar ${selectedIds.size} impostos como concluídos?`,
+      title: `Concluir ${selectedTaxes.length} guias`,
+      description: `Marcar ${selectedTaxes.length} guias como concluídas? Itens de competência fechada são ignorados.`,
       confirmLabel: "Concluir",
       onConfirm: async () => {
-        setBulkLoading(true)
-        try {
-          const now = new Date().toISOString()
-          await Promise.all(
-            taxes
-              .filter((t) => selectedIds.has(t.id) && t.status !== "completed")
-              .map((t) => saveTax({ ...t, status: "completed", completedAt: now })),
-          )
-          toast.success(`${selectedIds.size} impostos concluídos`)
+        const now = new Date().toISOString()
+        const result = await runTaxBulk(
+          selectedTaxes.filter((t) => t.status !== "completed"),
+          (t) => saveTax({ ...t, status: "completed", completedAt: now, completedBy: userName }),
+          { one: "guia concluída", many: "guias concluídas" },
+        )
+        if (result.succeeded.length > 0) {
           checkAndGenerateRecurrences(true).catch((e) =>
             console.warn("[impostos] auto-regen pós-bulk falhou:", e),
           )
-          clearSelection()
-          await updateData()
-        } finally {
-          setBulkLoading(false)
         }
       },
     })
   }
 
   const handleBulkInProgress = () => {
-    if (selectedIds.size === 0) return
+    if (selectedTaxes.length === 0) return
     setConfirmState({
-      title: `Iniciar ${selectedIds.size} guias`,
-      description: `Marcar ${selectedIds.size} guias como "Em andamento"?`,
+      title: `Iniciar ${selectedTaxes.length} guias`,
+      description: `Marcar ${selectedTaxes.length} guias como "Em andamento"?`,
       confirmLabel: "Iniciar",
       onConfirm: async () => {
-        setBulkLoading(true)
-        try {
-          const targets = taxes.filter((t) => selectedIds.has(t.id) && t.status !== "in_progress")
-          await Promise.all(
-            targets.map((t) =>
-              saveTax({ ...t, status: "in_progress", completedAt: undefined, completedBy: undefined }),
-            ),
-          )
-          toast.success(`${targets.length} guias em andamento`)
-          clearSelection()
-          await updateData()
-        } finally {
-          setBulkLoading(false)
-        }
+        await runTaxBulk(
+          selectedTaxes.filter((t) => t.status !== "in_progress"),
+          (t) => saveTax({ ...t, status: "in_progress", completedAt: undefined, completedBy: undefined }),
+          { one: "guia em andamento", many: "guias em andamento" },
+        )
       },
     })
   }
 
   const handleBulkReopen = () => {
-    if (selectedIds.size === 0) return
+    if (selectedTaxes.length === 0) return
     setConfirmState({
-      title: `Reabrir ${selectedIds.size} guias`,
+      title: `Reabrir ${selectedTaxes.length} guias`,
       description: `Volta para "Pendente" e limpa a data de entrega.`,
       confirmLabel: "Reabrir",
       onConfirm: async () => {
-        setBulkLoading(true)
-        try {
-          const targets = taxes.filter((t) => selectedIds.has(t.id) && t.status === "completed")
-          await Promise.all(
-            targets.map((t) =>
-              saveTax({ ...t, status: "pending", completedAt: undefined, completedBy: undefined }),
-            ),
-          )
-          toast.success(`${targets.length} guias reabertas`)
-          clearSelection()
-          await updateData()
-        } finally {
-          setBulkLoading(false)
-        }
+        await runTaxBulk(
+          selectedTaxes.filter((t) => t.status === "completed"),
+          (t) => saveTax({ ...t, status: "pending", completedAt: undefined, completedBy: undefined }),
+          { one: "guia reaberta", many: "guias reabertas" },
+        )
       },
     })
   }
 
   const handleBulkDelete = () => {
-    if (selectedIds.size === 0) return
+    if (selectedTaxes.length === 0) return
     setConfirmState({
-      title: `Excluir ${selectedIds.size} impostos`,
-      description: "Esta ação não pode ser desfeita.",
+      title: `Excluir ${selectedTaxes.length} guias`,
+      description: "Esta ação não pode ser desfeita. Itens de competência fechada são ignorados.",
       confirmLabel: "Excluir",
       destructive: true,
       onConfirm: async () => {
-        setBulkLoading(true)
-        try {
-          await Promise.all(Array.from(selectedIds).map((id) => deleteTax(id)))
-          toast.success(`${selectedIds.size} impostos excluídos`)
-          clearSelection()
-          await updateData()
-        } finally {
-          setBulkLoading(false)
-        }
+        await runTaxBulk(selectedTaxes, (t) => deleteTax(t.id), { one: "guia excluída", many: "guias excluídas" })
       },
     })
   }
@@ -347,7 +343,7 @@ export default function ImpostosPage() {
   }
 
   const handleBulkEditApply = async () => {
-    if (selectedIds.size === 0) return
+    if (selectedTaxes.length === 0) return
     const dueDayNum = bulkDueDay ? Number(bulkDueDay) : null
     if (dueDayNum !== null && (Number.isNaN(dueDayNum) || dueDayNum < 1 || dueDayNum > 31)) {
       toast.error("Dia do vencimento deve estar entre 1 e 31")
@@ -357,24 +353,17 @@ export default function ImpostosPage() {
       toast.info("Preencha pelo menos um campo para aplicar")
       return
     }
-    setBulkLoading(true)
-    try {
-      const targets = taxes.filter((t) => selectedIds.has(t.id))
-      await Promise.all(
-        targets.map((t) => {
-          const updated = { ...t }
-          if (dueDayNum) updated.dueDay = dueDayNum
-          if (bulkPriority) updated.priority = bulkPriority
-          return saveTax(updated)
-        }),
-      )
-      toast.success(`${targets.length} impostos atualizados`)
-      setBulkEditOpen(false)
-      clearSelection()
-      await updateData()
-    } finally {
-      setBulkLoading(false)
-    }
+    await runTaxBulk(
+      selectedTaxes,
+      (t) => {
+        const updated = { ...t }
+        if (dueDayNum) updated.dueDay = dueDayNum
+        if (bulkPriority) updated.priority = bulkPriority
+        return saveTax(updated)
+      },
+      { one: "guia atualizada", many: "guias atualizadas" },
+    )
+    setBulkEditOpen(false)
   }
 
   const searchedTaxes = useMemo(() => {
@@ -404,11 +393,12 @@ export default function ImpostosPage() {
         !competencyFilter || competencyFilter === "all" || t.competencyMonth === competencyFilter
       // Filtro global por período (PeriodSwitcher do topo) — por vencimento calculado.
       // Itens sem competência → calcDate é null → passa (sempre mostrar).
+      // No mês atual, guias atrasadas de meses anteriores continuam aparecendo.
       const calcDate = calculateDueDateFromCompetency(t.competencyMonth, t.dueDay, t.weekendRule, t.dueMonth)
-      const matchesGlobalPeriod = isInPeriod(calcDate)
+      const matchesGlobalPeriod = isInPeriodOrOverdue(calcDate, t.status)
       return matchesRegime && matchesScope && matchesPriority && matchesClient && matchesCompetency && matchesGlobalPeriod
     })
-  }, [taxes, taxSearch, regimeFilter, scopeFilter, priorityFilter, clientFilter, competencyFilter, isInPeriod])
+  }, [taxes, taxSearch, regimeFilter, scopeFilter, priorityFilter, clientFilter, competencyFilter, isInPeriodOrOverdue])
 
   const sortedTaxes = useMemo(() => {
     const arr = [...searchedTaxes]
@@ -436,18 +426,13 @@ export default function ImpostosPage() {
     return arr
   }, [searchedTaxes, sortBy, sortOrder, clients])
 
-  // Calcula status efetivo: pending com data passada vira overdue dinamicamente
-  // (assim não aparece em 2 tabs ao mesmo tempo + Atrasadas reflete o real).
-  const taxEffectiveStatus = (t: Tax): Tax["status"] => {
-    if (t.status !== "pending") return t.status
-    const due = calculateDueDateFromCompetency(t.competencyMonth, t.dueDay, t.weekendRule, t.dueMonth)
-    if (!due) return t.status
-    return isOverdue(due) ? "overdue" : "pending"
-  }
-  const pendingTaxes = sortedTaxes.filter((t) => taxEffectiveStatus(t) === "pending")
-  const inProgressTaxes = sortedTaxes.filter((t) => t.status === "in_progress")
-  const completedTaxes = sortedTaxes.filter((t) => t.status === "completed")
-  const overdueTaxes = sortedTaxes.filter((t) => taxEffectiveStatus(t) === "overdue")
+  // Status efetivo (mesma regra do dashboard/obrigações): pendente OU em
+  // andamento com vencimento passado = atrasada; cada guia cai em UM cartão.
+  const withDue = (t: Tax) => ({
+    ...t,
+    calculatedDueDate: calculateDueDateFromCompetency(t.competencyMonth, t.dueDay, t.weekendRule, t.dueMonth) ?? undefined,
+  })
+  const statusCounts = countByStatus(sortedTaxes.map(withDue))
 
   const taxExportColumns: ExportColumn<Tax>[] = [
     { header: "Nome", width: 24, accessor: (t) => t.name },
@@ -461,20 +446,11 @@ export default function ImpostosPage() {
     { header: "Concluído em", width: 14, accessor: (t) => (t.completedAt ? new Date(t.completedAt) : "") },
   ]
 
-  const getFilteredTaxes = () => {
-    switch (activeTab) {
-      case "pending":
-        return pendingTaxes
-      case "in_progress":
-        return inProgressTaxes
-      case "completed":
-        return completedTaxes
-      case "overdue":
-        return overdueTaxes
-      default:
-        return sortedTaxes
-    }
-  }
+  const tabTaxes = useMemo(() => {
+    const ids = new Set(filterByStatusTab(sortedTaxes.map(withDue), activeTab).map((t) => t.id))
+    return sortedTaxes.filter((t) => ids.has(t.id))
+  }, [sortedTaxes, activeTab])
+  const getFilteredTaxes = () => tabTaxes
 
   const getStatusBadge = (status: Tax["status"], completedAt?: string, calculatedDueDate?: Date | null) => {
     // Marca como atrasada dinamicamente se a data calculada já passou
@@ -532,7 +508,14 @@ export default function ImpostosPage() {
   }
 
   // Paginação: renderiza 50 linhas por vez (listas com centenas de itens travavam)
-  const pagination = usePagination(getFilteredTaxes())
+  const pagination = usePagination(tabTaxes)
+  const visibleIds = pagination.items.map((t) => t.id)
+  // Seleção some ao trocar aba/filtro/busca/período/página
+  const selection = useListSelection(
+    [activeTab, regimeFilter, scopeFilter, priorityFilter, clientFilter, competencyFilter, taxSearch, period, pagination.page].join("|"),
+  )
+  const { selectedIds, toggle: toggleSelect, clear: clearSelection } = selection
+  const selectedTaxes = pagination.items.filter((t) => selectedIds.has(t.id))
 
   return (
     <div className="px-4 lg:px-6 xl:px-8 py-5">
@@ -579,11 +562,11 @@ export default function ImpostosPage() {
             value={activeTab || "all"}
             onChange={setActiveTab}
             items={[
-              { value: "all", label: "Todos", count: sortedTaxes.length, icon: Receipt, tone: "neutral" },
-              { value: "pending", label: "Pendentes", count: pendingTaxes.length, icon: Clock, tone: "warning" },
-              { value: "in_progress", label: "Em Andamento", count: inProgressTaxes.length, icon: PlayCircle, tone: "info" },
-              { value: "completed", label: "Concluídos", count: completedTaxes.length, icon: CheckCircle2, tone: "success" },
-              { value: "overdue", label: "Atrasados", count: overdueTaxes.length, icon: AlertTriangle, tone: "danger" },
+              { value: "all", label: "Todas", count: statusCounts.all, icon: Receipt, tone: "neutral" },
+              { value: "pending", label: "Pendentes", count: statusCounts.pending, icon: Clock, tone: "warning" },
+              { value: "in_progress", label: "Em Andamento", count: statusCounts.in_progress, icon: PlayCircle, tone: "info" },
+              { value: "completed", label: "Concluídas", count: statusCounts.completed, icon: CheckCircle2, tone: "success" },
+              { value: "overdue", label: "Atrasadas", count: statusCounts.overdue, icon: AlertTriangle, tone: "danger" },
             ]}
           />
 
@@ -765,7 +748,12 @@ export default function ImpostosPage() {
                         </div>
 
                         <div className="ml-6 flex flex-wrap gap-1.5" onClick={(e) => e.stopPropagation()}>
-                          {tax.status !== "completed" && (
+                          {isLocked(tax) && (
+                            <span title={LOCKED_HINT} className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                              <Lock className="size-3" /> Competência fechada
+                            </span>
+                          )}
+                          {tax.status !== "completed" && !isLocked(tax) && (
                             <>
                               {tax.status === "pending" && (
                                 <Button size="sm" variant="outline" onClick={() => handleStartTax(tax)} className="h-7 text-xs gap-1">
@@ -782,10 +770,10 @@ export default function ImpostosPage() {
                               </Button>
                             </>
                           )}
-                          <Button size="sm" variant="ghost" onClick={() => handleEdit(tax)} className="h-7 text-xs gap-1">
+                          <Button size="sm" variant="ghost" onClick={() => handleEdit(tax)} disabled={isLocked(tax)} title={isLocked(tax) ? LOCKED_HINT : undefined} className="h-7 text-xs gap-1">
                             <Pencil className="size-3" /> Editar
                           </Button>
-                          <Button size="sm" variant="ghost" onClick={() => handleDelete(tax.id)} className="h-7 text-xs gap-1 text-destructive">
+                          <Button size="sm" variant="ghost" onClick={() => handleDelete(tax.id)} disabled={isLocked(tax)} title={isLocked(tax) ? LOCKED_HINT : undefined} className="h-7 text-xs gap-1 text-destructive">
                             <Trash2 className="size-3" />
                           </Button>
                         </div>
@@ -802,15 +790,10 @@ export default function ImpostosPage() {
                       <TableRow>
                         <TableHead className="w-10">
                           <Checkbox
-                            checked={
-                              getFilteredTaxes().length > 0 &&
-                              getFilteredTaxes().every((t) => selectedIds.has(t.id))
-                            }
-                            onCheckedChange={(checked) => {
-                              if (checked) setSelectedIds(new Set(getFilteredTaxes().map((t) => t.id)))
-                              else clearSelection()
-                            }}
-                            aria-label="Selecionar todos"
+                            checked={selection.isAllVisibleSelected(visibleIds)}
+                            onCheckedChange={(checked) => selection.setAllVisible(visibleIds, !!checked)}
+                            aria-label={`Selecionar as ${visibleIds.length} guias desta página`}
+                            title={`Selecionar as ${visibleIds.length} guias desta página`}
                           />
                         </TableHead>
                         <ResizableTableHead defaultWidth={220} storageKey="impostos-name">
@@ -892,6 +875,11 @@ export default function ImpostosPage() {
                               <div className="space-y-1 min-w-0">
                                 <div className="flex items-center gap-2 flex-wrap">
                                   <div className="font-medium truncate hover:underline">{tax.name}</div>
+                                  {isLocked(tax) && (
+                                    <span title={LOCKED_HINT} aria-label={LOCKED_HINT} className="inline-flex text-muted-foreground">
+                                      <Lock className="size-3.5" />
+                                    </span>
+                                  )}
                                   {tax.priority && tax.priority !== "medium" && (
                                     <Badge
                                       variant="outline"
@@ -974,7 +962,12 @@ export default function ImpostosPage() {
                             </TableCell>
                             <TableCell>{getStatusBadge(tax.status, tax.completedAt, calculatedDueDate)}</TableCell>
                             <TableCell onClick={(e) => e.stopPropagation()} className="max-xl:hidden">
-                              {tax.status !== "completed" && (
+                              {isLocked(tax) && tax.status !== "completed" && (
+                                <span title={LOCKED_HINT} className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                                  <Lock className="size-3" /> Fechada
+                                </span>
+                              )}
+                              {tax.status !== "completed" && !isLocked(tax) && (
                                 <div className="flex gap-1">
                                   {tax.status === "pending" && (
                                     <Button size="sm" variant="outline" onClick={() => handleStartTax(tax)} className="h-7 text-xs">
@@ -1005,7 +998,7 @@ export default function ImpostosPage() {
                                   </Button>
                                 </DropdownMenuTrigger>
                                 <DropdownMenuContent align="end">
-                                  {tax.status !== "completed" && (
+                                  {tax.status !== "completed" && !isLocked(tax) && (
                                     <>
                                       {tax.status === "pending" && (
                                         <DropdownMenuItem onClick={() => handleStartTax(tax)}>
@@ -1023,11 +1016,11 @@ export default function ImpostosPage() {
                                     <Eye className="size-4 mr-2" />
                                     Ver detalhes
                                   </DropdownMenuItem>
-                                  <DropdownMenuItem onClick={() => handleEdit(tax)}>
+                                  <DropdownMenuItem onClick={() => handleEdit(tax)} disabled={isLocked(tax)} title={isLocked(tax) ? LOCKED_HINT : undefined}>
                                     <Pencil className="size-4 mr-2" />
                                     Editar
                                   </DropdownMenuItem>
-                                  <DropdownMenuItem onClick={() => handleDelete(tax.id)} className="text-destructive">
+                                  <DropdownMenuItem onClick={() => handleDelete(tax.id)} className="text-destructive" disabled={isLocked(tax)} title={isLocked(tax) ? LOCKED_HINT : undefined}>
                                     <Trash2 className="size-4 mr-2" />
                                     Excluir
                                   </DropdownMenuItem>

@@ -18,6 +18,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Search, Sparkles, Plus } from "lucide-react"
 import {
   TEMPLATE_ITEM_CATALOG,
+  catalogItemToTemplate,
   groupedCatalog,
   type CatalogItem,
 } from "@/lib/template-item-catalog"
@@ -113,17 +114,7 @@ export function BulkAddItemToTemplatesDialog({ open, onOpenChange, targets, onSu
     if (tab === "catalog") {
       itemsToAdd = TEMPLATE_ITEM_CATALOG
         .filter((c) => catalogSelected.has(c.name))
-        .map<ObligationTemplate>((c) => ({
-          name: c.name,
-          description: c.description,
-          category: c.category,
-          scope: c.scope,
-          dueDay: c.dueDay,
-          frequency: c.frequency,
-          recurrence: c.recurrence,
-          weekendRule: c.weekendRule,
-          priority: c.priority,
-        }))
+        .map(catalogItemToTemplate)
     } else {
       if (!customItem.name.trim()) {
         toast.error("Nome do item é obrigatório")
