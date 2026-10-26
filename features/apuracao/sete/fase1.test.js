@@ -354,3 +354,27 @@ describe("B9 — corrigir o FAP limpa o aviso anterior", () => {
     expect(num(corrigido, "RAT")).toBeCloseTo(200, 2)
   })
 })
+
+/* ============ PGDAS-D real: "2.6) Resumo da Declaração" ============ */
+// Layout oficial (texto extraído pelo pdf.js de declarações reais): duas colunas,
+// "Receita Bruta Auferida" e "Valor Total do Débito Declarado", com os valores
+// NA ORDEM receita → DAS. Pegar o 1º número levava a receita para o DAS e a
+// alíquota importada saía 100%.
+describe("PGDAS-D — Resumo da Declaração (receita e DAS lado a lado)", () => {
+  const T = [
+    "PGDAS-D",
+    "Período de Apuração: 01/09/2025 a 30/09/2025",
+    "RPA) - Competência 117.984,12",
+    "2.6)", " ", "Resumo", " ", "da Declaração", "Receita", " ", "Bruta Auferida", " ", "(regime", " ", "competência)",
+    "Valor Total do Débito Declarado (R$)",
+    "117.984,12", " ", "9.516,30", "", "2.7)", " ", "Informações",
+  ].join("\n")
+  const r = parsePGDASD(T)
+
+  it("DAS é o 2º valor (9.516,30), não a receita", () => {
+    expect(parseNumBR(r.das)).toBeCloseTo(9516.3, 2)
+  })
+  it("alíquota efetiva importada fica ~8,07%, não 100%", () => {
+    expect((parseNumBR(r.das) / parseNumBR(r.rpa)) * 100).toBeCloseTo(8.0657, 3)
+  })
+})
