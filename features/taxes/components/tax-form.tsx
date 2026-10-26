@@ -33,6 +33,8 @@ import type { Tax, TaxRegime, Client } from "@/lib/types"
 import { TAX_REGIME_LABELS, TAX_REGIME_COLORS } from "@/lib/types"
 import { taxSchema, type TaxFormData } from "@/features/taxes/schemas"
 import { toast } from "sonner"
+import { taxFromForm } from "@/features/taxes/form-mapping"
+import { useAuth } from "@/contexts/auth-context"
 
 type TaxFormProps = {
   tax?: Tax
@@ -46,6 +48,7 @@ const ALL_REGIMES = Object.keys(TAX_REGIME_LABELS) as TaxRegime[]
 
 export function TaxForm({ tax, clients, open, onOpenChange, onSave }: TaxFormProps) {
   const [newTag, setNewTag] = useState("")
+  const { userName } = useAuth()
   const [isSaving, setIsSaving] = useState(false)
 
   const form = useForm<TaxFormData>({
@@ -136,31 +139,9 @@ export function TaxForm({ tax, clients, open, onOpenChange, onSave }: TaxFormPro
       return
     }
 
-    const taxData: Tax = {
-      id: data.id || crypto.randomUUID(),
-      name: data.name,
-      clientId: data.clientId,
-      scope: data.scope,
-      description: data.description || undefined,
-      competencyMonth: data.competencyMonth || undefined,
-      dueDay: data.dueDay && data.dueDay > 0 ? Number(data.dueDay) : undefined,
-      // dueMonth só faz sentido pra anual; ignora pra outras recorrências
-      dueMonth: data.recurrence === "annual" && data.dueMonth ? Number(data.dueMonth) : undefined,
-      status: data.status,
-      priority: data.priority,
-      recurrence: data.recurrence,
-      recurrenceInterval: data.recurrenceInterval,
-      recurrenceEndDate: data.recurrenceEndDate || undefined,
-      autoGenerate: data.autoGenerate,
-      weekendRule: data.weekendRule,
-      protocol: data.protocol || undefined,
-      notes: data.notes || undefined,
-      tags: data.tags,
-      applicableRegimes: data.applicableRegimes as TaxRegime[],
-      completedAt: data.completedAt ?? undefined,
-      completedBy: data.completedBy ?? undefined,
-      createdAt: data.createdAt || new Date().toISOString(),
-    }
+    // Parte da guia original: campos fora do formulário (assignedTo,
+    // histórico…) não podem ser perdidos ao editar.
+    const taxData: Tax = taxFromForm(data, tax, { userName })
     setIsSaving(true)
     try {
       await onSave(taxData)

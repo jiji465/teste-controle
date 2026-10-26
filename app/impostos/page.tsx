@@ -26,6 +26,7 @@ import { ExportButton } from "@/components/export-button"
 import type { ExportColumn } from "@/lib/export-utils"
 import { saveTax, deleteTax } from "@/lib/supabase/database"
 import { buildRecurringTaxes } from "@/lib/recurrence-generate"
+import { saveNewOccurrences, describeOccurrencePlan } from "@/lib/recurrence-sync"
 import { calculateDueDateFromCompetency, formatDate, isOverdue } from "@/lib/date-utils"
 import { checkAndGenerateRecurrences } from "@/lib/auto-recurrence"
 import { matchesText , errorMessage} from "@/lib/utils"
@@ -85,7 +86,7 @@ function getRelativeDate(date: Date): string {
 
 export default function ImpostosPage() {
   const { userName } = useAuth()
-  const { taxes, clients, obligations: rawObligations, obligationsWithDetails, refreshData } = useData()
+  const { taxes, clients, obligations: rawObligations, obligationsWithDetails, refreshData, isPeriodLocked } = useData()
   const { isInPeriod, periodLabel, isFiltering } = useSelectedPeriod()
   const [editingTax, setEditingTax] = useState<Tax | undefined>()
   const [isFormOpen, setIsFormOpen] = useState(false)
@@ -140,28 +141,39 @@ export default function ImpostosPage() {
 
   const handleSave = async (tax: Tax) => {
     try {
+      // Ids que já existiam ANTES de salvar: competências da série que já
+      // existem (pagas, com protocolo…) nunca são sobrescritas.
+      const existingIds = new Set(taxes.map((t) => t.id))
       await saveTax(tax)
 
       // Geração antecipada: com "Gerar Automaticamente" ligado + "Gerar até",
-      // cria TODAS as competências até a data final de uma vez (ids
-      // determinísticos → o motor diário não duplica).
-      const occurrences = tax.autoGenerate ? buildRecurringTaxes(tax) : []
-      if (occurrences.length > 0) {
-        await Promise.all(occurrences.map((t) => saveTax(t)))
-      }
+      // cria as competências que ainda faltam até a data final (ids
+      // determinísticos → o motor diário não duplica). Competência fechada é
+      // pulada em vez de interromper a série no meio.
+      const series = tax.autoGenerate
+        ? await saveNewOccurrences(
+            buildRecurringTaxes(tax),
+            { existingIds, periodOf: (t) => t.competencyMonth, isPeriodLocked },
+            saveTax,
+          )
+        : null
 
-      const extra = occurrences.length
-      toast.success(
-        extra > 0
-          ? `Imposto salvo + ${extra} competência${extra > 1 ? "s" : ""} gerada${extra > 1 ? "s" : ""}`
-          : "Imposto salvo com sucesso",
-      )
+      const extra = series ? describeOccurrencePlan(series, { one: "competência", many: "competências" }) : ""
+      if (series && series.failed.length > 0) {
+        toast.warning(
+          `Guia salva, mas ${series.failed.length} competência(s) falharam: ${errorMessage(series.failed[0].error, "erro")}`,
+        )
+      } else {
+        toast.success(extra ? `Guia salva · ${extra}` : "Guia salva com sucesso")
+      }
       await updateData()
       setEditingTax(undefined)
       setIsFormOpen(false)
     } catch (error) {
-      console.error("[impostos] Erro ao salvar imposto:", error)
-      toast.error(errorMessage(error, "Erro ao salvar imposto. Tente novamente."))
+      console.error("[impostos] Erro ao salvar guia:", error)
+      toast.error(errorMessage(error, "Erro ao salvar a guia. Tente novamente."))
+      // Mantém o formulário aberto (o form só fecha se onSave resolver)
+      throw error
     }
   }
 

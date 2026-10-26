@@ -39,6 +39,8 @@ import type { Obligation, ObligationWithDetails, Client, Tax, Priority, TaxRegim
 import { TAX_REGIME_LABELS, TAX_REGIME_COLORS } from "@/lib/types"
 import { saveObligation, deleteObligation } from "@/features/obligations/services"
 import { buildRecurringObligations } from "@/lib/recurrence-generate"
+import { saveNewOccurrences, describeOccurrencePlan } from "@/lib/recurrence-sync"
+import { useData } from "@/contexts/data-context"
 import { formatDate, isOverdue, parseLocalDate } from "@/lib/date-utils"
 import { effectiveStatus } from "@/lib/obligation-status"
 import { StatusBadge, PriorityBadge, type TaskStatus } from "@/components/status-badge"
@@ -82,6 +84,7 @@ export const ObligationList = forwardRef<ObligationListHandle, ObligationListPro
   ref,
 ) {
   const { userName } = useAuth()
+  const { obligations: allObligations, isPeriodLocked } = useData()
   const [search, setSearch] = useState("")
   const [clientFilter, setClientFilter] = useState<string>("all")
   const [priorityFilter, setPriorityFilter] = useState<string>("all")
@@ -162,30 +165,39 @@ export const ObligationList = forwardRef<ObligationListHandle, ObligationListPro
 
   const handleSave = async (obligation: Obligation) => {
     try {
+      // Ids que já existiam ANTES de salvar: ocorrências da série que já
+      // existem (concluídas, com protocolo…) nunca são sobrescritas.
+      const existingIds = new Set(allObligations.map((o) => o.id))
       await saveObligation(obligation)
 
       // Geração antecipada: com "Gerar Automaticamente" ligado + "Gerar até",
-      // cria TODAS as ocorrências até a data final de uma vez (ids
-      // determinísticos → o motor diário não duplica).
-      const occurrences =
+      // cria as ocorrências que ainda faltam até a data final (ids
+      // determinísticos → o motor diário não duplica). Competência fechada é
+      // pulada em vez de interromper a série no meio.
+      const series =
         obligation.autoGenerate && !obligation.parentObligationId
-          ? buildRecurringObligations(obligation)
-          : []
-      if (occurrences.length > 0) {
-        await Promise.all(occurrences.map((o) => saveObligation(o)))
-      }
+          ? await saveNewOccurrences(
+              buildRecurringObligations(obligation),
+              { existingIds, periodOf: (o) => o.competencyMonth, isPeriodLocked },
+              saveObligation,
+            )
+          : null
 
-      const extra = occurrences.length
-      toast.success(
-        extra > 0
-          ? `Obrigação salva + ${extra} ocorrência${extra > 1 ? "s" : ""} gerada${extra > 1 ? "s" : ""}`
-          : "Obrigação salva com sucesso",
-      )
+      const extra = series ? describeOccurrencePlan(series, { one: "ocorrência", many: "ocorrências" }) : ""
+      if (series && series.failed.length > 0) {
+        toast.warning(
+          `Obrigação salva, mas ${series.failed.length} ocorrência(s) falharam: ${errorMessage(series.failed[0].error, "erro")}`,
+        )
+      } else {
+        toast.success(extra ? `Obrigação salva · ${extra}` : "Obrigação salva com sucesso")
+      }
       onUpdate()
       setEditingObligation(undefined)
     } catch (error) {
       console.error("[obligations] save error:", error)
       toast.error(errorMessage(error, "Erro ao salvar obrigação"))
+      // Mantém o formulário aberto (o form só fecha se onSave resolver)
+      throw error
     }
   }
 

@@ -33,6 +33,8 @@ import type { Obligation, Client, Tax, TaxRegime } from "@/lib/types"
 import { TAX_REGIME_LABELS, TAX_REGIME_COLORS } from "@/lib/types"
 import { obligationSchema, type ObligationFormData } from "@/features/obligations/schemas"
 import { toast } from "sonner"
+import { obligationFromForm } from "@/features/obligations/form-mapping"
+import { useAuth } from "@/contexts/auth-context"
 
 type ObligationFormProps = {
   obligation?: Obligation
@@ -47,6 +49,7 @@ const ALL_REGIMES = Object.keys(TAX_REGIME_LABELS) as TaxRegime[]
 
 export function ObligationForm({ obligation, clients, open, onOpenChange, onSave }: ObligationFormProps) {
   const [newTag, setNewTag] = useState("")
+  const { userName } = useAuth()
 
   const form = useForm<ObligationFormData>({
     resolver: zodResolver(obligationSchema),
@@ -139,45 +142,9 @@ export function ObligationForm({ obligation, clients, open, onOpenChange, onSave
       return
     }
 
-    const history = obligation?.history || []
-    const newHistoryEntry = {
-      id: crypto.randomUUID(),
-      action: obligation ? ("updated" as const) : ("created" as const),
-      description: obligation ? "Obrigação atualizada" : "Obrigação criada",
-      timestamp: new Date().toISOString(),
-    }
-
-    const obligationData: Obligation = {
-      id: data.id || crypto.randomUUID(),
-      name: data.name,
-      category: obligation?.category || "other",
-      description: data.description || undefined,
-      clientId: data.clientId,
-      scope: data.scope,
-      applicableRegimes: (data.applicableRegimes as TaxRegime[]) || [],
-      dueDay: Number(data.dueDay),
-      // dueMonth só faz sentido pra anual; ignora pra outras recorrências
-      dueMonth: data.recurrence === "annual" && data.dueMonth ? Number(data.dueMonth) : undefined,
-      competencyMonth: data.competencyMonth || undefined,
-      frequency: data.frequency as any,
-      recurrence: data.recurrence as any,
-      recurrenceInterval: data.recurrenceInterval,
-      recurrenceEndDate: data.recurrenceEndDate || undefined,
-      autoGenerate: data.autoGenerate,
-      weekendRule: data.weekendRule as any,
-      status: data.status as any,
-      priority: data.priority as any,
-      protocol: data.protocol || undefined,
-      notes: data.notes || undefined,
-      createdAt: data.createdAt || new Date().toISOString(),
-      completedAt: obligation?.completedAt,
-      completedBy: obligation?.completedBy,
-      attachments: obligation?.attachments || [],
-      history: [...history, newHistoryEntry],
-      parentObligationId: obligation?.parentObligationId,
-      generatedFor: obligation?.generatedFor,
-      tags: data.tags || [],
-    }
+    // Parte do item original: campos fora do formulário (source, templateId,
+    // assignedTo…) não podem ser perdidos ao editar.
+    const obligationData: Obligation = obligationFromForm(data, obligation, { userName })
 
     setIsSaving(true)
     try {
