@@ -7,6 +7,9 @@
  *  - esquerda: gatilho do drawer (mobile) + breadcrumb da rota atual;
  *  - direita: seletor de período, atualizar, e sino de alertas (atrasos +
  *    vencendo em 7 dias) alimentado por useTaskAlerts.
+ *  - abaixo de md: uma segunda linha compacta com o seletor de mês e o
+ *    fechar/reabrir competência (antes ficavam escondidos no celular e não
+ *    havia como trocar o mês nem fechar a competência).
  *
  * Tema e usuário ficam no rodapé da sidebar.
  */
@@ -44,8 +47,8 @@ export function AppHeader({ onOpenMobile }: { onOpenMobile: () => void }) {
   const currentLabel = ROUTE_LABELS[pathname] ?? "Página"
 
   return (
-    <header className="sticky top-0 z-30 h-14 border-b bg-background">
-      <div className="flex h-full items-center justify-between gap-3 px-4 lg:px-6">
+    <header className="sticky top-0 z-30 border-b bg-background">
+      <div className="flex h-14 items-center justify-between gap-3 px-4 lg:px-6">
         {/* Esquerda: menu mobile + breadcrumb */}
         <div className="flex min-w-0 items-center gap-2">
           <Button
@@ -112,6 +115,15 @@ export function AppHeader({ onOpenMobile }: { onOpenMobile: () => void }) {
             </Popover>
           )}
         </div>
+      </div>
+
+      {/* Mobile: período + competência numa linha compacta abaixo do header */}
+      <div
+        className="flex items-center justify-between gap-2 border-t px-4 py-1.5 md:hidden"
+        data-testid="mobile-period-bar"
+      >
+        <PeriodSwitcher />
+        <PeriodLockControl />
       </div>
     </header>
   )
