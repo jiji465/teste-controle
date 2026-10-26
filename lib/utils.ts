@@ -32,6 +32,22 @@ export function matchesCnpj(cnpj: string | null | undefined, query: string): boo
   return false
 }
 
+/** Busca de empresa: nome/fantasia/e-mail tolerante a acento e maiúsculas;
+ *  CNPJ/CPF ignorando pontuação (aceita alfanumérico e digitado sem máscara). */
+export function matchesClientSearch(
+  client: { name: string; tradeName?: string | null; cnpj?: string | null; email?: string | null },
+  query: string,
+): boolean {
+  const q = query.trim()
+  if (!q) return true
+  return (
+    matchesText(client.name, q) ||
+    matchesText(client.tradeName, q) ||
+    matchesText(client.email, q) ||
+    matchesCnpj(client.cnpj, q)
+  )
+}
+
 /** "1 guia" / "3 guias" — contagem com concordância de número. */
 export function plural(n: number, one: string, many: string): string {
   return `${n} ${n === 1 ? one : many}`

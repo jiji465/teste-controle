@@ -31,7 +31,7 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form"
-import { Loader2, Plus } from "lucide-react"
+import { Loader2, Plus, Lock } from "lucide-react"
 import { toast } from "sonner"
 import type { Service, Client, RecurrenceType } from "@/lib/types"
 import { SERVICE_CATEGORY_LABELS } from "@/lib/types"
@@ -41,6 +41,7 @@ import { buildRecurringServices, legacyServiceOccurrenceIds } from "@/lib/recurr
 import { saveNewOccurrences, describeOccurrencePlan } from "@/lib/recurrence-sync"
 import { serviceFromForm } from "@/features/services/form-mapping"
 import { useAuth } from "@/contexts/auth-context"
+import { selectableClients } from "@/lib/client-options"
 import { saveClient, DuplicateClientError } from "@/features/clients/services"
 import { useData } from "@/contexts/data-context"
 import { adjustForWeekend, buildSafeDate, formatDate, isWeekendOrHoliday, getHolidayName } from "@/lib/date-utils"
@@ -68,10 +69,12 @@ export function ServiceForm({ service, clients, open, onOpenChange, onSave }: Pr
   const [extraClients, setExtraClients] = useState<Client[]>([])
 
   // Mescla a lista do contexto com os recém-criados (sem duplicar por id).
+  // Empresas arquivadas ficam fora (exceto a já vinculada ao serviço em edição)
   const clientOptions = useMemo(() => {
-    const ids = new Set(clients.map((c) => c.id))
-    return [...clients, ...extraClients.filter((c) => !ids.has(c.id))]
-  }, [clients, extraClients])
+    const base = selectableClients(clients, service?.clientId)
+    const ids = new Set(base.map((c) => c.id))
+    return [...base, ...extraClients.filter((c) => !ids.has(c.id))]
+  }, [clients, extraClients, service?.clientId])
 
   // Seleção à prova de corrida: ao criar um cliente, guardamos o id como
   // "pendente" e só o selecionamos QUANDO ele já existe nas opções do Select.
@@ -202,6 +205,14 @@ export function ServiceForm({ service, clients, open, onOpenChange, onSave }: Pr
   }
 
   const recurrence = form.watch("recurrence")
+  // Serviço não tem competência: vale o MÊS do vencimento (mesma regra do banco)
+  const watchedMonth = form.watch("dueDate")?.slice(0, 7)
+  const lockMessage =
+    service && isPeriodLocked(service.dueDate?.slice(0, 7))
+      ? `A competência ${service.dueDate.slice(0, 7)} está fechada — reabra-a para alterar este serviço.`
+      : isPeriodLocked(watchedMonth)
+        ? `A competência ${watchedMonth} está fechada — escolha outra data ou reabra-a.`
+        : null
   const watchedDueDate = form.watch("dueDate")
   const watchedRule = form.watch("weekendRule")
 
@@ -296,6 +307,12 @@ export function ServiceForm({ service, clients, open, onOpenChange, onSave }: Pr
             })}
             className="grid gap-4 py-2"
           >
+            {lockMessage && (
+              <div role="alert" className="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-800 dark:text-amber-300">
+                <Lock className="size-4 mt-0.5 shrink-0" />
+                <span>{lockMessage}</span>
+              </div>
+            )}
             <FormField
               control={form.control}
               name="name"
@@ -575,7 +592,7 @@ export function ServiceForm({ service, clients, open, onOpenChange, onSave }: Pr
               >
                 Cancelar
               </Button>
-              <Button type="submit" disabled={isSaving}>
+              <Button type="submit" disabled={isSaving || !!lockMessage} title={lockMessage ?? undefined}>
                 {isSaving ? (
                   <>
                     <Loader2 className="size-4 mr-2 animate-spin" />

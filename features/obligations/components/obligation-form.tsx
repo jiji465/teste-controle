@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch"
 import { Badge } from "@/components/ui/badge"
 import { Checkbox } from "@/components/ui/checkbox"
-import { X, AlertCircle, AlertTriangle, Flag } from "lucide-react"
+import { X, AlertCircle, AlertTriangle, Flag, Lock } from "lucide-react"
 import {
   Dialog,
   DialogContent,
@@ -35,6 +35,8 @@ import { obligationSchema, type ObligationFormData } from "@/features/obligation
 import { toast } from "sonner"
 import { obligationFromForm } from "@/features/obligations/form-mapping"
 import { useAuth } from "@/contexts/auth-context"
+import { useData } from "@/contexts/data-context"
+import { selectableClients } from "@/lib/client-options"
 
 type ObligationFormProps = {
   obligation?: Obligation
@@ -50,6 +52,7 @@ const ALL_REGIMES = Object.keys(TAX_REGIME_LABELS) as TaxRegime[]
 export function ObligationForm({ obligation, clients, open, onOpenChange, onSave }: ObligationFormProps) {
   const [newTag, setNewTag] = useState("")
   const { userName } = useAuth()
+  const { isPeriodLocked } = useData()
 
   const form = useForm<ObligationFormData>({
     resolver: zodResolver(obligationSchema),
@@ -198,6 +201,14 @@ export function ObligationForm({ obligation, clients, open, onOpenChange, onSave
   const isCustomRecurrence = form.watch("recurrence") === "custom"
   const isAutoGenerate = form.watch("autoGenerate")
   const isEditing = !!obligation
+  // Competência fechada: não altera item dela nem move/cria item para ela
+  const watchedCompetency = form.watch("competencyMonth")
+  const lockMessage =
+    obligation && isPeriodLocked(obligation.competencyMonth)
+      ? `A competência ${obligation.competencyMonth} está fechada — reabra-a para alterar esta obrigação.`
+      : isPeriodLocked(watchedCompetency)
+        ? `A competência ${watchedCompetency} está fechada — escolha outra ou reabra-a.`
+        : null
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -223,6 +234,12 @@ export function ObligationForm({ obligation, clients, open, onOpenChange, onSave
             })}
             className="grid gap-6 py-4"
           >
+            {lockMessage && (
+              <div role="alert" className="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-800 dark:text-amber-300">
+                <Lock className="size-4 mt-0.5 shrink-0" />
+                <span>{lockMessage}</span>
+              </div>
+            )}
             {/* 1. Informações Básicas */}
             <div className="space-y-4">
               <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
@@ -257,7 +274,7 @@ export function ObligationForm({ obligation, clients, open, onOpenChange, onSave
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          {clients.map((client) => (
+                          {selectableClients(clients, obligation?.clientId).map((client) => (
                             <SelectItem key={client.id} value={client.id}>
                               {client.name}
                             </SelectItem>
@@ -664,7 +681,7 @@ export function ObligationForm({ obligation, clients, open, onOpenChange, onSave
               <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={isSaving}>
                 Cancelar
               </Button>
-              <Button type="submit" disabled={isSaving}>{isSaving ? "Salvando…" : "Salvar Obrigação"}</Button>
+              <Button type="submit" disabled={isSaving || !!lockMessage} title={lockMessage ?? undefined}>{isSaving ? "Salvando…" : "Salvar Obrigação"}</Button>
             </DialogFooter>
           </form>
         </Form>

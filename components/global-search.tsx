@@ -8,6 +8,7 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Search, Building2, FileText, DollarSign, Calendar } from "lucide-react"
 import type { Client, Tax, ObligationWithDetails } from "@/lib/types"
 import { formatDate } from "@/lib/date-utils"
+import { matchesClientSearch } from "@/lib/utils"
 
 type GlobalSearchProps = {
   open: boolean
@@ -47,12 +48,8 @@ export function GlobalSearch({
 
     const searchTerm = query.toLowerCase()
 
-    const matchedClients = clients.filter(
-      (c) =>
-        c.name.toLowerCase().includes(searchTerm) ||
-        (c.cnpj ?? "").includes(searchTerm) ||
-        c.email.toLowerCase().includes(searchTerm),
-    )
+    // CNPJ comparado sem pontuação (acha alfanumérico e digitado sem máscara)
+    const matchedClients = clients.filter((c) => matchesClientSearch(c, query))
 
     const matchedObligations = obligations.filter(
       (o) =>

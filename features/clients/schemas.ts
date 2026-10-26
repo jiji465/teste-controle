@@ -1,5 +1,5 @@
 import { z } from "zod"
-import { isValidCNPJ } from "@/lib/cnpj-validation"
+import { isValidDocument } from "@/lib/cnpj-validation"
 
 export const taxRegimeSchema = z.enum([
   "simples_nacional",
@@ -13,24 +13,29 @@ export const clientSchema = z.object({
   id: z.string().uuid().optional(),
   name: z.string().min(2, "O nome deve ter no mínimo 2 caracteres"),
   tradeName: z.string().optional(),
-  // CNPJ é OPCIONAL (permite pessoa física / serviço avulso). Mas se for
-  // preenchido, os dígitos precisam ser válidos. Vazio = sem CNPJ, ok.
+  // Documento OPCIONAL: CNPJ (inclusive alfanumérico) ou CPF de pessoa
+  // física. Se preenchido, os dígitos verificadores precisam bater.
   cnpj: z
     .string()
     .optional()
     .or(z.literal(""))
-    .refine((v) => !v || isValidCNPJ(v), "CNPJ inválido (verifique os dígitos)"),
+    .refine((v) => !v || isValidDocument(v), "CNPJ/CPF inválido (verifique os dígitos)"),
   email: z.string().email("E-mail inválido").or(z.literal("")),
   phone: z.string().optional(),
   status: z.enum(["active", "inactive"]).default("active"),
-  taxRegime: taxRegimeSchema.optional(),
+  // Obrigatório: define os templates/obrigações aplicáveis à empresa
+  taxRegime: taxRegimeSchema.optional().refine((v) => !!v, "Regime tributário é obrigatório"),
   businessActivity: z.string().optional(),
   cnaeCode: z.string().optional(),
   cnaeDescription: z.string().optional(),
   ie: z.string().optional(),
   im: z.string().optional(),
   city: z.string().optional(),
-  state: z.string().optional(),
+  // UF sempre em maiúsculas (o filtro de UF compara exato)
+  state: z
+    .string()
+    .optional()
+    .transform((v) => (v ? v.trim().toUpperCase() : v)),
   notes: z.string().optional(),
   createdAt: z.string().optional(),
 })

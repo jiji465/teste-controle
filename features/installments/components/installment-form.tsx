@@ -26,6 +26,7 @@ import { firstDueFromCurrentParcela, previewParcelaDue } from "@/lib/installment
 import { toast } from "sonner"
 import { errorMessage } from "@/lib/utils"
 import { installmentFromForm } from "@/features/installments/form-mapping"
+import { selectableClients } from "@/lib/client-options"
 
 interface InstallmentFormProps {
   installment?: Installment
@@ -245,7 +246,7 @@ export function InstallmentForm({ installment, open, onOpenChange, onSave }: Ins
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          {clients.map((client) => (
+                          {selectableClients(clients, installment?.clientId).map((client) => (
                             <SelectItem key={client.id} value={client.id}>{client.name}</SelectItem>
                           ))}
                         </SelectContent>
