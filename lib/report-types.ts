@@ -22,6 +22,8 @@ export type ReportKpis = {
   totalGeral: number
   concluidasGeral: number
   taxaConclusao: number // 0-100
+  /** % das concluídas (obrigações + guias + parcelas + serviços) entregues
+   *  até o DIA do vencimento. */
   taxaNoPrazo: number // 0-100
   obrigacoes: ReportTipoStats
   guias: ReportTipoStats
@@ -71,8 +73,10 @@ export type ReportPendenciaRow = {
   tipo: "Obrigação" | "Guia" | "Parcela" | "Serviço"
   nome: string
   cliente: string
-  /** "DD/MM/AAAA" já formatado. */
+  /** "DD/MM/AAAA" já formatado (PDF). */
   vencimento: string
+  /** "YYYY-MM-DD" (dia local) — o Excel grava como data real. Vazio se sem data. */
+  vencimentoIso: string
   /** Pra ordenar (epoch ms). */
   vencimentoMs: number
   prioridade: string
@@ -86,6 +90,8 @@ export type ReportConcluidaRow = {
   cliente: string
   /** "DD/MM/AAAA" já formatado (vazio se sem data). */
   concluidaEm: string
+  /** "YYYY-MM-DD" (dia local da conclusão) — o Excel grava como data real. */
+  concluidaEmIso: string
 }
 
 /** Pacote completo entregue aos geradores. */

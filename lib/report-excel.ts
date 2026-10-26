@@ -11,13 +11,21 @@
 import type { Workbook, Worksheet } from "exceljs"
 import { ESCRITORIO, BRAND, REPORT_TITLE } from "./report-config"
 import type { ReportData, ReportTipoStats } from "./report-types"
+import { EXCEL_DATE_FORMAT, isoDayToExcelDate } from "./export-utils"
 
 const WHITE = "FFFFFFFF"
 const HEADER_FILL = BRAND.argb
 const ZEBRA = BRAND.zebraArgb
 const BORDER = "FFD9DEE6"
 
-type Col = { header: string; key: string; width: number; numeric?: boolean }
+type Col = {
+  header: string
+  key: string
+  width: number
+  numeric?: boolean
+  /** Valor é "YYYY-MM-DD": grava como DATA real (dd/mm/yyyy), não texto. */
+  date?: boolean
+}
 
 /** Aplica estilo de cabeçalho (faixa azul, texto branco, negrito, centralizado). */
 function styleHeaderRow(ws: Worksheet, rowNumber: number, ncols: number) {
@@ -44,7 +52,7 @@ function buildSheet(
   sheetName: string,
   sectionTitle: string,
   cols: Col[],
-  rows: Record<string, string | number>[],
+  rows: object[],
 ) {
   const ws = wb.addWorksheet(sheetName, {
     views: [{ state: "frozen", ySplit: 3 }],
@@ -74,7 +82,13 @@ function buildSheet(
     const row = ws.getRow(rowNum)
     cols.forEach((c, idx) => {
       const cell = row.getCell(idx + 1)
-      cell.value = r[c.key] ?? ""
+      const raw = (r as Record<string, string | number | undefined>)[c.key]
+      if (c.date) {
+        cell.value = isoDayToExcelDate(typeof raw === "string" ? raw : "") ?? ""
+        cell.numFmt = EXCEL_DATE_FORMAT
+      } else {
+        cell.value = raw ?? ""
+      }
       cell.alignment = { vertical: "middle", horizontal: c.numeric ? "center" : "left" }
       cell.border = {
         bottom: { style: "hair", color: { argb: BORDER } },
@@ -98,7 +112,7 @@ function buildSheet(
 /** Capa com identificação do escritório, título, período e totais-chave. */
 function buildCover(wb: Workbook, data: ReportData) {
   const ws = wb.addWorksheet("Capa", { properties: { tabColor: { argb: HEADER_FILL } } })
-  ws.columns = [{ width: 4 }, { width: 30 }, { width: 30 }, { width: 4 }]
+  ws.columns = [{ width: 4 }, { width: 34 }, { width: 30 }, { width: 4 }]
 
   // Faixa de marca
   ws.mergeCells(2, 2, 2, 3)
@@ -126,7 +140,7 @@ function buildCover(wb: Workbook, data: ReportData) {
     ["Total de itens", String(data.kpis.totalGeral)],
     ["Concluídos", String(data.kpis.concluidasGeral)],
     ["Taxa de conclusão", `${data.kpis.taxaConclusao}%`],
-    ["Taxa no prazo", `${data.kpis.taxaNoPrazo}%`],
+    ["Taxa no prazo (todos os tipos)", `${data.kpis.taxaNoPrazo}%`],
   ]
   let r = 7
   for (const [k, v] of meta) {
@@ -160,9 +174,9 @@ function tipoStatsRow(nome: string, s: ReportTipoStats) {
   }
 }
 
-/** Gera e baixa o arquivo .xlsx. */
-export async function exportRelatorioExcel(data: ReportData) {
-  const ExcelJS = await import("exceljs")
+/** Monta a pasta de trabalho (sem baixar) — separado pra ser testável. */
+export async function buildRelatorioWorkbook(data: ReportData): Promise<Workbook> {
+  const ExcelJS = (await import("exceljs")).default
   const wb = new ExcelJS.Workbook()
   wb.creator = ESCRITORIO.nome
   wb.created = new Date()
@@ -242,7 +256,7 @@ export async function exportRelatorioExcel(data: ReportData) {
     { header: "Tipo", key: "tipo", width: 14 },
     { header: "Item", key: "nome", width: 34 },
     { header: "Cliente", key: "cliente", width: 28 },
-    { header: "Vencimento", key: "vencimento", width: 14 },
+    { header: "Vencimento", key: "vencimentoIso", width: 14, date: true },
     { header: "Prioridade", key: "prioridade", width: 12 },
     { header: "Competência", key: "competencia", width: 14 },
   ]
@@ -258,11 +272,17 @@ export async function exportRelatorioExcel(data: ReportData) {
       { header: "Tipo", key: "tipo", width: 14 },
       { header: "Item", key: "nome", width: 36 },
       { header: "Cliente", key: "cliente", width: 28 },
-      { header: "Concluída em", key: "concluidaEm", width: 14 },
+      { header: "Concluída em", key: "concluidaEmIso", width: 14, date: true },
     ],
     data.concluidas,
   )
 
+  return wb
+}
+
+/** Gera e baixa o arquivo .xlsx. */
+export async function exportRelatorioExcel(data: ReportData) {
+  const wb = await buildRelatorioWorkbook(data)
   const buf = await wb.xlsx.writeBuffer()
   const blob = new Blob([buf], {
     type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
