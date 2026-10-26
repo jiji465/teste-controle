@@ -14,8 +14,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import type { ObligationWithDetails, Client, Tax, Installment, Service } from "@/lib/types"
 import { TAX_REGIME_LABELS } from "@/lib/types"
 import { BUSINESS_ACTIVITY_LABELS, type BusinessActivity } from "@/lib/obligation-templates"
-import { effectiveStatus } from "@/lib/obligation-status"
-import { adjustForWeekend, buildSafeDate, calculateDueDateFromCompetency, parseLocalDate } from "@/lib/date-utils"
+import { healthStatusCounts } from "@/lib/dashboard-utils"
 import { CheckCircle2, Clock, AlertTriangle, Loader2, Building2, MapPin, Briefcase, ShoppingBag, Factory, Layers } from "lucide-react"
 
 type RegimeDistributionChartProps = {
@@ -70,44 +69,12 @@ function ObligationsHealthCard({
   installments?: Installment[]
   services?: Service[]
 }) {
-  const counts = useMemo(() => {
-    const c: Record<string, number> = { pending: 0, in_progress: 0, completed: 0, overdue: 0 }
-
-    // Usa effectiveStatus pra contar como "overdue" também os pending/in_progress
-    // com data passada (o status no banco fica como pending, mas pro user é atrasada).
-    for (const o of obligations) {
-      const s = effectiveStatus(o)
-      if (c[s] !== undefined) c[s]++
-    }
-
-    // Guias: enriquece com calculatedDueDate antes de aplicar effectiveStatus.
-    for (const t of taxes) {
-      const date = calculateDueDateFromCompetency(t.competencyMonth, t.dueDay, t.weekendRule, t.dueMonth)
-      const enriched = { status: t.status, calculatedDueDate: date ?? undefined }
-      const s = effectiveStatus(enriched)
-      if (c[s] !== undefined) c[s]++
-    }
-
-    // Parcelamentos: usa data da parcela atual.
-    for (const i of installments) {
-      const firstDue = parseLocalDate(i.firstDueDate)
-      const monthsToAdd = i.currentInstallment - 1
-      const dueDate = adjustForWeekend(
-        buildSafeDate(firstDue.getFullYear(), firstDue.getMonth() + monthsToAdd, i.dueDay),
-        i.weekendRule,
-      )
-      const enriched = { status: i.status, calculatedDueDate: dueDate }
-      const s = effectiveStatus(enriched)
-      if (c[s] !== undefined) c[s]++
-    }
-    // Serviços: usa dueDate direto
-    for (const sv of services) {
-      const enriched = { status: sv.status, calculatedDueDate: sv.dueDate }
-      const s = effectiveStatus(enriched)
-      if (c[s] !== undefined) c[s]++
-    }
-    return c
-  }, [obligations, taxes, installments, services])
+  // Status efetivo dos 4 tipos; parcelamentos usam a data DA PARCELA do
+  // período (calculatedDueDate do PeriodInstallment), não a parcela atual.
+  const counts: Record<string, number> = useMemo(
+    () => healthStatusCounts(obligations, taxes, installments, services),
+    [obligations, taxes, installments, services],
+  )
 
   const total = obligations.length + taxes.length + installments.length + services.length
   const completedPct = total > 0 ? Math.round((counts.completed / total) * 100) : 0
