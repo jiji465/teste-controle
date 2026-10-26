@@ -383,13 +383,21 @@ const parseMesAno = (s) => {
  * Retorna null sem data de abertura ou com 12+ meses de atividade — aí vale a RBT12
  * normal (inclusive 0 para empresa inativa, que fica na 1ª faixa, como no PGDAS-D).
  */
-export const rbt12InicioAtividade = (data) => {
+/** Meses de atividade ANTERIORES ao PA (0 = mês de início); null sem data de abertura,
+ *  com PA anterior à abertura ou com 12+ meses (fora do início de atividade). */
+export const mesesInicioAtividade = (data) => {
     const ab = parseMesAno(data && data.dataAbertura);
     const m = parseInt(data && data.compMonth), y = parseInt(data && data.compYear);
     if (!ab || !m || !y) return null;
-    const idxComp = y * 12 + (m - 1), idxAb = ab.y * 12 + (ab.m - 1);
-    const meses = idxComp - idxAb;
-    if (meses < 0 || meses > 11) return null;
+    const meses = (y * 12 + (m - 1)) - (ab.y * 12 + (ab.m - 1));
+    return meses < 0 || meses > 11 ? null : meses;
+};
+
+export const rbt12InicioAtividade = (data) => {
+    const meses = mesesInicioAtividade(data);
+    if (meses === null) return null;
+    const ab = parseMesAno(data.dataAbertura);
+    const idxAb = ab.y * 12 + (ab.m - 1), idxComp = idxAb + meses;
     if (meses === 0) return calculateTotalRevenue(data) * 12;
     const ev = Array.isArray(data.evolucao) ? data.evolucao : [];
     let soma = 0;
@@ -889,6 +897,8 @@ export const autoFillTaxes = (data, currentTaxes) => {
                 const rbt12pInf = parseNumBR(data.rbt12p);
                 const rbtInicio = rbt12 <= 0 && !(rbt12pInf > 0) ? rbt12InicioAtividade(data) : null;
                 const rbtAliq = rbt12pInf > 0 ? rbt12pInf : (rbtInicio !== null ? rbtInicio : rbt12);
+                // Folha no mesmo período da receita (proporcionalizada em início de atividade)
+                const folhaFR = folhaFatorR(data);
                 if (dasOficial > 0) {
                     // Importado do PGDAS-D: o valor DECLARADO é a fonte da verdade — não recalcula
                     updated.base = formatBRLDisplay(totalRevenue);
@@ -896,13 +906,13 @@ export const autoFillTaxes = (data, currentTaxes) => {
                     updated.apurado = formatBRLDisplay(dasOficial);
                     // Mostra o anexo EFETIVO (III quando o Fator R ≥ 28%), não o
                     // base V — o valor em si é o declarado, fonte da verdade.
-                    const anexoEfDAS = data.anexo ? getAnexoEfetivo(data.anexo, calcFatorR(folha12m, rbtAliq), sujeitoFatorR) : '';
+                    const anexoEfDAS = data.anexo ? getAnexoEfetivo(data.anexo, calcFatorR(folhaFR, rbtAliq), sujeitoFatorR) : '';
                     updated.obs = 'Importado do PGDAS-D — valor declarado' + (anexoEfDAS ? ' · ' + anexoEfDAS : '');
                 } else if (totalRevenue > 0 && data.anexo) {
                     // rbtAliq pode ser 0 (empresa nova sem RBT12): cai na 1ª faixa (ver
                     // calcAliquotaEfetivaSN). Sem este caminho o DAS ficava em branco —
                     // "não gera imposto" no relatório de empresas recém-abertas.
-                    const fR = calcFatorR(folha12m, rbtAliq);
+                    const fR = calcFatorR(folhaFR, rbtAliq);
                     const anexoEf = getAnexoEfetivo(data.anexo, fR, sujeitoFatorR);
                     const res = calcAliquotaEfetivaSN(rbtAliq, anexoEf);
 
@@ -1039,6 +1049,32 @@ export const rbtFatorR = (data) => {
 };
 
 /**
+ * Folha de 12 meses (FS12) do Fator R no MESMO período da receita de rbtFatorR.
+ * Em início de atividade a receita é proporcionalizada (RBT12p = média dos meses
+ * anteriores × 12; no 1º mês, RPA × 12 — Res. CGSN 140/2018, art. 22) e a folha segue o
+ * mesmo critério (art. 26): soma das folhas dos meses anteriores ÷ nº de meses × 12; no
+ * 1º mês, folha + pró-labore do próprio PA × 12. Antes a folha ia crua (ex.: 3 meses)
+ * contra a receita anualizada e o Fator R saía ~1/4 do real (Anexo V indevido).
+ * Fora do início de atividade (ou sem data de abertura) = folha informada.
+ */
+export const folhaFatorR = (data) => {
+    const folha12m = parseNumBR(data && (data.folha12m !== undefined ? data.folha12m : data.folha));
+    const receitaProporcional = parseNumBR(data && data.rbt12p) > 0
+        || (!(parseNumBR(data && data.rbt12) > 0) && rbt12InicioAtividade(data) !== null);
+    if (!receitaProporcional) return folha12m;
+    const meses = mesesInicioAtividade(data);
+    if (meses === null) return folha12m;
+    if (meses === 0) {
+        const folhaPA = parseNumBR(data.folhaMensal !== undefined ? data.folhaMensal : data.folha) + sumProLabore(data);
+        return (folhaPA > 0 ? folhaPA : folha12m) * 12;
+    }
+    return (folha12m / meses) * 12;
+};
+
+/** Fator R (%) com folha e receita no mesmo período — fonte única p/ motor, tela e relatório. */
+export const fatorRDoPeriodo = (data) => calcFatorR(folhaFatorR(data), rbtFatorR(data));
+
+/**
  * Economia gerada no mês (exibida no relatório e persistida no histórico):
  *  · Fator R (Simples, Anexo III efetivo): custo total no Anexo V com pró-labore
  *    mínimo − custo no Anexo III com o pró-labore atual (DAS + INSS + IRRF).
@@ -1049,8 +1085,7 @@ export const rbtFatorR = (data) => {
 export const calcEconomia = (clientData, taxes) => {
     const revenue = calculateTotalRevenue(clientData);
     const rbtFR = rbtFatorR(clientData);
-    const folha12m = parseNumBR(clientData.folha12m !== undefined ? clientData.folha12m : clientData.folha);
-    const fR = calcFatorR(folha12m, rbtFR);
+    const fR = fatorRDoPeriodo(clientData);
     if ((clientData.sujeitoFatorR === true || clientData.mostrarEconomiaFatorR) && clientData.regime === 'Simples Nacional' && (clientData.anexo === 'Anexo III' || clientData.anexo === 'Anexo V') && rbtFR > 0 && fR >= 28) {
         const rateIII = calcAliquotaEfetivaSN(rbtFR, 'Anexo III').rate;
         const rateV = calcAliquotaEfetivaSN(rbtFR, 'Anexo V').rate;

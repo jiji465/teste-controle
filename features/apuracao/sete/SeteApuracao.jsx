@@ -11,7 +11,7 @@ import {
 import {
     DEFAULT_TAXES, DEFAULT_TAXES_LP, DEFAULT_TAXES_MEI_AMBOS, DEFAULT_TAXES_MEI_COMERCIO, DEFAULT_TAXES_MEI_SERVICOS, DEFAULT_TAXES_SN_COMERCIO, DEFAULT_TAXES_SN_SERVICOS, GLOSSARY, MONTHS, OFFICE_NAME, STORAGE_KEY, autoFillTaxes, calcAliquotaEfetivaSN, calcFatorR, calcIRRFProLabore, calculateTotalRevenue, extractPdfText, formatBRLDisplay, formatCurrency, formatPercent, getAnexoEfetivo, getDueDate, isSujeitoFatorR, parseNumBR, parsePGDASD, pgNum, sumProLabore, SALARIO_MINIMO, TETO_INSS, SUBLIMITE_SN, LIMITE_SN,
     ehRetido, entraNaAliquota, resumoApuracao, avisosApuracao, COMERCIO_GUIA_ESTADUAL, acumuladoPeriodo,
-    regimeDefaults, calcEconomia, rbtFatorR, aplicarPgdasD
+    regimeDefaults, calcEconomia, rbtFatorR, aplicarPgdasD, folhaFatorR
 } from './engine.js';
 // ---- Integração com o controle fiscal (teste-controle) ----
 import { useData } from '@/contexts/data-context';
@@ -37,8 +37,11 @@ const FatorRDashboard = ({ clientData, isPrint = false }) => {
     // RBT12p / início de atividade quando a RBT12 é 0 (mesma receita que o motor usa)
     const rbt12 = rbtFatorR(clientData);
     const revenue = calculateTotalRevenue(clientData);
-    const folha12m = parseNumBR(clientData.folha12m !== undefined ? clientData.folha12m : clientData.folha);
-    
+    // Folha no mesmo período da receita (proporcionalizada em início de atividade)
+    const folha12m = folhaFatorR(clientData);
+    const folhaProporcional = Math.abs(folha12m - parseNumBR(clientData.folha12m !== undefined ? clientData.folha12m : clientData.folha)) > 0.005;
+    const sufixo12m = folhaProporcional ? '12m proporc.' : '12m';
+
     const fR = calcFatorR(folha12m, rbt12);
     const anexoEf = getAnexoEfetivo(clientData.anexo, fR, isSujeitoFatorR(clientData, folha12m));
 
@@ -93,7 +96,7 @@ const FatorRDashboard = ({ clientData, isPrint = false }) => {
 
                 <div className="grid grid-cols-3 gap-4 mb-4">
                     <div className="bg-white p-3 rounded-lg border border-slate-100 shadow-sm text-center">
-                        <p className="text-[10px] text-slate-500 font-bold uppercase mb-1">Folha + Pró-labore (12m)</p>
+                        <p className="text-[10px] text-slate-500 font-bold uppercase mb-1">Folha + Pró-labore ({sufixo12m})</p>
                         <p className="text-sm font-bold text-slate-700">{formatCurrency(folha12m)}</p>
                     </div>
                     <div className="bg-white p-3 rounded-lg border border-slate-100 shadow-sm text-center">
@@ -151,7 +154,7 @@ const FatorRDashboard = ({ clientData, isPrint = false }) => {
                 </div>
             </div>
             <div className="grid grid-cols-4 gap-3">
-                <div><p className="text-[9px] text-slate-500 font-bold uppercase">Folha + PL (12m)</p><p className="text-xs font-bold text-slate-800">{formatCurrency(folha12m)}</p></div>
+                <div><p className="text-[9px] text-slate-500 font-bold uppercase">Folha + PL ({sufixo12m})</p><p className="text-xs font-bold text-slate-800">{formatCurrency(folha12m)}</p></div>
                 <div><p className="text-[9px] text-slate-500 font-bold uppercase">RBT12</p><p className="text-xs font-bold text-slate-800">{formatCurrency(rbt12)}</p></div>
                 <div><p className="text-[9px] text-slate-500 font-bold uppercase">Percentual Atingido</p><p className={`text-sm font-extrabold ${isFavorable ? 'text-emerald-700' : 'text-red-700'}`}>{fR.toFixed(2).replace('.', ',')}%</p></div>
                 <div><p className="text-[9px] text-slate-500 font-bold uppercase">Anexo Aplicado</p><p className="text-xs font-bold text-[#1e3a8a] print-navy">{anexoEf}</p></div>
@@ -819,7 +822,7 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
                             {rbtFatorR(clientData) > 0 && clientData.anexo && !showFatorR && clientData.regime === 'Simples Nacional' && (
                                 (() => {
                                     const rbt12 = rbtFatorR(clientData);
-                                    const folha12m = parseNumBR(clientData.folha12m !== undefined ? clientData.folha12m : clientData.folha);
+                                    const folha12m = folhaFatorR(clientData);
                                     const fR = calcFatorR(folha12m, rbt12);
                                     const anexoEf = getAnexoEfetivo(clientData.anexo, fR, isSujeitoFatorR(clientData, folha12m));
                                     const res = calcAliquotaEfetivaSN(rbt12, anexoEf);
@@ -1334,7 +1337,7 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
     const aliquotaEfetiva = R.cargaEfetiva;     // carga sobre o faturamento (só tributos sobre a receita)
 
     const rbt12 = rbtFatorR(clientData);
-    const folha12m = parseNum(clientData.folha12m !== undefined ? clientData.folha12m : clientData.folha);
+    const folha12m = folhaFatorR(clientData); // mesmo período da receita (início de atividade)
     const fR = calcFatorR(folha12m, rbt12);
     const anexoEfetivo = clientData.regime === 'Simples Nacional' && clientData.anexo ? getAnexoEfetivo(clientData.anexo, fR, isSujeitoFatorR(clientData, folha12m)) : clientData.anexo;
 
@@ -2113,7 +2116,7 @@ const LiveSummary = ({ clientData, taxes, records = [] }) => {
     const rbt12 = rbtFatorR(clientData);
     const acimaSublimite = clientData.regime === 'Simples Nacional' && rbt12 > SUBLIMITE_SN;
     const acimaTeto = clientData.regime === 'Simples Nacional' && rbt12 > LIMITE_SN;
-    const folha12m = parseNumBR(clientData.folha12m);
+    const folha12m = folhaFatorR(clientData); // mesmo período da receita (início de atividade)
     const fR = calcFatorR(folha12m, rbt12);
     const showFatorR = clientData.regime === 'Simples Nacional' && (clientData.anexo === 'Anexo III' || clientData.anexo === 'Anexo V') && rbt12 > 0;
     const anexoEf = showFatorR ? getAnexoEfetivo(clientData.anexo, fR, isSujeitoFatorR(clientData, folha12m)) : null;
