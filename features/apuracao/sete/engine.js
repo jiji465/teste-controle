@@ -492,16 +492,20 @@ export function parsePGDASD(T) {
     const fator = g(/Fator\s+r\s*=\s*(N[ãa]o\s+se\s+aplica|[\d,]+)(?:\s*[-–—]\s*(Anexo\s+[IVX]+))?/i);
     // Repartição por tributo (segregação): IRPJ CSLL COFINS PIS/Pasep INSS/CPP ICMS IPI ISS Total
     const repM = g(/IRPJ\s+CSLL\s+COFINS\s+PIS\/Pasep\s+INSS\/CPP\s+ICMS\s+IPI\s+ISS\s+Total\s+([\d.]+,\d{2})\s+([\d.]+,\d{2})\s+([\d.]+,\d{2})\s+([\d.]+,\d{2})\s+([\d.]+,\d{2})\s+([\d.]+,\d{2})\s+([\d.]+,\d{2})\s+([\d.]+,\d{2})\s+([\d.]+,\d{2})/i);
-    // DAS declarado: o 1º valor após o rótulo. Se o trecho detalhar Principal/Multa/Juros,
-    // usa o valor rotulado "Total" — nunca o de multa/juros (antes pegava o 2º número
-    // do trecho, que podia ser os juros).
-    const dasSeg = g(/Valor\s+Total\s+do\s+D[ée]bito\s+Declarado([\s\S]{0,140})/i);
+    // DAS declarado. No layout oficial ("2.6) Resumo da Declaração") o rótulo é a 2ª
+    // coluna de uma tabela "Receita Bruta Auferida | Valor Total do Débito Declarado",
+    // e os valores vêm NA ORDEM receita → DAS: o DAS é o 2º número. Pegar o 1º trazia
+    // a receita como DAS (alíquota importada de 100%). Se o trecho detalhar
+    // Principal/Multa/Juros, usa o valor rotulado "Total" — nunca o de multa/juros.
+    const dasSeg = g(/(Receita\s+Bruta\s+Auferida[\s\S]{0,80}?)?Valor\s+Total\s+do\s+D[ée]bito\s+Declarado(?:\s*\(R\$\))?([\s\S]{0,140})/i);
     let dasVal = null;
     if (dasSeg) {
-        const seg = dasSeg[1];
+        const seg = dasSeg[2];
+        const nums = seg.match(/[\d.]+,\d{2}/g) || [];
         const tot = /Multa|Juros/i.test(seg) && seg.match(/Total[^\d]{0,20}([\d.]+,\d{2})/i);
-        const first = seg.match(/^[^\d]*([\d.]+,\d{2})/);
-        dasVal = tot ? tot[1] : (first ? first[1] : null);
+        if (tot) dasVal = tot[1];
+        else if (dasSeg[1] && nums.length >= 2) dasVal = nums[1]; // tabela receita | DAS
+        else dasVal = nums[0] || null;
     }
     const mun = g(/Munic[íi]pio:\s*([A-Za-zÀ-ú][A-Za-zÀ-ú .]*?)\s*UF:\s*([A-Z]{2})/i);
 
