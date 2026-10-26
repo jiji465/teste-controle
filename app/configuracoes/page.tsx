@@ -220,7 +220,7 @@ export default function ConfiguracoesPage() {
             </div>
             <div>
               <p className="text-xs text-muted-foreground">Perfil</p>
-              <p className="font-medium">{ROLE_LABEL[role ?? "editor"] ?? role}</p>
+              <p className="font-medium">{role ? ROLE_LABEL[role] ?? role : "Sem acesso (aguardando liberação)"}</p>
             </div>
             <p className="text-xs text-muted-foreground">
               O nome exibido aparece em &quot;concluído por&quot; e no histórico. Para alterá-lo, peça ao

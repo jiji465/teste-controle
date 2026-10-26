@@ -10,6 +10,7 @@ import { getObligationsWithDetails } from "@/lib/dashboard-utils"
 import { setExtraHolidays } from "@/lib/date-utils"
 import { getOfficeHolidays } from "@/features/settings/services"
 import { useAuth } from "@/contexts/auth-context"
+import { hasSupabaseConfig } from "@/lib/supabase/core"
 // seedDefaultTemplates foi movido pra rodar SÓ na página /templates pra
 // evitar duas chamadas concorrentes (era chamado aqui E lá, gerando race
 // conditions com o sync do Supabase).
@@ -41,7 +42,14 @@ interface DataContextType {
 const DataContext = createContext<DataContextType | undefined>(undefined)
 
 export function DataProvider({ children }: { children: ReactNode }) {
-  const { user } = useAuth()
+  const { user, role, isLoading: authLoading } = useAuth()
+  // O que este usuário pode carregar (espelha o RLS do scripts/023):
+  //  - sem Supabase (modo local): tudo, do localStorage;
+  //  - sem papel / login anônimo: nada (o banco não devolve linhas);
+  //  - viewer: só Empresas + obrigações (indicadores) + fechamentos/feriados;
+  //  - editor/admin: tudo.
+  const offline = !hasSupabaseConfig()
+  const scope: "none" | "viewer" | "full" = offline ? "full" : !user || !role ? "none" : role === "viewer" ? "viewer" : "full"
   const [clients, setClients] = useState<Client[]>([])
   const [taxes, setTaxes] = useState<Tax[]>([])
   const [obligations, setObligations] = useState<Obligation[]>([])
@@ -62,26 +70,39 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   const refreshData = useCallback(async () => {
     const seq = ++requestSeq.current
+    const s = scope
+    if (s === "none") {
+      // Sem papel: não consulta o banco (o RLS devolveria tudo vazio).
+      setClients([]); setTaxes([]); setObligations([]); setInstallments([]); setServices([]); setLockedPeriodInfo([])
+      setLoadError(null)
+      setIsLoading(false)
+      setIsRefreshing(false)
+      return
+    }
+    const full = s === "full"
     setIsRefreshing(true)
     if (!loadedOnce.current) setIsLoading(true)
     try {
       const [cls, txs, obs, insts, svcs, lps, holidays] = await Promise.all([
         getClients(),
-        getTaxes(),
+        // Guias, parcelamentos e serviços são só da equipe (viewer não lê no banco)
+        full ? getTaxes() : Promise.resolve([] as Tax[]),
         getObligations(),
-        getInstallments(),
-        getServices(),
+        full ? getInstallments() : Promise.resolve([] as Installment[]),
+        full ? getServices() : Promise.resolve([] as Service[]),
         getLockedPeriods(),
         // Feriados locais: falha aqui não derruba a carga (só ficam os nacionais)
         getOfficeHolidays().catch((e) => {
           console.warn("[data] Feriados locais indisponíveis:", e)
           return []
         }),
-        // Templates: força ler do Supabase e atualizar o cache local
-        getCustomTemplatesAsync().catch((e) => {
-          console.error("[data] Erro ao buscar templates:", e)
-          return []
-        }),
+        // Templates: força ler do Supabase e atualizar o cache local (só equipe)
+        full
+          ? getCustomTemplatesAsync().catch((e) => {
+              console.error("[data] Erro ao buscar templates:", e)
+              return []
+            })
+          : Promise.resolve([]),
       ])
       if (seq !== requestSeq.current) return
       // Antes de publicar os dados: todo cálculo de vencimento já usa os feriados locais
@@ -112,7 +133,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         setIsRefreshing(false)
       }
     }
-  }, [])
+  }, [scope])
 
   useEffect(() => {
     retryRef.current = refreshData
@@ -144,10 +165,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
     setIsMounted(true)
   }, [])
 
-  // Recarrega quando a sessão muda (login/logout/troca de usuário)
+  // Recarrega quando a sessão ou o papel mudam (login/logout/troca de usuário).
+  // Espera o Auth terminar de carregar para não consultar o banco sem papel.
   useEffect(() => {
+    if (authLoading && !offline) return
     void refreshData()
-  }, [user?.id, refreshData])
+  }, [user?.id, scope, authLoading, offline, refreshData])
 
   // Auto-refresh ao voltar para a aba (sem polling). Só dispara se passou
   // mais de 10s desde o último refresh, pra não martelar o banco.

@@ -161,7 +161,7 @@ export async function securitySnapshot(db: PGlite) {
   const trg = await db.query(
     `select tgrelid::regclass::text as t, tgname, tgfoid::regproc::text as fn, tgtype from pg_trigger where not tgisinternal order by 1, 2`,
   )
-  const chk = await db.query(
+  const chk = await db.query<{ t: string; conname: string; def: string }>(
     `select conrelid::regclass::text as t, conname, pg_get_constraintdef(oid) as def
        from pg_constraint where connamespace = 'public'::regnamespace and contype = 'c' order by 1, 2`,
   )

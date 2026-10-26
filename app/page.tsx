@@ -407,6 +407,15 @@ export default function DashboardPage() {
             </>
           )}
 
+          {/* Visualizador: o banco só libera Empresas + obrigações (LGPD) —
+              guias, parcelamentos e serviços não entram nos indicadores. */}
+          {isViewer && (
+            <p className="text-xs text-muted-foreground">
+              Perfil somente leitura: os indicadores consideram as obrigações acessórias. Guias, parcelamentos e
+              serviços ficam visíveis apenas para a equipe.
+            </p>
+          )}
+
           {/* Resumo Geral */}
           {stats && (
             <div>
