@@ -25,7 +25,8 @@ describe("cabeçalhos de segurança", () => {
 
   it("dev libera eval/HMR; produção não", () => {
     expect(buildCsp({ isDev: true })).toContain("'unsafe-eval'")
-    expect(buildCsp({ isDev: false })).toContain("upgrade-insecure-requests")
+    expect(buildCsp({ isDev: false })).not.toContain("'unsafe-eval'")
+    expect(buildCsp({ isDev: false })).not.toContain("ws:")
   })
 
   it("demais cabeçalhos", () => {
