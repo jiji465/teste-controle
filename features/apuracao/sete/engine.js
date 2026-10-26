@@ -457,9 +457,10 @@ export const formatBRLDisplay = (num) => {
 export const pgNum = parseNumBR;
 
 export async function extractPdfText(file) {
+    if (file && file.size > 15 * 1024 * 1024) throw new Error('PDF muito grande (máximo 15 MB).');
     const pdfjsLib = await import('pdfjs-dist');
     if (!pdfjsLib) throw new Error('Leitor de PDF (pdf.js) não carregou. Verifique a conexão.');
-    pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
+    pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url).toString();
     const buf = await file.arrayBuffer();
     const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
     let text = '';
