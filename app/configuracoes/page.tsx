@@ -27,7 +27,7 @@ import {
   saveOfficeHoliday,
   type OfficeHoliday,
 } from "@/features/settings/services"
-import { formatDate } from "@/lib/date-utils"
+import { formatDate, toLocalDateString } from "@/lib/date-utils"
 import { errorMessage } from "@/lib/utils"
 
 const SCOPE_LABEL: Record<OfficeHoliday["scope"], string> = {
@@ -96,7 +96,9 @@ export default function ConfiguracoesPage() {
     }
   }
 
-  const today = new Date().toISOString().slice(0, 10)
+  // Dia LOCAL: toISOString() é UTC — depois das 21h no Brasil já virava o
+  // dia seguinte e o feriado de hoje caía em "passados".
+  const today = toLocalDateString(new Date())
   const upcoming = (holidays ?? []).filter((h) => h.date >= today)
   const past = (holidays ?? []).filter((h) => h.date < today)
 
