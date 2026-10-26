@@ -16,6 +16,7 @@ import {
 // ---- Integração com o controle fiscal (teste-controle) ----
 import { useData } from '@/contexts/data-context';
 import { useAuth } from '@/contexts/auth-context';
+import { useSelectedPeriod } from '@/contexts/period-context';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { normalizeCnpj, formatDocument } from '@/lib/cnpj-validation';
 import { TAX_REGIME_LABELS } from '@/lib/types';
@@ -189,8 +190,8 @@ const FatorRDashboard = ({ clientData, isPrint = false }) => {
 const Section = ({ title, icon: Icon, defaultOpen = true, summary, children }) => {
     const [open, setOpen] = React.useState(defaultOpen);
     return (
-        <div className="col-span-2 border border-slate-200 rounded-xl overflow-hidden">
-            <button type="button" onClick={() => setOpen(o => !o)} className="w-full flex items-center justify-between gap-3 px-4 py-2.5 bg-slate-50 hover:bg-slate-100 transition-colors text-left">
+        <div className="col-span-2 border border-border rounded-xl overflow-hidden">
+            <button type="button" onClick={() => setOpen(o => !o)} className="w-full flex items-center justify-between gap-3 px-4 py-2.5 bg-muted/60 hover:bg-muted transition-colors text-left">
                 <span className="text-xs font-bold text-navy flex items-center gap-2 shrink-0">{Icon ? <Icon className="w-4 h-4" /> : null}{title}</span>
                 <span className="flex items-center gap-2 min-w-0">
                     {!open && summary ? <span className="text-[11px] text-slate-500 truncate max-w-[300px]">{summary}</span> : null}
@@ -621,7 +622,7 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
                 </div>
             )}
 
-            <div className="bg-white rounded-xl shadow-md p-6 mb-6 animate-fade-in-up card-hover">
+            <div className="bg-card text-card-foreground border border-border rounded-xl shadow-md p-4 sm:p-6 mb-6 animate-fade-in-up card-hover">
                 <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
                     <h2 className="text-lg font-bold text-navy flex items-center gap-2">
                         <Building2 className="w-5 h-5" /> Dados do Cliente
@@ -655,10 +656,13 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
                         <label className="field-label">CNPJ</label>
                         <input className="field-input" value={clientData.cnpj} onChange={e => updateClient('cnpj', formatDocument(normalizeCnpj(e.target.value).slice(0, 14)))} placeholder="00.000.000/0001-00" />
                     </div>
-                    <div>
+                    {/* no celular a coluna tem ~140px: mês + ano ocupam a linha inteira */}
+                    <div className="col-span-2 sm:col-span-1">
                         <label className="field-label">Competência <span className="text-red-400">*</span></label>
+                        {/* .field-input tem width:100% — sem o !w-28/shrink-0 o select do ano
+                            ocupava a linha toda e o do mês encolhia para ~25px */}
                         <div className="flex gap-2">
-                            <select className={`field-input flex-1 ${validationErrors.competence ? 'field-error' : ''}`} value={clientData.compMonth || (clientData.competenceShort ? String(parseInt(clientData.competenceShort.split('/')[0], 10)) : '')}
+                            <select className={`field-input flex-1 min-w-0 ${validationErrors.competence ? 'field-error' : ''}`} value={clientData.compMonth || (clientData.competenceShort ? String(parseInt(clientData.competenceShort.split('/')[0], 10)) : '')}
                                 onChange={e => {
                                     const m = e.target.value; updateClient('compMonth', m);
                                     const y = clientData.compYear || new Date().getFullYear().toString();
@@ -671,7 +675,7 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
                                 <option value="">Mês</option>
                                 {MONTHS.map((name, i) => <option key={i} value={String(i + 1)}>{name}</option>)}
                             </select>
-                            <select className="field-input w-28" value={clientData.compYear || (clientData.competenceShort ? clientData.competenceShort.split('/')[1] : '')}
+                            <select className="field-input !w-28 shrink-0" value={clientData.compYear || (clientData.competenceShort ? clientData.competenceShort.split('/')[1] : '')}
                                 onChange={e => {
                                     const y = e.target.value; updateClient('compYear', y);
                                     const m = clientData.compMonth;
@@ -681,7 +685,13 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
                                     }
                                 }}>
                                 <option value="">Ano</option>
-                                {[2023, 2024, 2025, 2026, 2027, 2028, 2029, 2030].map(y => <option key={y} value={String(y)}>{y}</option>)}
+                                {(() => {
+                                    // De 2018 até o ano corrente + 2, incluindo o ano carregado (PGDAS-D antigos)
+                                    const sel = parseInt(clientData.compYear || (clientData.competenceShort || '').split('/')[1], 10);
+                                    const fim = Math.max(new Date().getFullYear() + 2, sel || 0);
+                                    const ini = Math.min(2018, sel || 2018);
+                                    return Array.from({ length: fim - ini + 1 }, (_, i) => fim - i);
+                                })().map(y => <option key={y} value={String(y)}>{y}</option>)}
                             </select>
                         </div>
                         {validationErrors.competence && <p className="field-error-msg">{validationErrors.competence}</p>}
@@ -806,10 +816,10 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
                                 // atividades; registros antigos (só a 1ª tabela) não têm a marca.
                                 const exata = r.exata === true;
                                 return (
-                                    <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50/50 p-4">
+                                    <div className="mt-3 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4">
                                         <p className="text-xs font-bold text-navy mb-2 flex items-center gap-2"><Receipt className="w-4 h-4" /> Segregação do DAS — importada do PGDAS-D</p>
                                         <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-[11px]">
-                                            {items.map(([k, v]) => (<span key={k} className="flex justify-between gap-2 bg-white rounded px-2 py-1 border border-slate-100"><span className="text-slate-500">{k}</span><b className="text-slate-800 tabular-nums">{formatCurrency(v)}</b></span>))}
+                                            {items.map(([k, v]) => (<span key={k} className="flex justify-between gap-2 bg-card rounded px-2 py-1 border border-border"><span className="text-muted-foreground">{k}</span><b className="text-foreground tabular-nums">{formatCurrency(v)}</b></span>))}
                                             <span className="flex justify-between gap-2 bg-navy text-white rounded px-2 py-1"><span>Total DAS</span><b className="tabular-nums">{formatCurrency(r.total)}</b></span>
                                         </div>
                                         <p className="text-[10px] text-slate-400 mt-1.5">{exata
@@ -874,7 +884,7 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
                                         placeholder="0,00" />
                                 </div>
                             </div>
-                            <div className="mt-3 bg-slate-50 p-3 rounded-lg border border-slate-200 flex justify-between items-center">
+                            <div className="mt-3 bg-muted p-3 rounded-lg border border-border flex justify-between items-center">
                                 <span className="text-xs font-bold text-slate-500 uppercase">Faturamento Bruto Total do Mês:</span>
                                 <span className="text-lg font-extrabold text-navy">{formatCurrency(totalRevenue)}</span>
                             </div>
@@ -1200,7 +1210,7 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
                 </div>
             </div>
 
-            <div className="bg-white rounded-xl shadow-md p-6 mb-6">
+            <div className="bg-card text-card-foreground border border-border rounded-xl shadow-md p-4 sm:p-6 mb-6">
                 <h2 className="text-lg font-bold text-navy mb-4 flex items-center gap-2">
                     <Info className="w-5 h-5" />
                     Informações Adicionais
@@ -1224,13 +1234,14 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
                 </div>
             </div>
 
-            <div className="bg-white rounded-xl shadow-md p-6 mb-6">
-                <div className="flex items-center justify-between mb-4">
+            <div className="bg-card text-card-foreground border border-border rounded-xl shadow-md p-4 sm:p-6 mb-6">
+                <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
                     <h2 className="text-lg font-bold text-navy flex items-center gap-2">
                         <Calculator className="w-5 h-5" />
                         Tributos Apurados
                     </h2>
-                    <div className="flex gap-2">
+                    {/* flex-wrap: no celular os 3 botões não cabem numa linha e estouravam a tela */}
+                    <div className="flex flex-wrap gap-2">
                         {!showRetentionsTable && (
                             <button onClick={() => setForceShowRetentions(true)} className="bg-emerald-50 text-emerald-700 px-3 py-1.5 rounded-lg text-xs font-bold border border-emerald-200 hover:bg-emerald-100 transition-all cursor-pointer">
                                 + Habilitar Retenções
@@ -2285,6 +2296,23 @@ const App = () => {
     const [clientData, setClientData] = useState(blankClient);
     const [taxes, setTaxes] = useState(DEFAULT_TAXES);
 
+    // Competência inicial = período selecionado no topo do sistema, enquanto a tela não
+    // tiver competência própria (nova apuração, troca de empresa, "Limpar"). Acompanha o
+    // período enquanto a competência for a que veio dele e nada foi editado — o provider
+    // só lê o período salvo (localStorage) depois de montar.
+    const { period } = useSelectedPeriod();
+    const compAuto = React.useRef('');
+    React.useEffect(() => {
+        const pm = /^(\d{4})-(\d{2})$/.exec(period || '');
+        if (!pm || dirty || loadedRec) return;
+        const atual = clientData.compYear && clientData.compMonth ? `${clientData.compYear}-${String(clientData.compMonth).padStart(2, '0')}` : '';
+        const vazia = !clientData.compMonth && !clientData.compYear && !clientData.competenceShort;
+        if (atual === period || (!vazia && atual !== compAuto.current)) return;
+        compAuto.current = period;
+        const mes = parseInt(pm[2], 10);
+        setClientData(prev => ({ ...prev, compMonth: String(mes), compYear: pm[1], competenceShort: pm[2] + '/' + pm[1], competence: MONTHS[mes - 1] + '/' + pm[1] }));
+    }, [period, dirty, loadedRec, clientData.compMonth, clientData.compYear, clientData.competenceShort]);
+
     const mapAtividade = (b) => {
         if (!b) return 'Serviços';
         const s = String(b).toLowerCase();
@@ -2796,6 +2824,7 @@ const SETE_STYLES = `
 .field-input { width: 100%; padding: 8px 12px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 14px; transition: all 0.2s; outline: none; background: white; color: #0f172a; }
 .field-input:focus { border-color: #1e3a8a; box-shadow: 0 0 0 3px rgba(30, 58, 138, 0.1); }
 .field-label { display: block; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #64748b; margin-bottom: 4px; }
+.dark .field-label { color: #94a3b8; }
 .tab-btn { padding: 10px 20px; border-radius: 10px; font-weight: 700; font-size: 13px; text-transform: uppercase; letter-spacing: 0.05em; cursor: pointer; transition: all 0.2s; border: 2px solid transparent; }
 .tab-btn.active { background: #1e3a8a; color: white; }
 .tab-btn:not(.active) { background: #f1f5f9; color: #64748b; border-color: #e2e8f0; }
