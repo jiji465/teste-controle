@@ -77,6 +77,17 @@ function generateCompetencies(
 }
 
 /**
+ * Competência de um item ANUAL com data fixa (dueMonth — DEFIS, DASN-SIMEI):
+ * dezembro do ano-base (exercício). O vencimento não muda (dueMonth/dueDay do
+ * ano seguinte), mas a competência deixa de depender do mês inicial escolhido
+ * no diálogo — reaplicar em outro mês do mesmo ano não cria outra instância.
+ */
+function normalizeAnnualCompetency(item: TemplateItem, competency: string): string {
+  if (item.recurrence !== "annual" || !item.dueMonth) return competency
+  return `${competency.slice(0, 4)}-12`
+}
+
+/**
  * Aplica um conjunto de itens de template a uma empresa, gerando uma
  * instância por competência dentro do intervalo informado.
  *
@@ -84,7 +95,8 @@ function generateCompetencies(
  * - Demais categorias viram **Obligation** (Obrigações Acessórias, /obrigacoes)
  *
  * Dedupe é feito por (nome + competência) — não duplica se já existe
- * uma instância para o mesmo cliente naquele mês.
+ * uma instância para o mesmo cliente naquele mês. Itens ANUAIS deduplicam por
+ * (nome + ano): uma DEFIS por exercício, qualquer que seja o mês gravado.
  */
 export async function applyTemplateToClient(
   client: Client,
@@ -111,6 +123,15 @@ export async function applyTemplateToClient(
       .map((t) => `${t.name.toLowerCase()}|${t.competencyMonth ?? ""}`),
   )
 
+  // Anuais: "nome|ano" de tudo que já existe para o cliente
+  const annualKey = (name: string, competency: string | undefined) =>
+    `${name.toLowerCase()}|${(competency ?? "").slice(0, 4)}`
+  const existingAnnualKeys = new Set(
+    [...existingObligations, ...existingTaxes]
+      .filter((x) => x.clientId === client.id && x.competencyMonth)
+      .map((x) => annualKey(x.name, x.competencyMonth)),
+  )
+
   const taxesToSave: Tax[] = []
   const obligationsToSave: Obligation[] = []
   let totalSkipped = 0
@@ -119,8 +140,17 @@ export async function applyTemplateToClient(
     const competencies = generateCompetencies(range, item.recurrence, undefined)
     const isTax = item.category === "tax_guide"
 
-    for (const competency of competencies) {
+    for (const rawCompetency of competencies) {
+      const competency = normalizeAnnualCompetency(item, rawCompetency)
       const key = `${item.name.toLowerCase()}|${competency}`
+      if (item.recurrence === "annual") {
+        const yearKey = annualKey(item.name, competency)
+        if (existingAnnualKeys.has(yearKey)) {
+          totalSkipped++
+          continue
+        }
+        existingAnnualKeys.add(yearKey)
+      }
 
       if (isTax) {
         if (existingTaxKeys.has(key)) {

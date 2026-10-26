@@ -16,6 +16,7 @@ import { Badge } from "@/components/ui/badge"
 import { Search } from "lucide-react"
 import {
   TEMPLATE_ITEM_CATALOG,
+  catalogItemToTemplate,
   groupedCatalog,
   type CatalogItem,
 } from "@/lib/template-item-catalog"
@@ -77,17 +78,7 @@ export function QuickAddItemsDialog({ open, onOpenChange, existingNames, onAdd }
   }
 
   const handleAdd = () => {
-    const items = TEMPLATE_ITEM_CATALOG.filter((c) => selected.has(c.name)).map<ObligationTemplate>((c) => ({
-      name: c.name,
-      description: c.description,
-      category: c.category,
-      scope: c.scope,
-      dueDay: c.dueDay,
-      frequency: c.frequency,
-      recurrence: c.recurrence,
-      weekendRule: c.weekendRule,
-      priority: c.priority,
-    }))
+    const items = TEMPLATE_ITEM_CATALOG.filter((c) => selected.has(c.name)).map(catalogItemToTemplate)
     onAdd(items)
     setSelected(new Set())
     setSearch("")
