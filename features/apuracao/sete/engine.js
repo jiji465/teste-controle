@@ -471,18 +471,52 @@ export async function extractPdfText(file) {
     return text;
 }
 
-export function parsePGDASD(T) {
+// Rodapé repetido em toda página do PGDAS-D. O pdf.js o intercala no meio do conteúdo —
+// em declarações reais ele cai entre "Valor Total do Débito Declarado" e os valores do
+// resumo (2.6) e entre o cabeçalho e os números da tabela 2.8. Removido antes de ler.
+const RODAPE_PGDAS = /N[úu]mero\s+da\s+Declara[çc][ãa]o:\s*\d+\s+N[úu]mero\s+do\s+Recibo:\s*[\d.-]+\s+Autentica[çc][ãa]o:\s*[\d.]+\s+P[áa]gina\s+\d+/gi;
+const NUM_PG = '([\\d.]+,\\d{2})';
+// Tabela de débito por tributo (por atividade, por estabelecimento e no Total Geral)
+const TAB_TRIBUTOS = 'IRPJ\\s+CSLL\\s+COFINS\\s+PIS\\/Pasep\\s+INSS\\/CPP\\s+ICMS\\s+IPI\\s+ISS\\s+Total' + ('\\s+' + NUM_PG).repeat(9);
+const TRIBUTOS_REPART = ['IRPJ', 'CSLL', 'COFINS', 'PIS', 'CPP', 'ICMS', 'IPI', 'ISS', 'total'];
+const lerRepart = (m, i0) => Object.fromEntries(TRIBUTOS_REPART.map((k, i) => [k, pgNum(m[i0 + i])]));
+
+// Tipo da atividade pelo texto do bloco "Valor do Débito por Tributo para a Atividade".
+// Revenda → Comércio (Anexo I); mercadoria industrializada pelo contribuinte → Indústria
+// (Anexo II) — LC 123, art. 18, § 4º, I e II. Sem padrão conhecido → null (sem certeza).
+const tipoAtividadePGDAS = (desc) => /Revenda\s+de\s+mercadorias/i.test(desc) ? 'Comércio'
+    : /Venda\s+de\s+mercadorias\s+industrializadas/i.test(desc) ? 'Indústria'
+        : /Presta[çc][ãa]o\s+de\s+servi[çc]os|Loca[çc][ãa]o\s+de\s+bens|servi[çc]os/i.test(desc) ? 'Serviços'
+            : null;
+
+// Números de uma linha do quadro 2.1 (Mercado Interno | Mercado Externo | Total): só o que
+// está entre o rótulo e o PRÓXIMO rótulo. Linha vazia no PDF (ex.: RBT12p de quem não está
+// em início de atividade) devolve [] — antes o regex "pulava" para a linha seguinte e a
+// RBT12p saía com o valor da RBA. Sem o próximo rótulo → undefined (layout desconhecido).
+const linhaQuadro21 = (T, rotulo) => {
+    const m = T.match(new RegExp(rotulo + '([\\s\\S]*?)(?:Receita\\s+bruta\\s+acumulada|Limite\\s+de\\s+receita|2\\.2\\))', 'i'));
+    return m ? (m[1].match(/[\d.]+,\d{2}/g) || []) : undefined;
+};
+// Valor da linha: a coluna "Total" (3ª) quando há as três; senão o único valor.
+const totalLinha = (nums) => (nums && nums.length) ? nums[nums.length >= 3 ? 2 : 0] : undefined;
+
+export function parsePGDASD(texto) {
     const res = { ok: false };
-    if (!/Simples\s+Nacional|Per[ií]odo\s+de\s+Apura|PGDAS|Documento\s+de\s+Arrecada/i.test(T)) { res.error = 'O arquivo não parece ser um PGDAS-D.'; return res; }
+    if (!/Simples\s+Nacional|Per[ií]odo\s+de\s+Apura|PGDAS|Documento\s+de\s+Arrecada/i.test(texto)) { res.error = 'O arquivo não parece ser um PGDAS-D.'; return res; }
+    const T = String(texto).replace(RODAPE_PGDAS, '\n');
     const g = (re) => { const m = T.match(re); return m; };
     const cnpj = g(/CNPJ\s+Matriz:\s*([\d.]+\/\d{4}-\d{2})/i);
     const nome = g(/Nome\s+empresarial:\s*([\s\S]*?)\s*Data\s+de\s+abertura/i);
     // "Período de Apuração: 01/07/2026 a 31/07/2026" ou "Período de Apuração (PA): 12/2025"
     const comp = g(/Per[ií]odo\s+de\s+Apura[çc][ãa]o(?:\s*\(PA\))?:\s*(?:\d{2}\/)?(\d{2})\/(\d{4})/i);
     const abertura = g(/Data\s+de\s+abertura(?:\s+no\s+CNPJ)?:\s*\d{2}\/(\d{2})\/(\d{4})/i);
-    const rpa = g(/RPA\)[\s\S]*?Compet[êe]ncia\s*([\d.]+,\d{2})/i);
-    const rbt12 = g(/\(RBT12\)[^\d]*?([\d.]+,\d{2})/);
-    const rbt12p = g(/\(RBT12p\)[^\d]*?([\d.]+,\d{2})/);
+    // Quadro 2.1: RPA e RBT12 pela coluna Total; fallback para layouts sem o rótulo seguinte.
+    const rpaOld = g(/RPA\)[\s\S]*?Compet[êe]ncia\s*([\d.]+,\d{2})/i);
+    const rpa = totalLinha(linhaQuadro21(T, '\\(RPA\\)\\s*-\\s*Compet[êe]ncia')) || (rpaOld && rpaOld[1]);
+    const rbt12Old = g(/\(RBT12\)[^\d]*?([\d.]+,\d{2})/);
+    const rbt12 = totalLinha(linhaQuadro21(T, '\\(RBT12\\)')) || (rbt12Old && rbt12Old[1]);
+    // RBT12p: só os números da PRÓPRIA linha (vazia para empresa com 12+ meses).
+    const rbt12p = totalLinha(linhaQuadro21(T, '\\(RBT12p\\)'));
     const folha = g(/Total\s+de\s+Folhas\s+de\s+Sal[áa]rios\s+Anteriores[\s\S]*?R\$\s*([\d.]+,\d{2})/i);
     const anexoSuj = g(/Sujeitos?\s+ao\s+Anexo\s+([IVX]+)/i);
     // Alguns PGDAS trazem o anexo só na descrição da atividade ("...tributados pelo
@@ -490,15 +524,33 @@ export function parsePGDASD(T) {
     // e o DAS não calculava. Cobre "tributad(o/a)s pelo Anexo X" e "Anexo X" avulso.
     const anexoTrib = g(/tributad[oa]s?\s+pel[oa]\s+Anexo\s+([IVX]+)/i) || g(/\bAnexo\s+(I{1,3}|IV|V)\b/i);
     const fator = g(/Fator\s+r\s*=\s*(N[ãa]o\s+se\s+aplica|[\d,]+)(?:\s*[-–—]\s*(Anexo\s+[IVX]+))?/i);
-    // Repartição por tributo (segregação): IRPJ CSLL COFINS PIS/Pasep INSS/CPP ICMS IPI ISS Total
-    const repM = g(/IRPJ\s+CSLL\s+COFINS\s+PIS\/Pasep\s+INSS\/CPP\s+ICMS\s+IPI\s+ISS\s+Total\s+([\d.]+,\d{2})\s+([\d.]+,\d{2})\s+([\d.]+,\d{2})\s+([\d.]+,\d{2})\s+([\d.]+,\d{2})\s+([\d.]+,\d{2})\s+([\d.]+,\d{2})\s+([\d.]+,\d{2})\s+([\d.]+,\d{2})/i);
+    // ===== Débito declarado e repartição por tributo (segregação do DAS) =====
+    // Fonte principal: "2.8) Total Geral da Empresa — Total do Débito Declarado (exigível +
+    // suspenso)": soma TODAS as atividades e estabelecimentos. Antes a repartição era a 1ª
+    // tabela do PDF (só a 1ª atividade) e, com o rodapé no meio do resumo, o DAS também.
+    const i28 = T.search(/2\.8\)\s*Total\s+Geral\s+da\s+Empresa/i);
+    const tg = i28 >= 0 ? T.slice(i28).match(new RegExp('Total\\s+do\\s+D[ée]bito\\s+Declarado[\\s\\S]{0,80}?' + TAB_TRIBUTOS, 'i')) : null;
+    // Sem o 2.8: soma das tabelas por atividade (cada uma precedida de "Receita Bruta Informada")
+    const atvTabs = [...T.matchAll(new RegExp('Receita\\s+Bruta\\s+Informada:\\s*R\\$\\s*' + NUM_PG + '\\s+' + TAB_TRIBUTOS, 'gi'))];
+    let repart = null;
+    if (tg) repart = { ...lerRepart(tg, 1), exata: true, fonte: 'total-geral' };
+    else if (atvTabs.length) {
+        repart = Object.fromEntries(TRIBUTOS_REPART.map(k => [k, 0]));
+        atvTabs.forEach(m => { const r = lerRepart(m, 2); TRIBUTOS_REPART.forEach(k => { repart[k] += r[k]; }); });
+        TRIBUTOS_REPART.forEach(k => { repart[k] = Math.round(repart[k] * 100) / 100; });
+        repart = { ...repart, exata: true, fonte: 'atividades' };
+    } else {
+        // Layout sem as marcas acima: 1ª tabela encontrada — pode ser só uma atividade.
+        const repM = g(new RegExp(TAB_TRIBUTOS, 'i'));
+        if (repM) repart = { ...lerRepart(repM, 1), exata: false, fonte: 'tabela' };
+    }
     // DAS declarado. No layout oficial ("2.6) Resumo da Declaração") o rótulo é a 2ª
     // coluna de uma tabela "Receita Bruta Auferida | Valor Total do Débito Declarado",
     // e os valores vêm NA ORDEM receita → DAS: o DAS é o 2º número. Pegar o 1º trazia
     // a receita como DAS (alíquota importada de 100%). Se o trecho detalhar
     // Principal/Multa/Juros, usa o valor rotulado "Total" — nunca o de multa/juros.
-    const dasSeg = g(/(Receita\s+Bruta\s+Auferida[\s\S]{0,80}?)?Valor\s+Total\s+do\s+D[ée]bito\s+Declarado(?:\s*\(R\$\))?([\s\S]{0,140})/i);
-    let dasVal = null;
+    let dasVal = tg ? tg[9] : null;
+    const dasSeg = dasVal ? null : g(/(Receita\s+Bruta\s+Auferida[\s\S]{0,80}?)?Valor\s+Total\s+do\s+D[ée]bito\s+Declarado(?:\s*\(R\$\))?([\s\S]{0,140})/i);
     if (dasSeg) {
         const seg = dasSeg[2];
         const nums = seg.match(/[\d.]+,\d{2}/g) || [];
@@ -507,18 +559,43 @@ export function parsePGDASD(T) {
         else if (dasSeg[1] && nums.length >= 2) dasVal = nums[1]; // tabela receita | DAS
         else dasVal = nums[0] || null;
     }
-    const mun = g(/Munic[íi]pio:\s*([A-Za-zÀ-ú][A-Za-zÀ-ú .]*?)\s*UF:\s*([A-Z]{2})/i);
+    // Município pode ter várias palavras ("ZE DOCA", "SANTA LUZIA DO PARUA") — o pdf.js
+    // separa cada palavra por quebra de linha, que o regex antigo não aceitava.
+    const mun = g(/Munic[íi]pio:\s*([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ.'\s-]*?)\s*UF:\s*([A-Z]{2})/i);
 
     if (cnpj) res.cnpj = cnpj[1];
     if (nome) res.nome = nome[1].replace(/\s+/g, ' ').trim();
     if (comp) { res.compMonth = String(parseInt(comp[1])); res.compYear = comp[2]; res.competenceShort = comp[1] + '/' + comp[2]; }
-    if (rpa) res.rpa = rpa[1];
-    if (rbt12) res.rbt12 = rbt12[1];
-    if (rbt12p) res.rbt12p = rbt12p[1];
+    if (rpa) res.rpa = rpa;
+    if (rbt12) res.rbt12 = rbt12;
+    if (rbt12p) res.rbt12p = rbt12p;
     if (folha) res.folha12m = folha[1];
     if (fator) { res.fatorR = fator[1].replace(/\s+/g, ' ').trim(); if (fator[2]) res.anexo = fator[2].replace(/\s+/g, ' ').trim(); }
     if (!res.anexo && anexoSuj) res.anexo = 'Anexo ' + anexoSuj[1].toUpperCase();
     if (!res.anexo && anexoTrib) res.anexo = 'Anexo ' + anexoTrib[1].toUpperCase();
+
+    // ===== Atividade pelos blocos de atividade do PGDAS-D =====
+    // Antes a busca era no texto inteiro e o padrão era "Serviços" — 104 de 107 PGDAS de
+    // comércio viravam Serviços. Agora: só revenda → Comércio; só industrializada →
+    // Indústria; comércio + indústria → a de maior receita; serviços + mercadorias →
+    // 'Ambos'. Sem blocos reconhecíveis fica sem atividade (a tela mantém a do cadastro).
+    const blocos = [...T.matchAll(/Valor\s+do\s+D[ée]bito\s+por\s+Tributo\s+para\s+a\s+Atividade\s*\(R\$\):\s*([\s\S]*?)Receita\s+Bruta\s+Informada:\s*R\$\s*([\d.]+,\d{2})/gi)];
+    if (blocos.length) {
+        res.atividades = blocos.map(b => ({ descricao: b[1].replace(/\s+/g, ' ').trim(), receita: pgNum(b[2]), tipo: tipoAtividadePGDAS(b[1]) }));
+        const tipos = new Set(res.atividades.map(a => a.tipo));
+        if (!tipos.has(null)) {
+            if (tipos.has('Serviços') && tipos.size > 1) res.atividade = 'Ambos';
+            else if (tipos.size === 1) res.atividade = [...tipos][0];
+            else {
+                const soma = (t) => res.atividades.filter(a => a.tipo === t).reduce((s, a) => s + a.receita, 0);
+                res.atividade = soma('Indústria') > soma('Comércio') ? 'Indústria' : 'Comércio';
+            }
+            // Anexo pela natureza da atividade quando o PDF não o cita (comércio/indústria
+            // não trazem "Anexo" no texto). Só com um único anexo possível.
+            if (!res.anexo && tipos.size === 1 && !tipos.has('Serviços')) res.anexo = tipos.has('Comércio') ? 'Anexo I' : 'Anexo II';
+        }
+    } else if (/Revenda\s+de\s+mercadorias/i.test(T)) res.atividade = 'Comércio';
+    else if (/Presta[çc][ãa]o\s+de\s+Servi[çc]os/i.test(T)) res.atividade = 'Serviços';
     // Sujeito ao Fator R: o PGDAS traz um Fator r NUMÉRICO (não "Não se aplica")
     // ou classifica a atividade no Anexo V. Nesses casos o anexo-BASE é o V; a
     // migração para o III é DERIVADA quando o Fator R ≥ 28% — não gravamos o III
@@ -534,12 +611,10 @@ export function parsePGDASD(T) {
     }
     if (dasVal) res.das = dasVal;
     if (abertura) res.dataAbertura = abertura[1] + '/' + abertura[2];
-    if (mun) res.municipio = mun[1].trim() + '/' + mun[2];
-    if (repM) res.repart = { IRPJ: pgNum(repM[1]), CSLL: pgNum(repM[2]), COFINS: pgNum(repM[3]), PIS: pgNum(repM[4]), CPP: pgNum(repM[5]), ICMS: pgNum(repM[6]), IPI: pgNum(repM[7]), ISS: pgNum(repM[8]), total: pgNum(repM[9]) };
-    // Em alguns layouts o "Valor Total do Débito Declarado" fica em página/linha separada
-    // do rótulo e o regex direto não casa. A soma da repartição por tributo é o mesmo
-    // valor DECLARADO (fonte da verdade) — usa como DAS quando o campo direto falhar.
-    if (!res.das && res.repart && res.repart.total > 0) res.das = res.repart.total.toFixed(2).replace('.', ',');
+    if (mun) res.municipio = mun[1].replace(/\s+/g, ' ').trim() + '/' + mun[2].toUpperCase();
+    if (repart) res.repart = repart;
+    // Sem o 2.8 e sem o resumo legível, o total da repartição é o valor DECLARADO.
+    if (!res.das && res.repart && res.repart.total > 0) res.das = formatBRLDisplay(res.repart.total);
     // Folha de Salários Anteriores (12m) — soma dos meses quando houver (senão "Nenhuma")
     const folhaBlock = T.match(/2\.3\)[^]*?(?:2\.4\)|2\.5\)|$)/);
     if (!res.folha12m && folhaBlock && !/Nenhuma/i.test(folhaBlock[0])) {
@@ -547,20 +622,21 @@ export function parsePGDASD(T) {
         while ((mf = rf.exec(folhaBlock[0]))) soma += pgNum(mf[2]);
         if (soma > 0) res.folha12m = soma.toFixed(2).replace('.', ',');
     }
-    res.atividade = /Presta[çc][ãa]o\s+de\s+Servi[çc]os/i.test(T) ? 'Serviços' : (/Com[ée]rcio/i.test(T) ? 'Comércio' : 'Serviços');
     // Mais de um estabelecimento: os valores capturados podem ser só da matriz — avisar o usuário.
     // Detecta por CNPJs DISTINTOS (filiais de verdade), não pela palavra "Estabelecimento"
     // (que pode aparecer várias vezes no layout mesmo com um único estabelecimento).
     const cnpjsDistintos = new Set(T.match(/\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}/g) || []);
     if (cnpjsDistintos.size > 1) res.multiEstab = true;
 
-    // Evolução do faturamento — seção 2.2.1 (Mercado Interno); fallback se 2.2.2 não existir no layout
-    const block = T.match(/2\.2\.1\)[^]*?(?:2\.2\.2\)|2\.3\)|$)/);
+    // Evolução do faturamento — 2.2.1 (Mercado Interno) + 2.2.2 (Mercado Externo): a receita
+    // bruta do mês é a soma dos dois (mesmo critério da coluna Total do quadro 2.1).
     const ev = {};
-    if (block) {
+    [/2\.2\.1\)[^]*?(?:2\.2\.2\)|2\.3\)|$)/, /2\.2\.2\)[^]*?(?:2\.3\)|$)/].forEach((reBloco) => {
+        const block = T.match(reBloco);
+        if (!block) return;
         const re = /(\d{2}\/\d{4})\s+([\d.]+,\d{2})/g; let m;
-        while ((m = re.exec(block[0]))) ev[m[1]] = pgNum(m[2]);
-    }
+        while ((m = re.exec(block[0]))) ev[m[1]] = (ev[m[1]] || 0) + pgNum(m[2]);
+    });
     if (res.compMonth && res.compYear) {
         const series = []; const mo = parseInt(res.compMonth), yr = parseInt(res.compYear);
         for (let k = 11; k >= 0; k--) {
@@ -575,6 +651,49 @@ export function parsePGDASD(T) {
     res.ok = !!(res.cnpj || res.rpa || res.das);
     return res;
 }
+
+// Atividades que a tela oferece no Simples Nacional ('Ambos' só existe no MEI).
+export const ATIVIDADES_SN = ['Serviços', 'Comércio', 'Indústria'];
+
+/**
+ * Aplica um PGDAS-D lido (parsePGDASD) sobre os dados da tela. Com empresa selecionada,
+ * nome/CNPJ do cadastro prevalecem. A atividade só é trocada quando o PDF a define com
+ * certeza e ela existe no Simples — senão fica a do cadastro (antes virava "Serviços").
+ */
+export const aplicarPgdasD = (prev, d) => {
+    const atividadePdf = d.atividade && ATIVIDADES_SN.includes(d.atividade) ? d.atividade : null;
+    const next = {
+        ...prev,
+        clientName: prev.clientId ? (prev.clientName || d.nome) : (d.nome || prev.clientName),
+        cnpj: prev.clientId ? (prev.cnpj || d.cnpj) : (d.cnpj || prev.cnpj),
+        regime: 'Simples Nacional',
+        atividade: atividadePdf || prev.atividade || 'Serviços',
+        anexo: d.anexo || prev.anexo,
+        // Fator R: quando o PGDAS indica atividade sujeita, gravamos o
+        // anexo-base V (a migração p/ III vem do Fator R ≥ 28%) e já
+        // ligamos a economia III × V no relatório.
+        sujeitoFatorR: d.sujeitoFatorR !== undefined ? d.sujeitoFatorR : prev.sujeitoFatorR,
+        mostrarEconomiaFatorR: d.sujeitoFatorR ? true : prev.mostrarEconomiaFatorR,
+        compMonth: d.compMonth || prev.compMonth,
+        compYear: d.compYear || prev.compYear,
+        competenceShort: d.competenceShort || prev.competenceShort,
+        competence: d.compMonth ? (MONTHS[parseInt(d.compMonth) - 1] + '/' + d.compYear) : prev.competence,
+        revenue: d.rpa || prev.revenue,
+        rbt12: d.rbt12 || prev.rbt12,
+        rbt12p: d.rbt12p || '',
+        dataAbertura: d.dataAbertura || prev.dataAbertura,
+        // "Nenhuma" folha no PDF não herda a folha da empresa/mês anterior (mudaria o Fator R)
+        folha12m: d.folha12m || '',
+        municipio: d.municipio || prev.municipio,
+        evolucao: d.evolucao || prev.evolucao || null,
+        // PGDAS-D é a fonte da verdade: DAS declarado e a segregação por tributo
+        dasOfficial: d.das || '',
+        repartManual: d.repart || null,
+        fatorRInfo: d.fatorR || '',
+    };
+    delete next.revenueRetained; delete next.revenueNonRetained;
+    return next;
+};
 
 export const autoFillTaxes = (data, currentTaxes) => {
     const totalRevenue = calculateTotalRevenue(data);

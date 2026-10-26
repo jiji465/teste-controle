@@ -11,7 +11,7 @@ import {
 import {
     DEFAULT_TAXES, DEFAULT_TAXES_LP, DEFAULT_TAXES_MEI_AMBOS, DEFAULT_TAXES_MEI_COMERCIO, DEFAULT_TAXES_MEI_SERVICOS, DEFAULT_TAXES_SN_COMERCIO, DEFAULT_TAXES_SN_SERVICOS, GLOSSARY, MONTHS, OFFICE_NAME, STORAGE_KEY, autoFillTaxes, calcAliquotaEfetivaSN, calcFatorR, calcIRRFProLabore, calculateTotalRevenue, extractPdfText, formatBRLDisplay, formatCurrency, formatPercent, getAnexoEfetivo, getDueDate, isSujeitoFatorR, parseNumBR, parsePGDASD, pgNum, sumProLabore, SALARIO_MINIMO, TETO_INSS, SUBLIMITE_SN, LIMITE_SN,
     ehRetido, entraNaAliquota, resumoApuracao, avisosApuracao, COMERCIO_GUIA_ESTADUAL, acumuladoPeriodo,
-    regimeDefaults, calcEconomia, rbtFatorR
+    regimeDefaults, calcEconomia, rbtFatorR, aplicarPgdasD
 } from './engine.js';
 // ---- Integração com o controle fiscal (teste-controle) ----
 import { useData } from '@/contexts/data-context';
@@ -236,41 +236,9 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
     // Edição do usuário: marca "alterações não salvas" (o recálculo automático não marca)
     const updateClient = (field, val) => { markDirty(); setClientData(prev => ({ ...prev, [field]: val })); };
 
-    // Aplica o PGDAS-D sobre o estado ATUAL (updater funcional). Com empresa
-    // selecionada, nome/CNPJ do cadastro prevalecem sobre os do PDF.
-    const aplicarPgdas = (prev, d) => {
-        const next = {
-            ...prev,
-            clientName: prev.clientId ? (prev.clientName || d.nome) : (d.nome || prev.clientName),
-            cnpj: prev.clientId ? (prev.cnpj || d.cnpj) : (d.cnpj || prev.cnpj),
-            regime: 'Simples Nacional',
-            atividade: d.atividade || prev.atividade || 'Serviços',
-            anexo: d.anexo || prev.anexo,
-            // Fator R: quando o PGDAS indica atividade sujeita, gravamos o
-            // anexo-base V (a migração p/ III vem do Fator R ≥ 28%) e já
-            // ligamos a economia III × V no relatório.
-            sujeitoFatorR: d.sujeitoFatorR !== undefined ? d.sujeitoFatorR : prev.sujeitoFatorR,
-            mostrarEconomiaFatorR: d.sujeitoFatorR ? true : prev.mostrarEconomiaFatorR,
-            compMonth: d.compMonth || prev.compMonth,
-            compYear: d.compYear || prev.compYear,
-            competenceShort: d.competenceShort || prev.competenceShort,
-            competence: d.compMonth ? (MONTHS[parseInt(d.compMonth) - 1] + '/' + d.compYear) : prev.competence,
-            revenue: d.rpa || prev.revenue,
-            rbt12: d.rbt12 || prev.rbt12,
-            rbt12p: d.rbt12p || '',
-            dataAbertura: d.dataAbertura || prev.dataAbertura,
-            // "Nenhuma" folha no PDF não herda a folha da empresa/mês anterior (mudaria o Fator R)
-            folha12m: d.folha12m || '',
-            municipio: d.municipio || prev.municipio,
-            evolucao: d.evolucao || prev.evolucao || null,
-            // PGDAS-D é a fonte da verdade: DAS declarado e a segregação por tributo
-            dasOfficial: d.das || '',
-            repartManual: d.repart || null,
-            fatorRInfo: d.fatorR || '',
-        };
-        delete next.revenueRetained; delete next.revenueNonRetained;
-        return next;
-    };
+    // Aplica o PGDAS-D sobre o estado ATUAL (updater funcional) — regra no engine
+    // (aplicarPgdasD), coberta por testes com PGDAS-D reais.
+    const aplicarPgdas = aplicarPgdasD;
 
     const handleImportPGDASD = async (file) => {
         if (!file) return;
@@ -830,7 +798,10 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
 
                             {clientData.repartManual && (() => {
                                 const r = clientData.repartManual;
-                                const items = [['IRPJ', r.IRPJ], ['CSLL', r.CSLL], ['COFINS', r.COFINS], ['PIS', r.PIS], ['INSS/CPP', r.CPP], ['ICMS', r.ICMS], ['ISS', r.ISS]].filter(([, v]) => v > 0);
+                                const items = [['IRPJ', r.IRPJ], ['CSLL', r.CSLL], ['COFINS', r.COFINS], ['PIS', r.PIS], ['INSS/CPP', r.CPP], ['ICMS', r.ICMS], ['IPI', r.IPI], ['ISS', r.ISS]].filter(([, v]) => v > 0);
+                                // "Exata" só quando veio do Total Geral (2.8) ou da soma de todas as
+                                // atividades; registros antigos (só a 1ª tabela) não têm a marca.
+                                const exata = r.exata === true;
                                 return (
                                     <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50/50 p-4">
                                         <p className="text-xs font-bold text-navy mb-2 flex items-center gap-2"><Receipt className="w-4 h-4" /> Segregação do DAS — importada do PGDAS-D</p>
@@ -838,7 +809,9 @@ const EditorPanel = ({ clientData, setClientData, taxes, setTaxes, validationErr
                                             {items.map(([k, v]) => (<span key={k} className="flex justify-between gap-2 bg-white rounded px-2 py-1 border border-slate-100"><span className="text-slate-500">{k}</span><b className="text-slate-800 tabular-nums">{formatCurrency(v)}</b></span>))}
                                             <span className="flex justify-between gap-2 bg-navy text-white rounded px-2 py-1"><span>Total DAS</span><b className="tabular-nums">{formatCurrency(r.total)}</b></span>
                                         </div>
-                                        <p className="text-[10px] text-slate-400 mt-1.5">Repartição exata declarada no PGDAS-D. O DAS a pagar usa este valor total (não recalculado).</p>
+                                        <p className="text-[10px] text-slate-400 mt-1.5">{exata
+                                            ? 'Repartição exata declarada no PGDAS-D (total geral da empresa, todas as atividades). O DAS a pagar usa o débito declarado (não recalculado).'
+                                            : 'Repartição lida de uma tabela do PGDAS-D — pode não incluir todas as atividades. Reimporte o PDF para a repartição completa; o DAS a pagar usa o débito declarado.'}</p>
                                     </div>
                                 );
                             })()}
