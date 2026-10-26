@@ -13,27 +13,38 @@ Se você está montando o sistema do zero:
 2. Escolhe nome, senha do DB e região (escolha **South America (São Paulo)**)
 3. Anota a senha do DB num lugar seguro
 
-### 2. Rodar SQL inicial
+### 2. Criar a SUA conta antes de trancar o banco
 
-No Supabase Dashboard → **SQL Editor** → "New query":
+**Authentication** → **Users** → **Add user** (ou entre pela tela `/login`
+do sistema). O script 023 dá o papel `editor` às contas que já existirem
+quando ele rodar pela primeira vez — conta criada depois disso nasce **sem
+acesso** até alguém definir o papel (ver [Papéis e acesso](#papéis-e-acesso)).
 
-```sql
--- Cole o conteúdo de scripts/setup_complete.sql e clica em Run
-```
+### 3. Rodar os scripts SQL (ordem validada)
 
-Isso cria todas as tabelas + índices + funções básicas.
+No **SQL Editor** → "New query", cole e rode **um arquivo por vez**, nesta
+ordem. Todos são idempotentes (pode rodar de novo sem estragar nada):
 
-### 3. Aplicar migrations incrementais
+| # | Arquivo | O que faz |
+|---|---|---|
+| 1 | `setup_complete.sql` | tabelas, índices, gatilhos básicos |
+| 2 | `RUN_ME_ON_SUPABASE.sql` | colunas extras (clientes, impostos, obrigações) |
+| 3 | `004` → `015` (na ordem dos números; os dois `005` e os dois `006` em ordem alfabética) | evolução do schema, serviços, apuração |
+| 4 | `016_auth_rls_lockdown.sql` | só usuários logados (vira no-op se o 017/023 já rodou) |
+| 5 | `017_viewer_role.sql` | papel somente leitura |
+| 6 | `018_public_portfolio.sql` | painel público (só agregados) |
+| 7 | `019_hardening.sql` | RLS em `services`, índices únicos, histórico com autor |
+| 8 | `020_locked_periods.sql` | fechamento de competência no banco |
+| 9 | `021_office_holidays.sql` | feriados locais |
+| 10 | `022_apuracao_integridade.sql` | Relatório Executivo: trava, versão, revisões |
+| 11 | `023_papeis_auditoria.sql` | **papéis deny-by-default**, histórico à prova de adulteração, fechamento auditado, `search_path` fixo |
 
-Em ordem, rode no SQL Editor (cada um é idempotente):
+Banco antigo (que começou pelo `001_create_tables.sql`): `001` → `002` →
+`003` → mesma sequência a partir do `004`.
 
-1. `scripts/004_align_schema_and_templates.sql` — campos extras em clientes/impostos + tabela templates
-2. `scripts/005_templates_full_persistence.sql` — campos regime/activity em templates + tabela deleted_default_templates
-3. `scripts/006_taxes_due_month.sql` — coluna due_month em taxes (pra DEFIS, DASN-SIMEI)
-
-> 📝 Os scripts 002 e 003 são intermediários — se você rodou o
-> setup_complete já estão cobertos. Se está partindo de uma instalação
-> antiga, rode tudo na ordem.
+> Essa ordem é testada automaticamente (`npm test` →
+> `scripts/__tests__/migrations.test.ts`): instalação nova e banco antigo,
+> cada script rodado 2x e a cadeia inteira de novo, sem regressão.
 
 ### 4. Pegar as chaves
 
@@ -232,24 +243,124 @@ componente, antes de qualquer early return.
 
 Já aconteceu uma vez no `app/page.tsx` — ver commit `3101a18`.
 
-## Quando ativar Auth + RLS
+## Papéis e acesso
 
-Hoje o sistema usa só anon key, sem login. Quando crescer pra
-multi-usuário (vários contadores no mesmo escritório):
+O acesso aos dados é decidido **no banco** (RLS, `scripts/023`) pelo
+`app_metadata.role` do token — o usuário não consegue alterá-lo:
 
-1. **Supabase** → **Authentication** → ativa Email + Magic Link
-2. Adiciona `user_id UUID REFERENCES auth.users` em todas as tabelas
-3. Cria policies RLS:
+| Papel | Lê | Grava |
+|---|---|---|
+| `admin` / `editor` | tudo (inclusive histórico, apuração, guias, parcelamentos, serviços) | tudo, exceto o histórico (só os gatilhos gravam) |
+| `viewer` | empresas, obrigações (indicadores do Dashboard), competências fechadas, feriados | nada |
+| sem papel / login anônimo | nada (o app mostra "Acesso aguardando liberação") | nada |
+
+**Decisão (LGPD):** o viewer não lê guias (valores), parcelamentos,
+serviços, apuração (faturamento, pró-labore, sócios) nem o histórico. Os
+indicadores do Dashboard dele usam só as obrigações acessórias — por isso
+o viewer lê `obligations` (nome, competência, status e vencimento; sem
+valores).
+
+Definir/alterar o papel de alguém (SQL Editor; troque e-mail e papel):
+
+```sql
+update auth.users
+set raw_app_meta_data = coalesce(raw_app_meta_data, '{}'::jsonb) || '{"role":"editor"}'::jsonb
+where email = 'pessoa@escritorio.com';
+```
+
+A pessoa precisa **sair e entrar** de novo (ou esperar até 1h) para o token
+carregar o papel novo — o app tenta renovar o token sozinho ao abrir. Tirar
+o acesso: troque `editor` por `viewer` ou remova a chave
+(`raw_app_meta_data - 'role'`) — vale a partir do próximo token (até 1h).
+
+Conferir quem tem qual papel:
+
+```sql
+select email, raw_app_meta_data ->> 'role' as papel, last_sign_in_at
+from auth.users order by papel nulls first, email;
+```
+
+### Checklist do painel do Supabase (segurança)
+
+- [ ] **Authentication → Sign In / Providers → Email**: desligar
+      **"Allow new users to sign up"** (contas só pelo painel/convite).
+- [ ] **Authentication → Sign In / Providers**: desligar
+      **"Allow anonymous sign-ins"**.
+- [ ] **Authentication → Attack Protection**: ligar **leaked password
+      protection** (HaveIBeenPwned) e exigir senha forte.
+- [ ] **Authentication → Multi-Factor**: habilitar **TOTP** e pedir que a
+      equipe ative MFA.
+- [ ] **Authentication → URL Configuration**: Site URL e Redirect URLs só
+      com o domínio do sistema.
+- [ ] **Advisors → Security Advisor**: rodar e conferir que não há
+      "RLS disabled" nem "Function search_path mutable".
+- [ ] `service_role` nunca no frontend nem no Vercel como `NEXT_PUBLIC_*`.
+- [ ] Vercel: `NEXT_PUBLIC_SUPABASE_URL` precisa existir no **build** (a CSP
+      libera só a origem desse projeto); sem ela, produção responde 503.
+
+### Aplicar o 023 num banco que já está em produção
+
+**Antes**
+
+1. Faça um backup (Database → Backups, ou `pg_dump`, ver [Backup](#backup)).
+2. Confira se o banco já tem `016`…`022` (o 023 recusa rodar sem `020`,
+   `021` e `022`):
    ```sql
-   CREATE POLICY "Users see only their data"
-   ON public.clients FOR ALL
-   USING (auth.uid() = user_id);
+   select to_regclass('public.locked_periods'), to_regclass('public.office_holidays'),
+          to_regclass('public.apuracao_mensal_revisoes');
    ```
-4. No app, captura `auth.uid()` e adiciona no save
-5. Login UI: `@supabase/auth-helpers-nextjs`
+   Se algum vier `null`, rode os scripts que faltam (ordem da tabela acima).
+3. Liste as contas e anote quem deve ser `viewer` (a primeira execução dá
+   `editor` a toda conta existente sem papel):
+   ```sql
+   select email, raw_app_meta_data ->> 'role' as papel from auth.users order by 2 nulls first, 1;
+   ```
+4. Publique o app desta versão **junto** (o app novo trata "sem papel" e só
+   carrega o que o viewer pode ler).
 
-> Quando for fazer isso, considere uso significativo. Pra 1 contador
-> sozinho, não vale a complexidade.
+**Rodar**
+
+5. SQL Editor → cole `scripts/023_papeis_auditoria.sql` → Run. Em
+   "Messages" aparece `023: N conta(s) existentes sem papel receberam
+   role=editor.` Rodar de novo é seguro (diz "backfill de papéis já
+   aplicado").
+6. Ajuste quem deve ser `viewer` (SQL acima) e peça para **todos saírem e
+   entrarem** de novo.
+
+**Depois (conferir)**
+
+7. Papéis: a consulta do passo 3 não deve ter ninguém da equipe com papel vazio.
+8. Políticas: `select tablename, policyname, cmd from pg_policies where schemaname = 'public' order by 1, 2;`
+   → só `papel: leitura / incluir / alterar / excluir` (history e
+   apuracao_mensal_revisoes só `papel: leitura`).
+9. Funções sem `search_path` fixo (deve voltar vazio):
+   ```sql
+   select p.oid::regprocedure from pg_proc p
+   where p.pronamespace = 'public'::regnamespace and p.prokind = 'f'
+     and not exists (select 1 from unnest(coalesce(p.proconfig, '{}')) c where c like 'search_path=%');
+   ```
+10. No app: editor cria/edita/exclui uma obrigação; fecha e reabre uma
+    competência (em `history` aparecem `locked`/`unlocked` com o e-mail);
+    viewer vê Dashboard/Empresas sem guias/parcelamentos; `/publico` sem
+    lista de empresas.
+
+**Reverter (emergência)**
+
+Rode `scripts/rollback/023_reverter.sql` e depois `017`, `019`, `020`,
+`021`, `022` (nesta ordem): volta ao modelo antigo (qualquer logado lê; quem
+não é viewer grava). Histórico protegido, carimbo do fechamento e as
+correções de trava continuam. Para voltar ao 023, rode-o de novo. Ou
+restaure o backup do passo 1.
+
+### Testar os scripts SQL localmente
+
+`npm test` roda `scripts/__tests__/migrations.test.ts` num **Postgres real
+em WASM (PGlite)**, sem servidor e sem tocar em nenhum Supabase:
+`scripts/__tests__/pg-harness.ts` cria os papéis `anon`/`authenticated`,
+`auth.users`, `auth.jwt()`/`auth.uid()`/`auth.role()` e os privilégios
+padrão do Supabase, e troca de "sessão" como o PostgREST faz (`set role` +
+`request.jwt.claims`). Para testar outra pasta de scripts:
+`SQL_SCRIPTS_DIR=/caminho/scripts npx vitest run scripts/__tests__`.
 
 ## Custos esperados
 

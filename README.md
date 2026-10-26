@@ -64,13 +64,16 @@ npm run typecheck && npm run lint && npm test
 Pra setup completo do Supabase (criar tabelas, rodar migrations), veja
 [docs/MANUTENCAO.md](docs/MANUTENCAO.md#setup-inicial-do-supabase).
 
-> ⚠️ **Migrations novas — rodar no SQL Editor do Supabase, nesta ordem:**
-> `016` → `017` → **`019_hardening.sql`** (RLS em `services`, remove políticas
-> públicas antigas, índices únicos, histórico com autor real) →
-> **`020_locked_periods.sql`** (fechamento de competência no banco) →
-> **`021_office_holidays.sql`** (feriados locais) →
-> **`022_apuracao_integridade.sql`** (Relatório Executivo: trava de competência fechada,
-> controle de versão, revisões e auditoria). Todas são idempotentes.
+> ⚠️ **Ordem de instalação do banco (validada por `npm test`)** — no SQL
+> Editor do Supabase, um arquivo por vez: `setup_complete` → `RUN_ME_ON_SUPABASE`
+> → `004` … `015` → `016` → `017` → `018` → `019` → `020` → `021` → `022` →
+> **`023_papeis_auditoria.sql`** (papéis deny-by-default: conta sem papel não
+> vê nada; viewer só Dashboard/Empresas; histórico só leitura e com autor do
+> servidor). Banco antigo: `001` → `002` → `003` → mesma sequência a partir do
+> `004`. Todos são idempotentes. Crie sua conta **antes** do 023 e siga o
+> [checklist do painel](docs/MANUTENCAO.md#checklist-do-painel-do-supabase-segurança)
+> (desligar cadastro aberto e login anônimo, proteção de senha vazada, MFA).
+> Banco já em produção: [passo a passo do 023](docs/MANUTENCAO.md#aplicar-o-023-num-banco-que-já-está-em-produção).
 
 ## Estrutura geral
 

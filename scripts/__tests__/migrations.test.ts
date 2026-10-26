@@ -284,6 +284,27 @@ describe("banco instalado (023 aplicado)", () => {
     expect(r.rows).toEqual([])
   })
 
+  it("rollback documentado (rollback/023_reverter.sql + 017/019/020/021/022) volta ao modelo antigo e o 023 reaplica", async () => {
+    const r = await makeDb()
+    await runAll(r, ORDER_FRESH)
+    await seed(r)
+    await runAll(r, ["rollback/023_reverter.sql", "017_viewer_role.sql", "019_hardening.sql",
+      "020_locked_periods.sql", "021_office_holidays.sql", "022_apuracao_integridade.sql"])
+    await as(r, "norole") // modelo antigo: logado sem papel lê e grava
+    expect(await count(r, "taxes")).toBeGreaterThan(0)
+    expect((await q(r, `update clients set notes = 'rb' where id = '${CL}'`)).ok).toBe(true)
+    await as(r, "viewer")
+    expect((await q(r, `insert into clients (name, cnpj) values ('v', 'rb1')`)).ok).toBe(false)
+    // histórico continua protegido e com autor do servidor
+    await as(r, "editor")
+    expect((await q(r, `insert into history (entity_type, entity_id, action, description) values ('client', '${CL}', 'updated', 'x')`)).ok).toBe(false)
+    expect((await q(r, `insert into locked_periods (period) values ('2029-01')`)).ok).toBe(true)
+    // reaplicar o 023
+    await runScript(r, "023_papeis_auditoria.sql")
+    await as(r, "norole")
+    expect(await count(r, "taxes")).toBe(0)
+  }, T)
+
   it("painel público: sem lista por empresa e sem grupos < 3", async () => {
     await as(db, "postgres")
     await db.exec(`
