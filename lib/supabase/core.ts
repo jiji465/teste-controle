@@ -44,7 +44,24 @@ export function toDbError(error: { message?: string; code?: string; details?: st
   if (error?.code === "42501" || /row-level security/i.test(msg)) {
     return new Error("Sem permissão para esta ação (perfil somente leitura ou sessão expirada).")
   }
+  // PostgREST: .single() sem nenhuma linha — o RLS escondeu a linha (sem
+  // permissão) ou ela foi apagada por outra pessoa.
+  if (error?.code === "PGRST116") {
+    return new Error(NO_ROWS_MESSAGE)
+  }
   return new Error(msg)
+}
+
+const NO_ROWS_MESSAGE =
+  "Nada foi alterado: o registro não existe mais ou seu perfil não tem permissão para esta ação. Recarregue a página."
+
+/**
+ * UPDATE/DELETE que não atinge nenhuma linha NÃO dá erro no PostgREST — o RLS
+ * só filtra. Sem esta checagem, um perfil somente leitura (ou um item já
+ * apagado por outra pessoa) via "sucesso" falso. Use com `.select("id")`.
+ */
+export function assertAffected(rows: unknown[] | null | undefined): void {
+  if (!rows || rows.length === 0) throw new Error(NO_ROWS_MESSAGE)
 }
 
 const PAGE_SIZE = 1000

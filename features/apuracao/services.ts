@@ -1,7 +1,7 @@
 // Persistência das apurações mensais (camada financeira do Relatório Executivo).
 // Mesmo padrão de features/taxes/services.ts: Supabase quando configurado,
 // fallback localStorage caso contrário. Mapeia snake_case (DB) ↔ camelCase (TS).
-import { hasSupabaseConfig, getSupabaseClient, toDbError } from "@/lib/supabase/core"
+import { hasSupabaseConfig, getSupabaseClient, toDbError, assertAffected } from "@/lib/supabase/core"
 import type { ClientData, HistPoint } from "./lib/types"
 
 export interface ApuracaoRecord {
@@ -203,11 +203,16 @@ export async function deleteApuracao(clientId: string, compKey: string): Promise
     return
   }
   const supabase = getSupabaseClient()
-  const { error } = await supabase.from("apuracao_mensal").delete().match({ client_id: clientId, comp_key: compKey })
+  const { data, error } = await supabase
+    .from("apuracao_mensal")
+    .delete()
+    .match({ client_id: clientId, comp_key: compKey })
+    .select("id")
   if (error) {
     console.error("[db] Error deleting apuracao:", error)
     throw toDbError(error)
   }
+  assertAffected(data)
 }
 
 /** Converte registros salvos em pontos do gráfico de evolução. */

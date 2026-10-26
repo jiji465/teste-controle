@@ -1,5 +1,5 @@
 import type { Obligation } from "@/lib/types"
-import { hasSupabaseConfig, getSupabaseClient, fetchAll, local, toDbError } from "@/lib/supabase/core"
+import { hasSupabaseConfig, getSupabaseClient, fetchAll, local, toDbError, assertAffected } from "@/lib/supabase/core"
 
 function mapObligationToDb(obligation: Obligation) {
   return {
@@ -88,6 +88,7 @@ export async function saveObligation(obligation: Obligation): Promise<void> {
 export async function deleteObligation(id: string): Promise<void> {
   if (!hasSupabaseConfig()) { local.deleteObligation(id); return }
   const supabase = getSupabaseClient()
-  const { error } = await supabase.from("obligations").delete().eq("id", id)
+  const { data, error } = await supabase.from("obligations").delete().eq("id", id).select("id")
   if (error) { console.error("[db] Error deleting obligation:", error); throw toDbError(error) }
+  assertAffected(data)
 }
