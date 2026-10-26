@@ -7,16 +7,21 @@ import type {
   Installment,
   Service,
 } from "./types"
-import { getCurrentParcelaDueDate } from "./installment-dates"
 import {
-  adjustForWeekend,
-  buildSafeDate,
+  getCurrentParcelaDueDate,
+  getParcelaDueDate,
+  getParcelaInfo,
+  listParcelas,
+  type ParcelaInfo,
+} from "./installment-dates"
+import {
   calculateDueDate,
   calculateDueDateFromCompetency,
+  isOverdue,
   isUpcomingThisWeek,
   parseLocalDate,
 } from "./date-utils"
-import { effectiveStatus } from "./obligation-status"
+import { effectiveStatus, isCriticalNow } from "./obligation-status"
 import { dateInRange, type DateRange } from "./date-range"
 
 export const getObligationsWithDetails = (
@@ -57,91 +62,165 @@ export const getObligationsWithDetails = (
     })
 }
 
+/** "YYYY-MM" do dia LOCAL da data. */
+export function monthKeyOf(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`
+}
+
+/** "YYYY-MM" do mês corrente (fuso local). */
+export function currentMonthKey(ref: Date = new Date()): string {
+  return monthKeyOf(ref)
+}
+
+const isMonthPeriod = (period: string) => /^\d{4}-\d{2}$/.test(period)
+
 /** Verifica se uma data cai no período selecionado ("YYYY-MM" ou "all"). */
 function inPeriod(date: Date | string | null | undefined, period: string): boolean {
-  if (period === "all") return true
+  if (period === "all" || !isMonthPeriod(period)) return true
   if (!date) return true
   // parseLocalDate evita o bug de fuso UTC-3: new Date("2026-05-31") seria
   // 21h do dia 30 no Brasil, jogando a data pro mês errado na virada.
   const d = parseLocalDate(date)
   if (Number.isNaN(d.getTime())) return true
-  const yearMonth = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`
-  return yearMonth === period
+  return monthKeyOf(d) === period
 }
 
-/** Calcula a data da PARCELA ATUAL de um parcelamento (1 registro = N parcelas). */
-const installmentDueDate = (inst: Installment): Date => getCurrentParcelaDueDate(inst)
+/** Data venceu num mês ANTERIOR ao período "YYYY-MM". */
+function beforePeriod(date: Date | string | null | undefined, period: string): boolean {
+  if (!date || !isMonthPeriod(period)) return false
+  const d = parseLocalDate(date)
+  if (Number.isNaN(d.getTime())) return false
+  return monthKeyOf(d) < period
+}
 
-/**
- * Para um parcelamento e um período "YYYY-MM" (ou "all"), retorna uma versão
- * "sintética" do parcelamento com:
- *  - status: status DA PARCELA específica que cai no período (NÃO do
- *    parcelamento inteiro). Concluída se tem sentAt/paidAt. Pendente ou
- *    atrasada conforme a data.
- *  - calculatedDueDate: data dessa parcela específica.
- *  - parcelaNumber: número (1..installmentCount).
- *
- * Quando period === "all", usa a parcela atual e o status do parcelamento
- * inteiro (combinado com data da parcela atual via effectiveStatus).
- *
- * Retorna null se nenhuma parcela cai no período (caso "YYYY-MM" sem match).
- *
- * Motivação: o usuário quer que "enviar a parcela do mês" conte como
- * Concluído NAQUELE MÊS, mesmo que o parcelamento inteiro ainda tenha
- * parcelas futuras pendentes.
- */
-export function installmentInPeriod(
-  inst: Installment,
-  period: string,
-): (Installment & { calculatedDueDate: string; parcelaNumber: number }) | null {
-  const firstDue = parseLocalDate(inst.firstDueDate)
-  let targetN: number | null = null
+// ─── Parcelamentos: 1 registro = N parcelas ──────────────────────────────
 
-  if (period === "all" || !/^\d{4}-\d{2}$/.test(period)) {
-    targetN = inst.currentInstallment
-  } else {
-    for (let n = 1; n <= inst.installmentCount; n++) {
-      const d = adjustForWeekend(
-        buildSafeDate(firstDue.getFullYear(), firstDue.getMonth() + (n - 1), inst.dueDay),
-        inst.weekendRule,
-      )
-      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`
-      if (key === period) {
-        targetN = n
-        break
-      }
-    }
-    if (targetN === null) return null
-  }
+/** Parcelamento "sintético" representando UMA parcela: status, data e
+ *  conclusão são DA PARCELA (não do parcelamento inteiro). */
+export type PeriodInstallment = Installment & { calculatedDueDate: string; parcelaNumber: number }
 
-  const dueDate = adjustForWeekend(
-    buildSafeDate(firstDue.getFullYear(), firstDue.getMonth() + (targetN - 1), inst.dueDay),
-    inst.weekendRule,
-  )
-
-  // Status da parcela específica: concluída se tem sentAt OU paidAt
-  const record = (inst.paidInstallments ?? []).find((p) => p.number === targetN)
-  const isDone = !!(record?.paidAt || record?.sentAt)
-  let status: Installment["status"]
-  if (isDone) {
-    status = "completed"
-  } else {
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
-    status = dueDate < today ? "overdue" : "pending"
-  }
-
+function toPeriodInstallment(inst: Installment, p: ParcelaInfo): PeriodInstallment {
+  const done = p.status === "completed"
   return {
     ...inst,
-    status,
+    status: p.status,
     // completedAt da PARCELA (não do parcelamento todo). Importante pra
-    // ProductivityStats calcular "Taxa no Prazo" corretamente: compara
-    // doneAt da parcela <= dueDate da parcela.
-    completedAt: isDone ? record?.paidAt ?? record?.sentAt : undefined,
-    completedBy: isDone ? record?.paidBy ?? record?.sentBy : undefined,
-    calculatedDueDate: dueDate.toISOString(),
-    parcelaNumber: targetN,
+    // "Taxa no Prazo": compara doneAt da parcela <= vencimento da parcela.
+    completedAt: done ? p.doneAt : undefined,
+    completedBy: done ? p.doneBy : undefined,
+    calculatedDueDate: p.dueDate.toISOString(),
+    parcelaNumber: p.parcelaNumber,
   }
+}
+
+/**
+ * Parcelas de um parcelamento que caem no período "YYYY-MM", cada uma como
+ * um parcelamento sintético (status/data/conclusão DA PARCELA). Um mês pode
+ * ter DUAS parcelas (ex.: dia 31 adiado por fim de semana) — todas entram.
+ *
+ * period === "all" → só a parcela atual (próxima a concluir).
+ */
+export function installmentParcelasInPeriod(inst: Installment, period: string): PeriodInstallment[] {
+  if (period === "all" || !isMonthPeriod(period)) {
+    return [toPeriodInstallment(inst, getParcelaInfo(inst, inst.currentInstallment))]
+  }
+  return listParcelas(inst, (d) => monthKeyOf(d) === period).map((p) => toPeriodInstallment(inst, p))
+}
+
+/**
+ * Compat: PRIMEIRA parcela do período (ou a atual quando "all"). Prefira
+ * `installmentParcelasInPeriod`, que devolve todas as parcelas do mês.
+ */
+export function installmentInPeriod(inst: Installment, period: string): PeriodInstallment | null {
+  return installmentParcelasInPeriod(inst, period)[0] ?? null
+}
+
+// ─── Seleção do período (fonte única do Dashboard) ───────────────────────
+
+export type PeriodData = {
+  obligations: ObligationWithDetails[]
+  taxes: Tax[]
+  installments: Installment[]
+  services: Service[]
+}
+
+export type TaxWithDueDate = Tax & { calculatedDueDate?: string }
+
+export type PeriodSelection = {
+  obligations: ObligationWithDetails[]
+  taxes: TaxWithDueDate[]
+  /** Parcelamentos com ao menos uma parcela no período (registro inteiro). */
+  installments: Installment[]
+  /** Parcelas individuais do período (uma entrada por parcela). */
+  installmentParcels: PeriodInstallment[]
+  services: Service[]
+  /** Quantos itens atrasados de meses anteriores foram trazidos pro período. */
+  carriedOverdue: number
+}
+
+export type PeriodSelectionOptions = {
+  /**
+   * Quando o período é o MÊS ATUAL: inclui também os itens NÃO concluídos que
+   * venceram em meses anteriores (continuam atrasados — mesma regra do sino
+   * de alertas, hooks/use-task-alerts.ts). Sem isso o Dashboard dizia "Tudo
+   * em dia" no mês corrente enquanto o sino mostrava atrasos de meses passados.
+   */
+  carryOverdue?: boolean
+}
+
+const taxDueDate = (t: Tax): Date | null =>
+  calculateDueDateFromCompetency(t.competencyMonth, t.dueDay, t.weekendRule, t.dueMonth)
+
+/** Seleciona os itens de um período ("YYYY-MM" ou "all"). */
+export function selectPeriodItems(
+  data: PeriodData,
+  period: string,
+  opts: PeriodSelectionOptions = {},
+): PeriodSelection {
+  const carry = !!opts.carryOverdue && isMonthPeriod(period)
+  let carried = 0
+  const carriedOverdue = (date: Date | string | null | undefined, item: { status: string }) => {
+    if (!carry || !beforePeriod(date, period)) return false
+    const ok = effectiveStatus({ status: item.status, calculatedDueDate: date ?? undefined }) === "overdue"
+    if (ok) carried++
+    return ok
+  }
+
+  const obligations = data.obligations.filter(
+    (o) => inPeriod(o.calculatedDueDate, period) || carriedOverdue(o.calculatedDueDate, o),
+  )
+
+  const taxes: TaxWithDueDate[] = data.taxes
+    .map((t) => {
+      const date = taxDueDate(t)
+      return { ...t, calculatedDueDate: date ? date.toISOString() : undefined }
+    })
+    .filter((t) => inPeriod(t.calculatedDueDate, period) || carriedOverdue(t.calculatedDueDate, t))
+
+  const installmentParcels: PeriodInstallment[] = []
+  const installments: Installment[] = []
+  for (const inst of data.installments) {
+    const parcels = installmentParcelasInPeriod(inst, period)
+    if (carry) {
+      for (const p of listParcelas(inst, (d) => beforePeriod(d, period))) {
+        if (p.status === "overdue") {
+          parcels.unshift(toPeriodInstallment(inst, p))
+          carried++
+        }
+      }
+      parcels.sort((a, b) => a.parcelaNumber - b.parcelaNumber)
+    }
+    if (parcels.length > 0) {
+      installments.push(inst)
+      installmentParcels.push(...parcels)
+    }
+  }
+
+  const services = data.services.filter(
+    (s) => inPeriod(s.dueDate, period) || carriedOverdue(s.dueDate, s),
+  )
+
+  return { obligations, taxes, installments, installmentParcels, services, carriedOverdue: carried }
 }
 
 type Bucket = { total: number; completed: number; overdue: number; pending: number }
@@ -163,12 +242,14 @@ function tallyByEffectiveStatus<T extends StatusBucketable>(items: T[]): Bucket 
   return bucket
 }
 
-/** Calcula stats globais do dashboard, considerando os 3 tipos de item
- *  (obrigações + guias + parcelamentos) e o período selecionado.
+/** Calcula stats globais do dashboard, considerando os 4 tipos de item
+ *  (obrigações + guias + parcelas + serviços) e o período selecionado.
  *
- *  - period === "all" → considera tudo.
+ *  - period === "all" → considera tudo (parcelamento = parcela atual).
  *  - period === "YYYY-MM" → filtra por data calculada de vencimento dentro
- *    do mês. Itens sem data calculável são incluídos (não dá pra filtrar).
+ *    do mês; parcelamentos contam CADA parcela do mês. Itens sem data
+ *    calculável são incluídos (não dá pra filtrar).
+ *  - opts.carryOverdue → ver PeriodSelectionOptions.
  */
 export const calculateDashboardStats = (
   clients: Client[],
@@ -177,54 +258,27 @@ export const calculateDashboardStats = (
   installments: Installment[],
   period: string,
   services: Service[] = [],
+  opts: PeriodSelectionOptions = {},
 ): DashboardStats => {
-  // Obrigações no período (já vêm com calculatedDueDate)
-  const obligationsInPeriod = obligations.filter((o) => inPeriod(o.calculatedDueDate, period))
+  const sel = selectPeriodItems({ obligations, taxes, installments, services }, period, opts)
+  const servicesInPeriod = sel.services.map((s) => ({ ...s, calculatedDueDate: s.dueDate }))
 
-  // Guias no período — calcula data e enriquece pra usar effectiveStatus
-  const taxesInPeriod = taxes
-    .map((t) => {
-      const date = calculateDueDateFromCompetency(t.competencyMonth, t.dueDay, t.weekendRule, t.dueMonth)
-      return { ...t, calculatedDueDate: date ? date.toISOString() : undefined }
-    })
-    .filter((t) => inPeriod(t.calculatedDueDate, period))
-
-  // Parcelamentos no período — usa installmentInPeriod pra obter o status
-  // DA PARCELA do mês (não do parcelamento todo). Concluir a parcela de Maio
-  // faz o parcelamento contar como "Concluído" no filtro de Maio, mesmo que
-  // o parcelamento como um todo continue em andamento (faltam outras parcelas).
-  const installmentsInPeriod = installments
-    .map((i) => installmentInPeriod(i, period))
-    .filter((x): x is NonNullable<typeof x> => x !== null)
-
-  // Serviços no período — usam data única (dueDate), não competência
-  const servicesInPeriod = services
-    .map((s) => ({ ...s, calculatedDueDate: s.dueDate }))
-    .filter((s) => inPeriod(s.calculatedDueDate, period))
-
-  const oblBucket = tallyByEffectiveStatus(obligationsInPeriod)
-  const taxBucket = tallyByEffectiveStatus(taxesInPeriod)
-  const instBucket = tallyByEffectiveStatus(installmentsInPeriod)
+  const oblBucket = tallyByEffectiveStatus(sel.obligations)
+  const taxBucket = tallyByEffectiveStatus(sel.taxes)
+  const instBucket = tallyByEffectiveStatus(sel.installmentParcels)
   const svcBucket = tallyByEffectiveStatus(servicesInPeriod)
 
   // Vencendo nos próximos 7 dias — qualquer item ainda em aberto cuja data
   // está dentro de [hoje, hoje+7]. Já dentro do período por construção.
-  const upcomingThisWeek =
-    obligationsInPeriod.filter(
-      (o) => effectiveStatus(o) !== "completed" && isUpcomingThisWeek(o.calculatedDueDate),
-    ).length +
-    taxesInPeriod.filter(
-      (t) =>
-        effectiveStatus(t) !== "completed" &&
-        t.calculatedDueDate &&
-        isUpcomingThisWeek(t.calculatedDueDate),
-    ).length +
-    installmentsInPeriod.filter(
-      (i) => effectiveStatus(i) !== "completed" && isUpcomingThisWeek(i.calculatedDueDate),
-    ).length +
-    servicesInPeriod.filter(
-      (s) => effectiveStatus(s) !== "completed" && isUpcomingThisWeek(s.calculatedDueDate),
+  const openThisWeek = (items: StatusBucketable[]) =>
+    items.filter(
+      (i) => effectiveStatus(i) !== "completed" && !!i.calculatedDueDate && isUpcomingThisWeek(i.calculatedDueDate),
     ).length
+  const upcomingThisWeek =
+    openThisWeek(sel.obligations) +
+    openThisWeek(sel.taxes) +
+    openThisWeek(sel.installmentParcels) +
+    openThisWeek(servicesInPeriod)
 
   const totalItems = oblBucket.total + taxBucket.total + instBucket.total + svcBucket.total
   const completedInPeriod =
@@ -249,6 +303,171 @@ export const calculateDashboardStats = (
       services: svcBucket,
     },
   }
+}
+
+// ─── Indicadores derivados (lógica antes inline nos componentes) ─────────
+
+/** Vencimento de um item de parcelamento: usa a data DA PARCELA quando o
+ *  objeto é sintético (PeriodInstallment), senão a parcela atual. */
+function installmentDue(i: Installment & { calculatedDueDate?: string }): Date {
+  return i.calculatedDueDate ? parseLocalDate(i.calculatedDueDate) : getCurrentParcelaDueDate(i)
+}
+
+/** "X itens críticos pra resolver hoje" do hero: atrasados OU vencendo hoje,
+ *  dos 4 tipos (isCriticalNow). */
+export function heroCriticalCount(
+  sel: Pick<PeriodSelection, "obligations" | "taxes" | "installmentParcels" | "services">,
+): number {
+  let n = 0
+  for (const o of sel.obligations) if (isCriticalNow(o)) n++
+  for (const t of sel.taxes) {
+    const due = t.calculatedDueDate ?? taxDueDate(t)?.toISOString()
+    if (isCriticalNow({ status: t.status, calculatedDueDate: due })) n++
+  }
+  for (const p of sel.installmentParcels) if (isCriticalNow(p)) n++
+  for (const s of sel.services) if (isCriticalNow({ status: s.status, calculatedDueDate: s.dueDate })) n++
+  return n
+}
+
+export type ProductivityStatsResult = {
+  completed: number
+  inProgress: number
+  overdue: number
+  onTimeRate: number
+}
+
+function startOfDay(d: Date): Date {
+  const r = new Date(d)
+  r.setHours(0, 0, 0, 0)
+  return r
+}
+
+/** Indicadores de Produtividade (obrigações + guias + parcelas). Para
+ *  parcelamentos, passe as parcelas do período (PeriodInstallment) — a data
+ *  e a conclusão usadas são as DA PARCELA. */
+export function computeProductivityStats(
+  obligations: ObligationWithDetails[],
+  taxes: Tax[],
+  installments: Array<Installment & { calculatedDueDate?: string }>,
+): ProductivityStatsResult {
+  let completed = 0
+  let inProgress = 0
+  let overdue = 0
+  let completedOnTime = 0
+  let evaluable = 0
+
+  const tally = (status: string, completedAt: string | undefined, dueDate: Date) => {
+    if (status === "completed") completed++
+    if (status === "in_progress") inProgress++
+    if (status !== "completed" && isOverdue(dueDate)) overdue++
+    if (completedAt || isOverdue(dueDate)) {
+      evaluable++
+      if (completedAt && startOfDay(new Date(completedAt)) <= startOfDay(dueDate)) completedOnTime++
+    }
+  }
+
+  for (const o of obligations) tally(o.status, o.completedAt, parseLocalDate(o.calculatedDueDate))
+  for (const t of taxes) {
+    const d = taxDueDate(t)
+    if (!d) continue
+    tally(t.status, t.completedAt, d)
+  }
+  for (const i of installments) tally(i.status, i.completedAt, installmentDue(i))
+
+  return {
+    completed,
+    inProgress,
+    overdue,
+    onTimeRate: evaluable > 0 ? Math.round((completedOnTime / evaluable) * 100) : 0,
+  }
+}
+
+export type StatusCounts = { pending: number; in_progress: number; completed: number; overdue: number }
+
+/** Contagem por status efetivo (card "Saúde das Tarefas"). */
+export function healthStatusCounts(
+  obligations: ObligationWithDetails[],
+  taxes: Tax[] = [],
+  installments: Array<Installment & { calculatedDueDate?: string }> = [],
+  services: Service[] = [],
+): StatusCounts {
+  const c: StatusCounts = { pending: 0, in_progress: 0, completed: 0, overdue: 0 }
+  const bump = (s: string) => {
+    if (s in c) c[s as keyof StatusCounts]++
+  }
+  for (const o of obligations) bump(effectiveStatus(o))
+  for (const t of taxes) bump(effectiveStatus({ status: t.status, calculatedDueDate: taxDueDate(t) ?? undefined }))
+  for (const i of installments) bump(effectiveStatus({ status: i.status, calculatedDueDate: installmentDue(i) }))
+  for (const s of services) bump(effectiveStatus({ status: s.status, calculatedDueDate: s.dueDate }))
+  return c
+}
+
+const MONTH_NAMES = [
+  "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
+  "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro",
+]
+
+export type UpcomingForecast = {
+  isAllPeriods: boolean
+  headerLabel: string
+  descPrefix: string
+  descRef: string
+  /** Query string pro link de Relatórios ("" quando sem filtro). */
+  link: string
+  counts: { obs: number; txs: number; parcs: number; svcs: number }
+}
+
+/** "Próximo mês" do Dashboard (ou próximos 30 dias quando "all").
+ *  Parcelamentos contam TODAS as parcelas que vencem na janela. */
+export function upcomingForecastCounts(
+  obligations: ObligationWithDetails[],
+  taxes: Tax[],
+  installments: Installment[],
+  services: Service[] = [],
+  currentMonth?: string,
+): UpcomingForecast {
+  const isAllPeriods = !currentMonth || currentMonth === "all" || !isMonthPeriod(currentMonth)
+  let matches: (d: Date) => boolean
+  let headerLabel: string
+  let descPrefix: string
+  let descRef: string
+  let link: string
+
+  if (isAllPeriods) {
+    const today = startOfDay(new Date())
+    const limit = new Date(today)
+    limit.setDate(limit.getDate() + 30)
+    matches = (d: Date) => d >= today && d <= limit
+    headerLabel = "Próximos 30 dias"
+    descPrefix = "O que vence "
+    descRef = "nos próximos 30 dias"
+    link = ""
+  } else {
+    const [y, m] = currentMonth.split("-").map(Number)
+    const nextDate = new Date(y, m, 1) // m é 1-based → mês seguinte
+    const nextKey = monthKeyOf(nextDate)
+    matches = (d: Date) => monthKeyOf(d) === nextKey
+    headerLabel = "Próximo mês"
+    descPrefix = "O que vence em "
+    descRef = `${MONTH_NAMES[nextDate.getMonth()]}/${nextDate.getFullYear()}`
+    link = `?period=${nextKey}`
+  }
+
+  let obs = 0
+  let txs = 0
+  let parcs = 0
+  let svcs = 0
+  for (const o of obligations) if (matches(parseLocalDate(o.calculatedDueDate))) obs++
+  for (const t of taxes) {
+    const d = taxDueDate(t)
+    if (d && matches(d)) txs++
+  }
+  for (const i of installments) parcs += listParcelas(i, matches).length
+  for (const s of services) {
+    const d = parseLocalDate(s.dueDate)
+    if (!Number.isNaN(d.getTime()) && matches(d)) svcs++
+  }
+  return { isAllPeriods, headerLabel, descPrefix, descRef, link, counts: { obs, txs, parcs, svcs } }
 }
 
 // ─── Tempo médio de conclusão ────────────────────────────────────────────
@@ -288,7 +507,7 @@ export function obligationsInRange(
 export function taxesInRange(taxes: Tax[], range: DateRange): Tax[] {
   if (!range.from && !range.to) return taxes
   return taxes.filter((t) => {
-    const date = calculateDueDateFromCompetency(t.competencyMonth, t.dueDay, t.weekendRule, t.dueMonth)
+    const date = taxDueDate(t)
     return date ? dateInRange(date, range) : true
   })
 }
@@ -310,37 +529,12 @@ export function installmentParcelasInRange(
   /** Quando ficou concluída (sentAt ou paidAt). */
   doneAt?: string
 }> {
-  const out: Array<{
-    parcelaNumber: number
-    dueDate: Date
-    status: "completed" | "overdue" | "pending"
-    doneAt?: string
-  }> = []
-  const firstDue = parseLocalDate(inst.firstDueDate)
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-
-  for (let n = 1; n <= inst.installmentCount; n++) {
-    const date = adjustForWeekend(
-      buildSafeDate(firstDue.getFullYear(), firstDue.getMonth() + (n - 1), inst.dueDay),
-      inst.weekendRule,
-    )
-    if (!dateInRange(date, range)) continue
-
-    const record = (inst.paidInstallments ?? []).find((p) => p.number === n)
-    const isDone = !!(record?.paidAt || record?.sentAt)
-    let status: "completed" | "overdue" | "pending"
-    if (isDone) status = "completed"
-    else status = date < today ? "overdue" : "pending"
-
-    out.push({
-      parcelaNumber: n,
-      dueDate: date,
-      status,
-      doneAt: record?.paidAt ?? record?.sentAt,
-    })
-  }
-  return out
+  return listParcelas(inst, (d) => dateInRange(d, range)).map((p) => ({
+    parcelaNumber: p.parcelaNumber,
+    dueDate: p.dueDate,
+    status: p.status,
+    doneAt: p.doneAt,
+  }))
 }
 
 /** Filtro de date range pra serviços (compara dueDate). */
@@ -356,13 +550,8 @@ export function servicesInRange(services: Service[], range: DateRange): Service[
 export function installmentsInRange(installments: Installment[], range: DateRange): Installment[] {
   if (!range.from && !range.to) return installments
   return installments.filter((i) => {
-    const firstDue = parseLocalDate(i.firstDueDate)
     for (let n = 1; n <= i.installmentCount; n++) {
-      const date = adjustForWeekend(
-        buildSafeDate(firstDue.getFullYear(), firstDue.getMonth() + (n - 1), i.dueDay),
-        i.weekendRule,
-      )
-      if (dateInRange(date, range)) return true
+      if (dateInRange(getParcelaDueDate(i, n), range)) return true
     }
     return false
   })
@@ -383,7 +572,9 @@ export type MonthlyBucket = {
 }
 
 /** Gera buckets mensais para os últimos N meses, somando obrigações + guias
- *  + parcelamentos + serviços. Usa effectiveStatus pra classificar.
+ *  + parcelas + serviços. Usa effectiveStatus pra classificar; parcelamentos
+ *  contam PARCELA A PARCELA (cada uma no mês do seu vencimento, com o status
+ *  dela).
  *  - clientIds: se fornecido, restringe aos clientes da lista (vazio = todos)
  */
 export function monthlyEvolutionBuckets(
@@ -401,9 +592,8 @@ export function monthlyEvolutionBuckets(
 
   for (let i = months - 1; i >= 0; i--) {
     const date = new Date(ref.getFullYear(), ref.getMonth() - i, 1)
-    const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`
     buckets.push({
-      key,
+      key: monthKeyOf(date),
       label: `${monthNames[date.getMonth()]}/${String(date.getFullYear()).slice(2)}`,
       concluidas: 0,
       atrasadas: 0,
@@ -411,12 +601,10 @@ export function monthlyEvolutionBuckets(
       completionRate: 0,
     })
   }
-
-  const bucketKey = (d: Date) =>
-    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`
+  const byKey = new Map(buckets.map((b) => [b.key, b]))
 
   const tally = (key: string, eff: string) => {
-    const b = buckets.find((x) => x.key === key)
+    const b = byKey.get(key)
     if (!b) return
     if (eff === "completed") b.concluidas++
     else if (eff === "overdue") b.atrasadas++
@@ -425,28 +613,25 @@ export function monthlyEvolutionBuckets(
 
   for (const o of obligations) {
     if (clientFilter && !clientFilter.has(o.clientId)) continue
-    const key = bucketKey(parseLocalDate(o.calculatedDueDate))
-    tally(key, effectiveStatus(o))
+    tally(monthKeyOf(parseLocalDate(o.calculatedDueDate)), effectiveStatus(o))
   }
   for (const t of taxes) {
     if (clientFilter && t.clientId && !clientFilter.has(t.clientId)) continue
-    const date = calculateDueDateFromCompetency(t.competencyMonth, t.dueDay, t.weekendRule, t.dueMonth)
+    const date = taxDueDate(t)
     if (!date) continue
-    const key = bucketKey(date)
-    tally(key, effectiveStatus({ status: t.status, calculatedDueDate: date }))
+    tally(monthKeyOf(date), effectiveStatus({ status: t.status, calculatedDueDate: date }))
   }
   for (const i of installments) {
     if (clientFilter && !clientFilter.has(i.clientId)) continue
-    const date = installmentDueDate(i)
-    const key = bucketKey(date)
-    tally(key, effectiveStatus({ status: i.status, calculatedDueDate: date }))
+    for (const p of listParcelas(i, (d) => byKey.has(monthKeyOf(d)))) {
+      tally(monthKeyOf(p.dueDate), p.status)
+    }
   }
   for (const s of services) {
     if (clientFilter && !clientFilter.has(s.clientId)) continue
     const date = parseLocalDate(s.dueDate)
     if (Number.isNaN(date.getTime())) continue
-    const key = bucketKey(date)
-    tally(key, effectiveStatus({ status: s.status, calculatedDueDate: s.dueDate }))
+    tally(monthKeyOf(date), effectiveStatus({ status: s.status, calculatedDueDate: s.dueDate }))
   }
 
   // Taxa de conclusão por mês
@@ -459,7 +644,8 @@ export function monthlyEvolutionBuckets(
 
 // ─── Heatmap: contagem por dia do mês ────────────────────────────────────
 
-/** Conta itens vencendo em cada dia do mês indicado.
+/** Conta itens vencendo em cada dia do mês indicado (parcelamentos: TODAS
+ *  as parcelas que vencem no mês, não só a atual).
  *  Retorna array onde índice = dia-1 (0 = dia 1, 30 = dia 31).
  *  Dias sem o número (ex: 31 em fev) ficam 0. */
 export function heatmapByDay(
@@ -480,12 +666,11 @@ export function heatmapByDay(
     if (matches(d)) counts[d.getDate() - 1]++
   }
   for (const t of taxes) {
-    const d = calculateDueDateFromCompetency(t.competencyMonth, t.dueDay, t.weekendRule, t.dueMonth)
+    const d = taxDueDate(t)
     if (d && matches(d)) counts[d.getDate() - 1]++
   }
   for (const i of installments) {
-    const d = installmentDueDate(i)
-    if (matches(d)) counts[d.getDate() - 1]++
+    for (const p of listParcelas(i, matches)) counts[p.dueDate.getDate() - 1]++
   }
   for (const s of services) {
     const d = parseLocalDate(s.dueDate)

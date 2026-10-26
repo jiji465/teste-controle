@@ -20,29 +20,22 @@ import {
   Eye,
   EyeOff,
 } from "lucide-react"
-import type { Client, Tax, ObligationWithDetails, InstallmentWithDetails } from "@/lib/types"
-import { adjustForWeekend, buildSafeDate, isHoliday, isWeekend, calculateDueDateFromCompetency, getHolidayName, parseLocalDate } from "@/lib/date-utils"
+import type { Client, Tax, ObligationWithDetails, Installment } from "@/lib/types"
+import { isHoliday, isWeekend, getHolidayName } from "@/lib/date-utils"
+import {
+  buildCalendarItems,
+  calendarMonthSummary,
+  dayHasOverdue as hasOverdue,
+  filterCalendarItems,
+  type CalendarItem,
+  type CalendarItemKind,
+} from "@/lib/calendar-items"
 import { useSelectedPeriod } from "@/hooks/use-selected-period"
-
-type CalendarItemKind = "obligation" | "tax" | "installment"
-
-type CalendarItem = {
-  id: string
-  kind: CalendarItemKind
-  name: string
-  clientId?: string
-  clientName: string
-  dueDate: Date
-  status: "pending" | "in_progress" | "completed" | "overdue"
-  description?: string
-  meta?: string
-  priority?: "low" | "medium" | "high" | "urgent"
-}
 
 type Props = {
   obligations: ObligationWithDetails[]
   taxes?: Tax[]
-  installments?: InstallmentWithDetails[]
+  installments?: Installment[]
   clients?: Client[]
 }
 
@@ -104,88 +97,19 @@ export function FiscalCalendar({ obligations, taxes = [], installments = [], cli
   const year = currentDate.getFullYear()
   const month = currentDate.getMonth()
 
-  // Agrega tudo em CalendarItem[]
-  const allItems = useMemo<CalendarItem[]>(() => {
-    const items: CalendarItem[] = []
+  // Itens do mês (lib/calendar-items, testado): status EFETIVO (vencido =
+  // Atrasada; vence hoje não), parcelas expandidas uma a uma no mês e guias
+  // com o cliente preenchido (filtro por cliente e nome no detalhe).
+  const allItems = useMemo<CalendarItem[]>(
+    () => buildCalendarItems({ obligations, taxes, installments, clients }, year, month),
+    [obligations, taxes, installments, clients, year, month],
+  )
 
-    for (const o of obligations) {
-      items.push({
-        id: o.id,
-        kind: "obligation",
-        name: o.name,
-        clientId: o.clientId,
-        clientName: o.client.name,
-        dueDate: parseLocalDate(o.calculatedDueDate),
-        status: o.status,
-        description: o.description,
-        meta: o.tax?.name,
-        priority: o.priority,
-      })
-    }
-
-    // Guias de imposto: se tem competência cadastrada, mostra na data exata
-    // calculada (competência + 1 mês). Sem competência (modelo genérico),
-    // ignoramos no calendário pra não poluir todo mês.
-    for (const t of taxes) {
-      if (!t.dueDay) continue
-      const calc = calculateDueDateFromCompetency(t.competencyMonth, t.dueDay, t.weekendRule, t.dueMonth)
-      if (!calc) continue
-      // Só inclui se cair no mês visualizado
-      if (calc.getFullYear() !== year || calc.getMonth() !== month) continue
-      items.push({
-        id: `tax-${t.id}`,
-        kind: "tax",
-        name: t.name,
-        clientName: "Guia de Imposto",
-        dueDate: calc,
-        status: t.status,
-        description: t.description,
-        meta: t.scope ? t.scope.charAt(0).toUpperCase() + t.scope.slice(1) : undefined,
-        priority: t.priority,
-      })
-    }
-
-    for (const i of installments) {
-      const firstDue = parseLocalDate(i.firstDueDate)
-      const monthsToAdd = i.currentInstallment - 1
-      const rawDate = buildSafeDate(
-        firstDue.getFullYear(),
-        firstDue.getMonth() + monthsToAdd,
-        i.dueDay,
-      )
-      // Aplica regra de fim de semana / feriado (anticipate / postpone /
-      // keep) — alinhado com /parcelamentos, card de detalhes, dashboard
-      // e relatório. Antes essa linha faltava, e o calendário plotava
-      // parcelas no sábado/domingo/feriado mesmo com regra "anticipate".
-      const date = adjustForWeekend(rawDate, i.weekendRule)
-      items.push({
-        id: i.id,
-        kind: "installment",
-        name: i.name,
-        clientId: i.clientId,
-        clientName: i.client.name,
-        dueDate: date,
-        status: i.status,
-        description: i.description,
-        meta: `Parcela ${i.currentInstallment}/${i.installmentCount}`,
-        priority: i.priority,
-      })
-    }
-
-    return items
-  }, [obligations, taxes, installments, year, month])
-
-  // Aplica filtros
-  const filteredItems = useMemo(() => {
-    return allItems.filter((item) => {
-      // "Esconder concluídas" só vale quando não há filtro explícito de status
-      if (!showCompleted && statusFilter === "all" && item.status === "completed") return false
-      if (clientFilter !== "all" && item.clientId !== clientFilter) return false
-      if (kindFilter !== "all" && item.kind !== kindFilter) return false
-      if (statusFilter !== "all" && item.status !== statusFilter) return false
-      return true
-    })
-  }, [allItems, clientFilter, kindFilter, statusFilter, showCompleted])
+  // Aplica filtros (status comparado pelo status efetivo)
+  const filteredItems = useMemo(
+    () => filterCalendarItems(allItems, { clientFilter, kindFilter, statusFilter, showCompleted }),
+    [allItems, clientFilter, kindFilter, statusFilter, showCompleted],
+  )
 
   // Agrupa por dia
   const itemsByDay = useMemo(() => {
@@ -222,20 +146,9 @@ export function FiscalCalendar({ obligations, taxes = [], installments = [], cli
   const monthName = currentDate.toLocaleString("pt-BR", { month: "long" })
   const today = new Date()
 
-  const totalThisMonth = useMemo(
-    () => filteredItems.filter((i) => i.dueDate.getMonth() === month && i.dueDate.getFullYear() === year).length,
+  const { total: totalThisMonth, overdue: overdueThisMonth } = useMemo(
+    () => calendarMonthSummary(filteredItems, year, month),
     [filteredItems, month, year],
-  )
-  const overdueThisMonth = useMemo(
-    () =>
-      filteredItems.filter(
-        (i) =>
-          i.dueDate.getMonth() === month &&
-          i.dueDate.getFullYear() === year &&
-          i.status !== "completed" &&
-          i.dueDate < today,
-      ).length,
-    [filteredItems, month, year, today],
   )
 
   const selectedDayItems = selectedDay ? itemsByDay.get(dayKey(selectedDay)) ?? [] : []
@@ -357,7 +270,7 @@ export function FiscalCalendar({ obligations, taxes = [], installments = [], cli
                 const isToday = sameDay(today, day)
                 const weekend = isWeekend(day)
                 const holiday = isHoliday(day)
-                const dayHasOverdue = items.some((i) => i.status !== "completed" && i.dueDate < today)
+                const dayHasOverdue = hasOverdue(items)
 
                 return (
                   <button

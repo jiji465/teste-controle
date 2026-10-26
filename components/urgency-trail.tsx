@@ -31,17 +31,16 @@ import {
   Briefcase,
 } from "lucide-react"
 import type { ObligationWithDetails, Tax, Client, Installment, Service } from "@/lib/types"
-import {
-  adjustForWeekend,
-  buildSafeDate,
-  calculateDueDateFromCompetency,
-  formatDate, parseLocalDate } from "@/lib/date-utils"
+import { calculateDueDateFromCompetency, formatDate, parseLocalDate } from "@/lib/date-utils"
+import { getParcelaDueDate } from "@/lib/installment-dates"
 import { urgencyTier, type UrgencyTier } from "@/lib/compliance-score"
 
 type Props = {
   obligations: ObligationWithDetails[]
   taxes: Tax[]
-  installments: Installment[]
+  /** Parcelamentos inteiros (parcela atual) ou parcelas do período
+   *  (PeriodInstallment, com calculatedDueDate/parcelaNumber). */
+  installments: Array<Installment & { calculatedDueDate?: string; parcelaNumber?: number }>
   services?: Service[]
   clients: Client[]
   onCompleteObligation?: (o: ObligationWithDetails) => void | Promise<void>
@@ -185,18 +184,17 @@ export function UrgencyTrail({
       })
     }
 
+    // Parcelamentos: quando vêm como parcelas do período (PeriodInstallment,
+    // com calculatedDueDate/parcelaNumber), usa a data e o status DA PARCELA;
+    // senão, a parcela atual.
     for (const i of installments) {
       if (i.status === "completed") continue
-      const firstDue = parseLocalDate(i.firstDueDate)
-      const monthsToAdd = i.currentInstallment - 1
-      const date = adjustForWeekend(
-        buildSafeDate(firstDue.getFullYear(), firstDue.getMonth() + monthsToAdd, i.dueDay),
-        i.weekendRule,
-      )
+      const n = i.parcelaNumber ?? i.currentInstallment
+      const date = i.calculatedDueDate ? parseLocalDate(i.calculatedDueDate) : getParcelaDueDate(i, n)
       const tier = urgencyTier(date, i.status)
       if (!tier || tier === "later") continue
       result.push({
-        id: i.id,
+        id: `${i.id}-p${n}`,
         name: i.name,
         clientName: clientName(i.clientId),
         clientId: i.clientId,
@@ -204,7 +202,7 @@ export function UrgencyTrail({
         tier,
         type: "parcela",
         href: `/parcelamentos?clientId=${i.clientId}`,
-        parcelaInfo: `${i.currentInstallment}/${i.installmentCount}`,
+        parcelaInfo: `${n}/${i.installmentCount}`,
       })
     }
 

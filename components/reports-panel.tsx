@@ -46,23 +46,11 @@ import {
   Legend,
   ComposedChart,
 } from "recharts"
-import { periodoLabel, geradoEm } from "@/lib/report-config"
-import type { ReportData, ReportPendenciaRow } from "@/lib/report-types"
-import { calculateClientCompliance } from "@/lib/compliance-score"
-import { TAX_REGIME_LABELS } from "@/lib/types"
+import type { ReportData } from "@/lib/report-types"
+import { buildReportData, buildReportModel } from "@/lib/report-model"
 import { toast } from "sonner"
 import type { ObligationWithDetails, Tax, Installment, Service, Client } from "@/lib/types"
-import { formatDate, buildSafeDate, adjustForWeekend, calculateDueDateFromCompetency, parseLocalDate } from "@/lib/date-utils"
-import { effectiveStatus } from "@/lib/obligation-status"
-import { getRecurrenceDescription } from "@/lib/recurrence-utils"
-import {
-  obligationsInRange,
-  taxesInRange,
-  installmentsInRange,
-  installmentParcelasInRange,
-  monthlyEvolutionBuckets,
-} from "@/lib/dashboard-utils"
-import { dateInRange } from "@/lib/date-range"
+import { formatDate } from "@/lib/date-utils"
 import { RelatoriosFilters, loadStoredFilters, type RelatoriosFilterState } from "./relatorios-filters"
 import { ComplianceScoreList } from "./compliance-score-list"
 import { AvgCompletionTime } from "./avg-completion-time"
@@ -77,9 +65,6 @@ type Props = {
   services?: Service[]
   clients?: Client[]
 }
-
-// Status type used by filters
-type FilterStatus = "pending" | "in_progress" | "completed" | "overdue"
 
 export function ReportsPanel({
   obligations,
@@ -97,542 +82,39 @@ export function ReportsPanel({
   const [showAllByTax, setShowAllByTax] = useState(false)
   const [showAllCompleted, setShowAllCompleted] = useState(false)
 
-  // ─── Aplica filtros ─────────────────────────────────────────────────────
-  const filteredObligations = useMemo(() => {
-    let result = obligationsInRange(obligations, filters.range)
-    if (filters.clientIds.length > 0) {
-      const set = new Set(filters.clientIds)
-      result = result.filter((o) => set.has(o.clientId))
-    }
-    if (filters.scope !== "all") {
-      result = result.filter((o) => o.scope === filters.scope)
-    }
-    if (filters.statuses.length > 0) {
-      const set = new Set<FilterStatus>(filters.statuses)
-      result = result.filter((o) => set.has(effectiveStatus(o) as FilterStatus))
-    }
-    return result
-  }, [obligations, filters])
-
-  const filteredTaxes = useMemo(() => {
-    let result = taxesInRange(taxes, filters.range)
-    if (filters.clientIds.length > 0) {
-      const set = new Set(filters.clientIds)
-      result = result.filter((t) => t.clientId && set.has(t.clientId))
-    }
-    if (filters.scope !== "all") {
-      result = result.filter((t) => t.scope === filters.scope)
-    }
-    if (filters.statuses.length > 0) {
-      const set = new Set<FilterStatus>(filters.statuses)
-      result = result.filter((t) => {
-        const d = calculateDueDateFromCompetency(t.competencyMonth, t.dueDay, t.weekendRule, t.dueMonth)
-        return set.has(effectiveStatus({ status: t.status, calculatedDueDate: d ?? undefined }) as FilterStatus)
-      })
-    }
-    return result
-  }, [taxes, filters])
-
-  const filteredInstallments = useMemo(() => {
-    let result = installmentsInRange(installments, filters.range)
-    if (filters.clientIds.length > 0) {
-      const set = new Set(filters.clientIds)
-      result = result.filter((i) => set.has(i.clientId))
-    }
-    if (filters.statuses.length > 0) {
-      const set = new Set<FilterStatus>(filters.statuses)
-      result = result.filter((i) => {
-        const firstDue = parseLocalDate(i.firstDueDate)
-        const monthsToAdd = i.currentInstallment - 1
-        const due = adjustForWeekend(
-          buildSafeDate(firstDue.getFullYear(), firstDue.getMonth() + monthsToAdd, i.dueDay),
-          i.weekendRule,
-        )
-        return set.has(effectiveStatus({ status: i.status, calculatedDueDate: due }) as FilterStatus)
-      })
-    }
-    return result
-  }, [installments, filters])
-
-  const filteredServices = useMemo(() => {
-    let result = services.filter((s) => {
-      if (filters.range.from || filters.range.to) {
-        return dateInRange(s.dueDate, filters.range)
-      }
-      return true
-    })
-    if (filters.clientIds.length > 0) {
-      const set = new Set(filters.clientIds)
-      result = result.filter((s) => set.has(s.clientId))
-    }
-    if (filters.statuses.length > 0) {
-      const set = new Set<FilterStatus>(filters.statuses)
-      result = result.filter((s) =>
-        set.has(effectiveStatus({ status: s.status, calculatedDueDate: s.dueDate }) as FilterStatus),
-      )
-    }
-    return result
-  }, [services, filters])
-
-  // Stats consolidadas
-  const stats = useMemo(() => {
-    const completed: ObligationWithDetails[] = []
-    const inProgress: ObligationWithDetails[] = []
-    const pending: ObligationWithDetails[] = []
-    const overdue: ObligationWithDetails[] = []
-    for (const o of filteredObligations) {
-      const eff = effectiveStatus(o)
-      if (eff === "completed") completed.push(o)
-      else if (eff === "in_progress") inProgress.push(o)
-      else if (eff === "overdue") overdue.push(o)
-      else pending.push(o)
-    }
-    return { completed, inProgress, pending, overdue }
-  }, [filteredObligations])
-
-  const taxesCompleted = filteredTaxes.filter((t) => t.status === "completed").length
-
-  // Parcelas individuais que caem no range (1 parcelamento pode contribuir
-  // com N parcelas se range é multi-mês). Antes contávamos parcelamento
-  // INTEIRO como "concluído" — bug: parcelamento com 24 parcelas só virava
-  // concluído quando todas 24 fossem pagas. Modelo do usuário: cada parcela
-  // do mês é uma unidade de "entregue".
-  const parcelasInRange = useMemo(() => {
-    const out: Array<{
-      inst: Installment
-      parcelaNumber: number
-      dueDate: Date
-      status: "completed" | "overdue" | "pending"
-      doneAt?: string
-    }> = []
-    for (const inst of filteredInstallments) {
-      for (const p of installmentParcelasInRange(inst, filters.range)) {
-        out.push({ inst, ...p })
-      }
-    }
-    return out
-  }, [filteredInstallments, filters.range])
-
-  const parcelasCompleted = parcelasInRange.filter((p) => p.status === "completed").length
-  const totalParcelas = parcelasInRange.length
-
-  const servicesCompleted = filteredServices.filter((s) => s.status === "completed").length
-  const totalAll =
-    filteredObligations.length + filteredTaxes.length + totalParcelas + filteredServices.length
-  const totalCompletedAll =
-    stats.completed.length + taxesCompleted + parcelasCompleted + servicesCompleted
-  const overallRate = totalAll > 0 ? Math.round((totalCompletedAll / totalAll) * 100) : 0
-
-  const completedOnTime = useMemo(
-    () =>
-      stats.completed.filter((obl) => {
-        if (!obl.completedAt) return false
-        return new Date(obl.completedAt) <= parseLocalDate(obl.calculatedDueDate)
-      }),
-    [stats.completed],
+  // ─── Modelo (filtros, contagens, tabelas) — lib/report-model (testado) ──
+  // Parcelamentos contam parcela a parcela (status filtrado por parcela);
+  // "No prazo" compara por DIA e soma os 4 tipos, igual ao Total Combinado.
+  const model = useMemo(
+    () => buildReportModel({ obligations, taxes, installments, services, clients }, filters),
+    [obligations, taxes, installments, services, clients, filters],
   )
-  const onTimeRate =
-    stats.completed.length > 0
-      ? Math.round((completedOnTime.length / stats.completed.length) * 100)
-      : 0
+  const {
+    filteredObligations,
+    filteredTaxes,
+    filteredInstallments,
+    filteredServices,
+    stats,
+    allStatus,
+    taxesCompleted,
+    parcelasCompleted,
+    totalParcelas,
+    servicesCompleted,
+    totalAll,
+    totalCompletedAll,
+    overallRate,
+    onTime,
+    monthlyEvolution,
+    heatmapMonthKey,
+    byClient,
+    byTax,
+    byRecurrence,
+    unifiedCompleted,
+    installmentsInPeriodTable,
+  } = model
 
-  // Evolução 12 meses (com taxa de conclusão) — sempre baseado em ref=hoje
-  const monthlyEvolution = useMemo(
-    () =>
-      monthlyEvolutionBuckets(
-        obligations,
-        taxes,
-        installments,
-        12,
-        new Date(),
-        filters.clientIds,
-        services,
-      ),
-    [obligations, taxes, installments, services, filters.clientIds],
-  )
-
-  // Mês para heatmap: usa o "to" do range se existir, senão hoje
-  const heatmapMonthKey = useMemo(() => {
-    const date = filters.range.to ? new Date(filters.range.to) : new Date()
-    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`
-  }, [filters.range.to])
-
-  // ─── Por Cliente — agora soma obrigações + guias + parcelamentos ────────
-  // Antes só contava obrigações; um cliente que só tinha guias aparecia com
-  // total 0 (sumia da lista). Agora cada cliente mostra total geral com
-  // breakdown por tipo (obr/guia/parc) pra ficar claro de onde vem.
-  const byClient = useMemo(() => {
-    type Entry = {
-      clientId: string
-      clientName: string
-      total: number
-      completed: number
-      pending: number
-      inProgress: number
-      overdue: number
-      // Breakdown por tipo (só nos contadores que importam pra UI)
-      obrigCount: number
-      guiaCount: number
-      parcCount: number
-      svcCount: number
-    }
-    const map = new Map<string, Entry>()
-    const getOrCreate = (id: string, name: string): Entry => {
-      let e = map.get(id)
-      if (!e) {
-        e = {
-          clientId: id,
-          clientName: name,
-          total: 0,
-          completed: 0,
-          pending: 0,
-          inProgress: 0,
-          overdue: 0,
-          obrigCount: 0,
-          guiaCount: 0,
-          parcCount: 0,
-          svcCount: 0,
-        }
-        map.set(id, e)
-      }
-      return e
-    }
-    // Obrigações
-    for (const o of filteredObligations) {
-      const e = getOrCreate(o.clientId, o.client.name)
-      e.total++
-      e.obrigCount++
-      const eff = effectiveStatus(o)
-      if (eff === "completed") e.completed++
-      else if (eff === "in_progress") e.inProgress++
-      else if (eff === "overdue") e.overdue++
-      else e.pending++
-    }
-    // Guias
-    for (const t of filteredTaxes) {
-      if (!t.clientId) continue
-      const name = clients.find((c) => c.id === t.clientId)?.name || "Cliente"
-      const e = getOrCreate(t.clientId, name)
-      e.total++
-      e.guiaCount++
-      const due = calculateDueDateFromCompetency(t.competencyMonth, t.dueDay, t.weekendRule, t.dueMonth)
-      const eff = effectiveStatus({ status: t.status, calculatedDueDate: due ?? undefined })
-      if (eff === "completed") e.completed++
-      else if (eff === "in_progress") e.inProgress++
-      else if (eff === "overdue") e.overdue++
-      else e.pending++
-    }
-    // Parcelamentos — conta cada PARCELA do período como uma unidade.
-    // Mesma lógica do contador "Parcelas no período" da Visão Geral. Status
-    // é PER-PARCELA (concluída se sentAt/paidAt, atrasada/pendente conforme
-    // data). Não usa o status do parcelamento inteiro — esse só vira
-    // "completed" quando TODAS as parcelas terminam.
-    for (const p of parcelasInRange) {
-      const name = clients.find((c) => c.id === p.inst.clientId)?.name || "Cliente"
-      const e = getOrCreate(p.inst.clientId, name)
-      e.total++
-      e.parcCount++
-      if (p.status === "completed") e.completed++
-      else if (p.status === "overdue") e.overdue++
-      else e.pending++
-    }
-    // Serviços
-    for (const sv of filteredServices) {
-      const name = clients.find((c) => c.id === sv.clientId)?.name || "Cliente"
-      const e = getOrCreate(sv.clientId, name)
-      e.total++
-      e.svcCount++
-      const eff = effectiveStatus({ status: sv.status, calculatedDueDate: sv.dueDate })
-      if (eff === "completed") e.completed++
-      else if (eff === "in_progress") e.inProgress++
-      else if (eff === "overdue") e.overdue++
-      else e.pending++
-    }
-    return [...map.values()].sort((a, b) => b.total - a.total)
-  }, [filteredObligations, filteredTaxes, parcelasInRange, filteredServices, clients])
-
-  const byRecurrence = useMemo(() => {
-    const map: Record<string, number> = {}
-    for (const o of filteredObligations) {
-      const r = getRecurrenceDescription(o)
-      map[r] = (map[r] || 0) + 1
-    }
-    return map
-  }, [filteredObligations])
-
-  const byTax = useMemo(() => {
-    const map: Record<string, { total: number; completed: number; overdue: number }> = {}
-    for (const o of filteredObligations) {
-      const taxName = o.tax?.name || "Sem imposto vinculado"
-      if (!map[taxName]) map[taxName] = { total: 0, completed: 0, overdue: 0 }
-      map[taxName].total++
-      const eff = effectiveStatus(o)
-      if (eff === "completed") map[taxName].completed++
-      if (eff === "overdue") map[taxName].overdue++
-    }
-    return map
-  }, [filteredObligations])
-
-  // Lista unificada de itens CONCLUÍDOS (obrigações + guias + parcelamentos),
-  // pra alimentar a aba "Finalizadas". Antes mostrava só obrigações; agora
-  // o contador vê tudo que finalizou no período.
-  type CompletedItem = {
-    id: string
-    name: string
-    clientName: string
-    completedAt: string | undefined
-    href: string
-    typeLabel: "Obrigação" | "Guia" | "Parcela" | "Serviço"
-  }
-  const unifiedCompleted = useMemo<CompletedItem[]>(() => {
-    const out: CompletedItem[] = []
-    for (const o of filteredObligations) {
-      if (effectiveStatus(o) === "completed") {
-        out.push({
-          id: o.id,
-          name: o.name,
-          clientName: o.client.name,
-          completedAt: o.completedAt,
-          href: `/obrigacoes?clientId=${o.clientId}&obligationId=${o.id}`,
-          typeLabel: "Obrigação",
-        })
-      }
-    }
-    for (const t of filteredTaxes) {
-      if (t.status === "completed") {
-        const clientName = clients.find((c) => c.id === t.clientId)?.name ?? "—"
-        out.push({
-          id: t.id,
-          name: t.name,
-          clientName,
-          completedAt: t.completedAt,
-          href: `/impostos?clientId=${t.clientId}`,
-          typeLabel: "Guia",
-        })
-      }
-    }
-    // Parcelas individuais concluídas no período — não o parcelamento todo.
-    // Cada parcela é 1 linha com "PERT-INSS — parcela 6/24" + data de conclusão.
-    for (const p of parcelasInRange) {
-      if (p.status !== "completed") continue
-      const clientName = clients.find((c) => c.id === p.inst.clientId)?.name ?? "—"
-      out.push({
-        id: `${p.inst.id}-parc${p.parcelaNumber}`,
-        name: `${p.inst.name} — parcela ${p.parcelaNumber}/${p.inst.installmentCount}`,
-        clientName,
-        completedAt: p.doneAt,
-        href: `/parcelamentos?clientId=${p.inst.clientId}`,
-        typeLabel: "Parcela",
-      })
-    }
-    // Serviços concluídos
-    for (const sv of filteredServices) {
-      if (sv.status !== "completed") continue
-      const clientName = clients.find((c) => c.id === sv.clientId)?.name ?? "—"
-      out.push({
-        id: sv.id,
-        name: sv.name,
-        clientName,
-        completedAt: sv.completedAt,
-        href: `/servicos?clientId=${sv.clientId}`,
-        typeLabel: "Serviço",
-      })
-    }
-    return out.sort((a, b) => {
-      const da = a.completedAt ? new Date(a.completedAt).getTime() : 0
-      const db = b.completedAt ? new Date(b.completedAt).getTime() : 0
-      return db - da
-    })
-  }, [filteredObligations, filteredTaxes, parcelasInRange, filteredServices, clients])
-
-  // Parcelamentos do período
-  const installmentsInPeriod = useMemo(() => {
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
-    return filteredInstallments
-      .map((inst) => {
-        const firstDue = parseLocalDate(inst.firstDueDate)
-        const monthsToAdd = inst.currentInstallment - 1
-        const dueDate = buildSafeDate(
-          firstDue.getFullYear(),
-          firstDue.getMonth() + monthsToAdd,
-          inst.dueDay,
-        )
-        const adjustedDueDate = adjustForWeekend(dueDate, inst.weekendRule)
-        let effStatus: "completed" | "overdue" | "pending"
-        if (inst.status === "completed") effStatus = "completed"
-        else if (adjustedDueDate < today) effStatus = "overdue"
-        else effStatus = "pending"
-        return { inst, dueDate: adjustedDueDate, effStatus }
-      })
-      .sort((a, b) => a.dueDate.getTime() - b.dueDate.getTime())
-  }, [filteredInstallments])
-
-  // ─── Matéria-prima única dos relatórios (Excel + PDF leem o mesmo objeto) ──
-  const reportData = useMemo<ReportData>(() => {
-    const fmt = (d: string | Date | undefined): string => {
-      if (!d) return ""
-      const date = parseLocalDate(d)
-      if (Number.isNaN(date.getTime())) return ""
-      return date.toLocaleDateString("pt-BR")
-    }
-    const ms = (d: string | Date | undefined): number => {
-      if (!d) return 0
-      const date = parseLocalDate(d)
-      return Number.isNaN(date.getTime()) ? 0 : date.getTime()
-    }
-    const prioLabel = (p: string) =>
-      p === "urgent" ? "Urgente" : p === "high" ? "Alta" : p === "low" ? "Baixa" : "Média"
-
-    // KPIs por tipo
-    const obrig = {
-      total: filteredObligations.length,
-      concluidas: stats.completed.length,
-      emAndamento: stats.inProgress.length,
-      pendentes: stats.pending.length,
-      atrasadas: stats.overdue.length,
-    }
-    const guiaStatus = filteredTaxes.map((t) => {
-      const due = calculateDueDateFromCompetency(t.competencyMonth, t.dueDay, t.weekendRule, t.dueMonth)
-      return effectiveStatus({ status: t.status, calculatedDueDate: due ?? undefined })
-    })
-    const guias = {
-      total: filteredTaxes.length,
-      concluidas: guiaStatus.filter((s) => s === "completed").length,
-      emAndamento: guiaStatus.filter((s) => s === "in_progress").length,
-      pendentes: guiaStatus.filter((s) => s === "pending").length,
-      atrasadas: guiaStatus.filter((s) => s === "overdue").length,
-    }
-    const parcelas = {
-      total: parcelasInRange.length,
-      concluidas: parcelasInRange.filter((p) => p.status === "completed").length,
-      emAndamento: 0,
-      pendentes: parcelasInRange.filter((p) => p.status === "pending").length,
-      atrasadas: parcelasInRange.filter((p) => p.status === "overdue").length,
-    }
-    const svcStatus = filteredServices.map((s) =>
-      effectiveStatus({ status: s.status, calculatedDueDate: s.dueDate }),
-    )
-    const servicos = {
-      total: filteredServices.length,
-      concluidas: svcStatus.filter((s) => s === "completed").length,
-      emAndamento: svcStatus.filter((s) => s === "in_progress").length,
-      pendentes: svcStatus.filter((s) => s === "pending").length,
-      atrasadas: svcStatus.filter((s) => s === "overdue").length,
-    }
-
-    // Compliance por cliente (nota A/B/C) — indexa por nome do cliente
-    const compliance = calculateClientCompliance(
-      clients,
-      filteredObligations,
-      filteredTaxes,
-      filteredInstallments,
-      filteredServices,
-    )
-    const notaPorCliente = new Map(compliance.map((c) => [c.client.id, c.grade]))
-    const clientIdByName = new Map(clients.map((c) => [c.name, c.id]))
-
-    const porCliente = byClient.map((c) => ({
-      cliente: c.clientName,
-      total: c.total,
-      concluidas: c.completed,
-      emAndamento: c.inProgress,
-      pendentes: c.pending,
-      atrasadas: c.overdue,
-      taxa: c.total > 0 ? Math.round((c.completed / c.total) * 100) : 0,
-      nota: notaPorCliente.get(clientIdByName.get(c.clientName) ?? "") ?? "",
-    }))
-
-    const porTipo = Object.entries(byTax)
-      .sort(([, a], [, b]) => b.total - a.total)
-      .map(([nome, t]) => ({ nome, total: t.total, concluidas: t.completed, atrasadas: t.overdue }))
-
-    const porRecorrencia = Object.entries(byRecurrence)
-      .sort(([, a], [, b]) => b - a)
-      .map(([nome, quantidade]) => ({ nome, quantidade }))
-
-    const evolucao = monthlyEvolution.map((m) => ({
-      mes: m.label,
-      concluidas: m.concluidas,
-      pendentes: m.pendentes,
-      atrasadas: m.atrasadas,
-      total: m.concluidas + m.pendentes + m.atrasadas,
-      taxa: m.completionRate,
-    }))
-
-    // ── Pendências (atrasadas + a vencer) dos 4 tipos ──
-    const atrasadas: ReportPendenciaRow[] = []
-    const aVencer: ReportPendenciaRow[] = []
-    const push = (
-      arr: ReportPendenciaRow[],
-      tipo: ReportPendenciaRow["tipo"],
-      nome: string,
-      cliente: string,
-      due: Date | string | undefined,
-      prioridade: string,
-      competencia: string,
-    ) => {
-      arr.push({ tipo, nome, cliente, vencimento: fmt(due), vencimentoMs: ms(due), prioridade, competencia })
-    }
-    const clientName = (id: string | undefined) => clients.find((c) => c.id === id)?.name ?? "—"
-
-    for (const o of filteredObligations) {
-      const eff = effectiveStatus(o)
-      if (eff === "overdue") push(atrasadas, "Obrigação", o.name, o.client.name, o.calculatedDueDate, prioLabel(o.priority), o.competencyMonth ?? "")
-      else if (eff !== "completed") push(aVencer, "Obrigação", o.name, o.client.name, o.calculatedDueDate, prioLabel(o.priority), o.competencyMonth ?? "")
-    }
-    for (const t of filteredTaxes) {
-      const due = calculateDueDateFromCompetency(t.competencyMonth, t.dueDay, t.weekendRule, t.dueMonth)
-      const eff = effectiveStatus({ status: t.status, calculatedDueDate: due ?? undefined })
-      if (eff === "overdue") push(atrasadas, "Guia", t.name, clientName(t.clientId), due ?? undefined, prioLabel(t.priority), t.competencyMonth ?? "")
-      else if (eff !== "completed") push(aVencer, "Guia", t.name, clientName(t.clientId), due ?? undefined, prioLabel(t.priority), t.competencyMonth ?? "")
-    }
-    for (const p of parcelasInRange) {
-      const nome = `${p.inst.name} — parcela ${p.parcelaNumber}/${p.inst.installmentCount}`
-      if (p.status === "overdue") push(atrasadas, "Parcela", nome, clientName(p.inst.clientId), p.dueDate, prioLabel(p.inst.priority), "")
-      else if (p.status === "pending") push(aVencer, "Parcela", nome, clientName(p.inst.clientId), p.dueDate, prioLabel(p.inst.priority), "")
-    }
-    for (const s of filteredServices) {
-      const eff = effectiveStatus({ status: s.status, calculatedDueDate: s.dueDate })
-      if (eff === "overdue") push(atrasadas, "Serviço", s.name, clientName(s.clientId), s.dueDate, prioLabel(s.priority), "")
-      else if (eff !== "completed") push(aVencer, "Serviço", s.name, clientName(s.clientId), s.dueDate, prioLabel(s.priority), "")
-    }
-    atrasadas.sort((a, b) => a.vencimentoMs - b.vencimentoMs)
-    aVencer.sort((a, b) => a.vencimentoMs - b.vencimentoMs)
-
-    const concluidas = unifiedCompleted.map((u) => ({
-      tipo: u.typeLabel,
-      nome: u.name,
-      cliente: u.clientName,
-      concluidaEm: fmt(u.completedAt),
-    }))
-
-    return {
-      periodoLabel: periodoLabel(filters.range.from, filters.range.to),
-      geradoEm: geradoEm(),
-      kpis: {
-        totalGeral: totalAll,
-        concluidasGeral: totalCompletedAll,
-        taxaConclusao: overallRate,
-        taxaNoPrazo: onTimeRate,
-        obrigacoes: obrig,
-        guias,
-        parcelas,
-        servicos,
-      },
-      porCliente,
-      porTipo,
-      porRecorrencia,
-      evolucao,
-      atrasadas,
-      aVencer,
-      concluidas,
-    }
-  }, [
-    filteredObligations, filteredTaxes, filteredInstallments, filteredServices,
-    parcelasInRange, byClient, byTax, byRecurrence, monthlyEvolution, unifiedCompleted,
-    stats, totalAll, totalCompletedAll, overallRate, onTimeRate, clients, filters.range,
-  ])
+  // Matéria-prima única dos relatórios (Excel + PDF leem o mesmo objeto)
+  const reportData = useMemo<ReportData>(() => buildReportData(model), [model])
 
   const handleExportExcel = async () => {
     try {
@@ -775,11 +257,11 @@ export function ReportsPanel({
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-2xl font-bold tabular-nums">{stats.completed.length}</p>
-              <Progress
-                value={filteredObligations.length > 0 ? (stats.completed.length / filteredObligations.length) * 100 : 0}
-                className="mt-2"
-              />
+              <p className="text-2xl font-bold tabular-nums">{allStatus.completed}</p>
+              <Progress value={overallRate} className="mt-2" />
+              <p className="text-[11px] text-muted-foreground mt-1">
+                de {totalAll} · obrigações, guias, parcelas e serviços
+              </p>
             </CardContent>
           </Card>
           <Card>
@@ -789,9 +271,11 @@ export function ReportsPanel({
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-2xl font-bold tabular-nums">{completedOnTime.length}</p>
-              <Progress value={onTimeRate} className="mt-2" />
-              <p className="text-[11px] text-muted-foreground mt-1">{onTimeRate}% das concluídas</p>
+              <p className="text-2xl font-bold tabular-nums">{onTime.all.onTime}</p>
+              <Progress value={onTime.all.rate} className="mt-2" />
+              <p className="text-[11px] text-muted-foreground mt-1">
+                {onTime.all.rate}% das {onTime.all.completed} concluídas (todos os tipos) · até o dia do vencimento
+              </p>
             </CardContent>
           </Card>
           <AvgCompletionTime
@@ -807,7 +291,7 @@ export function ReportsPanel({
           />
         </div>
 
-        {/* Status detalhado */}
+        {/* Status detalhado — soma dos 4 tipos (bate com o Total Combinado) */}
         <div className="grid gap-3 sm:grid-cols-3">
           <Card>
             <CardHeader className="pb-2">
@@ -816,7 +300,7 @@ export function ReportsPanel({
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-2xl font-bold tabular-nums">{stats.inProgress.length}</p>
+              <p className="text-2xl font-bold tabular-nums">{allStatus.inProgress}</p>
             </CardContent>
           </Card>
           <Card>
@@ -826,17 +310,17 @@ export function ReportsPanel({
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-2xl font-bold tabular-nums">{stats.pending.length}</p>
+              <p className="text-2xl font-bold tabular-nums">{allStatus.pending}</p>
             </CardContent>
           </Card>
-          <Card className={stats.overdue.length > 0 ? "ring-2 ring-red-500/30" : ""}>
+          <Card className={allStatus.overdue > 0 ? "ring-2 ring-red-500/30" : ""}>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium flex items-center gap-2">
                 <AlertTriangle className="size-4 text-red-600" /> Atrasadas
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-2xl font-bold tabular-nums text-red-600">{stats.overdue.length}</p>
+              <p className="text-2xl font-bold tabular-nums text-red-600">{allStatus.overdue}</p>
             </CardContent>
           </Card>
         </div>
@@ -947,7 +431,7 @@ export function ReportsPanel({
             </div>
           </CardHeader>
           <CardContent>
-            {installmentsInPeriod.length === 0 ? (
+            {installmentsInPeriodTable.length === 0 ? (
               <p className="text-sm text-muted-foreground text-center py-6">
                 Nenhuma parcela no período/filtro.
               </p>
@@ -964,11 +448,11 @@ export function ReportsPanel({
                     </tr>
                   </thead>
                   <tbody>
-                    {installmentsInPeriod.map(({ inst, dueDate, effStatus }) => {
+                    {installmentsInPeriodTable.map(({ key, inst, parcela, dueDate, effStatus }) => {
                       const client = clients.find((c) => c.id === inst.clientId)
                       return (
                         <tr
-                          key={inst.id}
+                          key={key}
                           className={`border-t hover:bg-muted/30 transition-colors ${
                             effStatus === "overdue" ? "bg-red-50/40 dark:bg-red-950/10" : ""
                           }`}
@@ -983,7 +467,7 @@ export function ReportsPanel({
                           </td>
                           <td className="px-3 py-2 text-muted-foreground">{client?.name ?? "—"}</td>
                           <td className="px-3 py-2 text-center font-mono tabular-nums">
-                            {inst.currentInstallment}/{inst.installmentCount}
+                            {parcela}
                           </td>
                           <td className="px-3 py-2 font-mono tabular-nums">{formatDate(dueDate)}</td>
                           <td className="px-3 py-2">
@@ -1165,7 +649,7 @@ export function ReportsPanel({
               <Activity className="size-4 text-emerald-600" /> Itens Finalizados
             </CardTitle>
             <CardDescription className="text-xs">
-              Obrigações + guias + parcelamentos concluídos no filtro · {" "}
+              Obrigações, guias, parcelas e serviços concluídos no filtro · {" "}
               {showAllCompleted
                 ? unifiedCompleted.length > 50
                   ? `50 mais recentes de ${unifiedCompleted.length}`

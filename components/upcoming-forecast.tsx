@@ -12,10 +12,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Badge } from "@/components/ui/badge"
 import { TrendingUp, FileText, Receipt, CreditCard, Briefcase } from "lucide-react"
 import type { ObligationWithDetails, Tax, Installment, Service } from "@/lib/types"
-import {
-  adjustForWeekend,
-  buildSafeDate,
-  calculateDueDateFromCompetency, parseLocalDate } from "@/lib/date-utils"
+import { upcomingForecastCounts } from "@/lib/dashboard-utils"
 
 type Props = {
   obligations: ObligationWithDetails[]
@@ -26,87 +23,14 @@ type Props = {
   currentMonth?: string
 }
 
-const MONTH_NAMES = [
-  "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
-  "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro",
-]
-
-function parsePeriod(period: string | undefined): { year: number; month0: number } {
-  if (period && /^\d{4}-\d{2}$/.test(period)) {
-    const [y, m] = period.split("-").map(Number)
-    return { year: y, month0: m - 1 }
-  }
-  const now = new Date()
-  return { year: now.getFullYear(), month0: now.getMonth() }
-}
-
 export function UpcomingForecast({ obligations, taxes, installments, services = [], currentMonth }: Props) {
-  // Quando o filtro está em "Todos os períodos" (currentMonth === "all" ou
-  // ausente), mostra "Próximos 30 dias" a partir de HOJE em vez de "próximo
-  // mês de calendário". Antes mostrava sempre o próximo mês real, ignorando
-  // o contexto "all".
-  const isAllPeriods = !currentMonth || currentMonth === "all" || !/^\d{4}-\d{2}$/.test(currentMonth)
-
-  const { headerLabel, descPrefix, descRef, counts, link } = useMemo(() => {
-    let matches: (d: Date) => boolean
-    let headerLabel: string
-    let descPrefix: string
-    let descRef: string
-    let link: string
-
-    if (isAllPeriods) {
-      // Janela: [hoje, hoje+30 dias]
-      const today = new Date()
-      today.setHours(0, 0, 0, 0)
-      const limit = new Date(today)
-      limit.setDate(limit.getDate() + 30)
-      matches = (d: Date) => d >= today && d <= limit
-      headerLabel = "Próximos 30 dias"
-      descPrefix = "O que vence "
-      descRef = "nos próximos 30 dias"
-      link = "" // sem filtro específico — apenas leva ao Relatórios
-    } else {
-      const { year, month0 } = parsePeriod(currentMonth)
-      const nextDate = new Date(year, month0 + 1, 1)
-      const nextYear = nextDate.getFullYear()
-      const nextMonth0 = nextDate.getMonth()
-      const period = `${nextYear}-${String(nextMonth0 + 1).padStart(2, "0")}`
-      matches = (d: Date) => d.getFullYear() === nextYear && d.getMonth() === nextMonth0
-      headerLabel = "Próximo mês"
-      descPrefix = "O que vence em "
-      descRef = `${MONTH_NAMES[nextMonth0]}/${nextYear}`
-      link = `?period=${period}`
-    }
-
-    let obs = 0
-    let txs = 0
-    let parcs = 0
-    let svcs = 0
-
-    for (const o of obligations) {
-      const d = parseLocalDate(o.calculatedDueDate)
-      if (matches(d)) obs++
-    }
-    for (const t of taxes) {
-      const d = calculateDueDateFromCompetency(t.competencyMonth, t.dueDay, t.weekendRule, t.dueMonth)
-      if (d && matches(d)) txs++
-    }
-    for (const i of installments) {
-      const firstDue = parseLocalDate(i.firstDueDate)
-      const monthsToAdd = i.currentInstallment - 1
-      const d = adjustForWeekend(
-        buildSafeDate(firstDue.getFullYear(), firstDue.getMonth() + monthsToAdd, i.dueDay),
-        i.weekendRule,
-      )
-      if (matches(d)) parcs++
-    }
-    for (const sv of services) {
-      const d = parseLocalDate(sv.dueDate)
-      if (!Number.isNaN(d.getTime()) && matches(d)) svcs++
-    }
-
-    return { headerLabel, descPrefix, descRef, counts: { obs, txs, parcs, svcs }, link }
-  }, [obligations, taxes, installments, currentMonth, isAllPeriods])
+  // "all" → próximos 30 dias a partir de hoje; mês → mês seguinte ao filtrado.
+  // Parcelamentos contam TODAS as parcelas que vencem na janela (não só a
+  // parcela atual). Lógica em lib/dashboard-utils (testada).
+  const { headerLabel, descPrefix, descRef, counts, link } = useMemo(
+    () => upcomingForecastCounts(obligations, taxes, installments, services, currentMonth),
+    [obligations, taxes, installments, services, currentMonth],
+  )
 
   const total = counts.obs + counts.txs + counts.parcs + counts.svcs
 

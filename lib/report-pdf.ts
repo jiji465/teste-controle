@@ -6,6 +6,10 @@
  * Estrutura: faixa de marca no topo de toda página → resumo executivo em
  * caixas (KPIs) → seções (por cliente, por tipo, atrasadas, a vencer) →
  * rodapé "Página X de Y" + escritório.
+ *
+ * Cabeçalho e rodapé são desenhados UMA vez por página, depois que todo o
+ * conteúdo foi gerado. Antes iam no `didDrawPage` de cada tabela — com 4
+ * tabelas na mesma página o texto saía sobreposto/duplicado.
  */
 import { jsPDF } from "jspdf"
 import autoTable from "jspdf-autotable"
@@ -18,11 +22,12 @@ const ZEBRA_RGB = BRAND.zebraRgb
 const INK = 15
 const MUTED = 110
 
-export function exportRelatorioPdf(data: ReportData) {
+/** Monta o documento (sem salvar) — separado pra ser testável. */
+export function buildRelatorioPdf(data: ReportData): jsPDF {
   const doc = new jsPDF({ orientation: "landscape", unit: "pt", format: "a4" })
   const pageW = doc.internal.pageSize.getWidth()
 
-  // ── Cabeçalho de marca (desenhado em cada página via didDrawPage) ──
+  // ── Cabeçalho de marca (desenhado no fim, uma vez por página) ──
   const drawHeader = () => {
     doc.setFillColor(BRAND_RGB[0], BRAND_RGB[1], BRAND_RGB[2])
     doc.rect(0, 0, pageW, 54, "F")
@@ -40,18 +45,17 @@ export function exportRelatorioPdf(data: ReportData) {
     doc.setTextColor(INK)
   }
 
-  const drawFooter = () => {
+  const drawFooter = (page: number, total: number) => {
     const pageH = doc.internal.pageSize.getHeight()
+    doc.setFont("helvetica", "normal")
     doc.setFontSize(8)
     doc.setTextColor(MUTED)
     doc.text(ESCRITORIO.nome, MARGIN, pageH - 18)
-    const page = doc.getNumberOfPages()
-    doc.text(`Página ${page}`, pageW - MARGIN, pageH - 18, { align: "right" })
+    doc.text(`Página ${page} de ${total}`, pageW - MARGIN, pageH - 18, { align: "right" })
     doc.setTextColor(INK)
   }
 
   // ── Resumo executivo: 4 caixas de KPI ──
-  drawHeader()
   let y = 78
   doc.setFont("helvetica", "bold")
   doc.setFontSize(13)
@@ -62,7 +66,7 @@ export function exportRelatorioPdf(data: ReportData) {
     ["Total de itens", String(data.kpis.totalGeral)],
     ["Concluídos", String(data.kpis.concluidasGeral)],
     ["Taxa de conclusão", `${data.kpis.taxaConclusao}%`],
-    ["Taxa no prazo", `${data.kpis.taxaNoPrazo}%`],
+    ["Taxa no prazo (todos os tipos)", `${data.kpis.taxaNoPrazo}%`],
   ]
   const gap = 12
   const boxW = (pageW - MARGIN * 2 - gap * 3) / 4
@@ -88,11 +92,8 @@ export function exportRelatorioPdf(data: ReportData) {
     styles: { fontSize: 8, cellPadding: 4, textColor: INK },
     headStyles: { fillColor: BRAND_RGB, textColor: 255, fontStyle: "bold" as const },
     alternateRowStyles: { fillColor: ZEBRA_RGB },
+    // top/bottom reservam o espaço da faixa de marca e do rodapé
     margin: { left: MARGIN, right: MARGIN, top: 64, bottom: 32 },
-    didDrawPage: () => {
-      drawHeader()
-      drawFooter()
-    },
   }
 
   const sectionTitle = (title: string, startY: number) => {
@@ -143,9 +144,18 @@ export function exportRelatorioPdf(data: ReportData) {
     body: data.aVencer.map((r) => [r.tipo, r.nome, r.cliente, r.vencimento, r.prioridade, r.competencia]),
   })
 
-  // Rodapé na 1ª página (as demais já recebem via didDrawPage)
-  drawFooter()
+  // Cabeçalho + rodapé: exatamente uma vez em cada página.
+  const total = doc.getNumberOfPages()
+  for (let p = 1; p <= total; p++) {
+    doc.setPage(p)
+    drawHeader()
+    drawFooter(p, total)
+  }
+  return doc
+}
 
+export function exportRelatorioPdf(data: ReportData) {
+  const doc = buildRelatorioPdf(data)
   const d = new Date()
   const stamp = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
   doc.save(`relatorio_fiscal_${stamp}.pdf`)

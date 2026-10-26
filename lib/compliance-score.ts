@@ -32,8 +32,9 @@ function deriveTaxDueDate(t: Tax): Date | null {
 const deriveInstallmentDueDate = (i: Installment): Date => getCurrentParcelaDueDate(i)
 
 /** "Concluído no prazo" = completedAt no MESMO DIA do vencimento ou antes.
- *  Normaliza pra dia inteiro (sem hora). */
-function completedOnTimeCheck(completedAt: string | undefined, dueDate: Date | null | undefined): boolean {
+ *  Normaliza pra dia inteiro (sem hora) — concluir às 22h do dia do
+ *  vencimento é no prazo. Fonte única usada também pelos Relatórios. */
+export function completedOnTimeCheck(completedAt: string | undefined, dueDate: Date | null | undefined): boolean {
   if (!completedAt || !dueDate) return false
   const cd = startOfDay(new Date(completedAt))
   const dd = startOfDay(dueDate)

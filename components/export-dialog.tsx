@@ -15,18 +15,23 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog"
 import { Download, FileSpreadsheet, FileText, File } from "lucide-react"
+import { useSearchParams } from "next/navigation"
 import type { ObligationWithDetails, Client } from "@/lib/types"
-import { TAX_REGIME_LABELS } from "@/lib/types"
-import { exportToXlsx, exportToPdf, exportToCsv, timestampFilename, type ExportColumn } from "@/lib/export-utils"
-import { statusLabel, priorityLabel } from "@/lib/labels"
+import { exportToXlsx, exportToPdf, exportToCsv, timestampFilename } from "@/lib/export-utils"
+import {
+  filterObligationsByTab,
+  filterObligationsForExport,
+  OBLIGATION_EXPORT_COLUMNS,
+  OBLIGATION_TAB_LABEL,
+} from "@/lib/obligation-export"
 import { toast } from "sonner"
-import { parseLocalDate } from "@/lib/date-utils"
 
 type ExportFmt = "xlsx" | "csv" | "pdf"
 
 type ExportDialogProps = {
   open: boolean
   onOpenChange: (open: boolean) => void
+  /** Obrigações que a página mostra (já filtradas pelo período). */
   obligations: ObligationWithDetails[]
   clients: Client[]
 }
@@ -38,31 +43,27 @@ export function ExportDialog({ open, onOpenChange, obligations, clients }: Expor
   const [dateEnd, setDateEnd] = useState("")
   const [selectedClient, setSelectedClient] = useState<string>("all")
 
-  const filteredData = useMemo(() => {
-    let data = obligations
-    if (selectedClient !== "all") data = data.filter((o) => o.clientId === selectedClient)
-    if (!includeCompleted) data = data.filter((o) => o.status !== "completed")
-    if (dateStart && dateEnd) {
-      const s = new Date(dateStart)
-      const e = new Date(dateEnd)
-      data = data.filter((o) => {
-        const due = parseLocalDate(o.calculatedDueDate)
-        return due >= s && due <= e
-      })
-    }
-    return data
-  }, [obligations, selectedClient, includeCompleted, dateStart, dateEnd])
+  // Respeita a aba visível de /obrigacoes (?tab=pending|overdue|...). Os
+  // filtros internos da lista (busca, prioridade, competência…) vivem em
+  // features/obligations/components e não chegam aqui — para recortar por
+  // cliente/datas use os filtros deste diálogo.
+  const searchParams = useSearchParams()
+  const tab = searchParams?.get("tab") ?? "all"
+  const tabLabel = OBLIGATION_TAB_LABEL[tab]
 
-  const columns: ExportColumn<ObligationWithDetails>[] = [
-    { header: "Obrigação", width: 32, accessor: (o) => o.name },
-    { header: "Cliente", width: 30, accessor: (o) => o.client.name },
-    { header: "CNPJ", width: 18, accessor: (o) => o.client.cnpj || "" },
-    { header: "Regime", width: 18, accessor: (o) => (o.client.taxRegime ? TAX_REGIME_LABELS[o.client.taxRegime] : "") },
-    { header: "Vencimento", width: 12, accessor: (o) => parseLocalDate(o.calculatedDueDate) },
-    { header: "Status", width: 12, accessor: (o) => statusLabel(o.status) },
-    { header: "Prioridade", width: 10, accessor: (o) => priorityLabel(o.priority) },
-    { header: "Concluída em", width: 14, accessor: (o) => (o.completedAt ? new Date(o.completedAt) : "") },
-  ]
+  const filteredData = useMemo(
+    () =>
+      filterObligationsForExport(filterObligationsByTab(obligations, tab), {
+        selectedClient,
+        includeCompleted,
+        dateStart,
+        dateEnd,
+      }),
+    [obligations, tab, selectedClient, includeCompleted, dateStart, dateEnd],
+  )
+
+  // Colunas: inclui Competência; Status é o EFETIVO (vencido = Atrasado)
+  const columns = OBLIGATION_EXPORT_COLUMNS
 
   const handleExport = async () => {
     if (filteredData.length === 0) {
@@ -72,11 +73,14 @@ export function ExportDialog({ open, onOpenChange, obligations, clients }: Expor
 
     const filename = timestampFilename("obrigacoes")
     const subtitleParts: string[] = []
+    if (tabLabel) subtitleParts.push(`Aba: ${tabLabel}`)
     if (selectedClient !== "all") {
       const c = clients.find((x) => x.id === selectedClient)
       if (c) subtitleParts.push(`Cliente: ${c.name}`)
     }
-    if (dateStart && dateEnd) subtitleParts.push(`Período: ${formatBR(dateStart)} → ${formatBR(dateEnd)}`)
+    if (dateStart || dateEnd) {
+      subtitleParts.push(`Vencimento: ${dateStart ? formatBR(dateStart) : "início"} → ${dateEnd ? formatBR(dateEnd) : "fim"}`)
+    }
     if (!includeCompleted) subtitleParts.push("Sem concluídas")
     const subtitle = subtitleParts.length > 0 ? subtitleParts.join("  ·  ") : undefined
 
@@ -177,6 +181,7 @@ export function ExportDialog({ open, onOpenChange, obligations, clients }: Expor
           <div className="p-3 bg-blue-50 dark:bg-blue-950/20 rounded-lg border border-blue-200 dark:border-blue-800">
             <p className="text-sm text-blue-900 dark:text-blue-100">
               <strong>{filteredData.length}</strong> obrigaç{filteredData.length === 1 ? "ão será exportada" : "ões serão exportadas"} com os filtros atuais
+              {tabLabel && <> (aba <strong>{tabLabel}</strong>)</>}
             </p>
           </div>
         </div>

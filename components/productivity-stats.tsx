@@ -17,87 +17,19 @@ import {
   AlertCircle,
 } from "lucide-react"
 import type { ObligationWithDetails, Tax, Installment } from "@/lib/types"
-import { effectiveStatus } from "@/lib/obligation-status"
-import {
-  adjustForWeekend,
-  buildSafeDate,
-  calculateDueDateFromCompetency,
-  isOverdue, parseLocalDate } from "@/lib/date-utils"
+import { computeProductivityStats } from "@/lib/dashboard-utils"
 
 type Props = {
   obligations: ObligationWithDetails[]
   taxes: Tax[]
-  installments: Installment[]
+  /** Parcelas do período (PeriodInstallment: data/conclusão DA PARCELA). */
+  installments: Array<Installment & { calculatedDueDate?: string }>
   /** Itens do período ANTERIOR (mesmo formato) pra calcular delta. */
   previousObligations?: ObligationWithDetails[]
   previousTaxes?: Tax[]
-  previousInstallments?: Installment[]
+  previousInstallments?: Array<Installment & { calculatedDueDate?: string }>
   /** Rótulo do período filtrado (ex: "Março/2026"). null/undefined = sem filtro */
   periodLabel?: string | null
-}
-
-function startOfDay(d: Date): Date {
-  const r = new Date(d)
-  r.setHours(0, 0, 0, 0)
-  return r
-}
-
-type Stats = {
-  completed: number
-  inProgress: number
-  overdue: number
-  onTimeRate: number
-}
-
-function computeStats(
-  obligations: ObligationWithDetails[],
-  taxes: Tax[],
-  installments: Installment[],
-): Stats {
-  let completed = 0
-  let inProgress = 0
-  let overdue = 0
-  let completedOnTime = 0
-  let evaluable = 0
-
-  const tally = (status: string, completedAt: string | undefined, dueDate: Date) => {
-    if (status === "completed") completed++
-    if (status === "in_progress") inProgress++
-    if (status !== "completed" && isOverdue(dueDate)) overdue++
-    if (completedAt || isOverdue(dueDate)) {
-      evaluable++
-      if (completedAt) {
-        const cd = startOfDay(new Date(completedAt))
-        const dd = startOfDay(dueDate)
-        if (cd <= dd) completedOnTime++
-      }
-    }
-  }
-
-  for (const o of obligations) {
-    tally(o.status, o.completedAt, parseLocalDate(o.calculatedDueDate))
-  }
-  for (const t of taxes) {
-    const d = calculateDueDateFromCompetency(t.competencyMonth, t.dueDay, t.weekendRule, t.dueMonth)
-    if (!d) continue
-    tally(t.status, t.completedAt, d)
-  }
-  for (const i of installments) {
-    const firstDue = parseLocalDate(i.firstDueDate)
-    const monthsToAdd = i.currentInstallment - 1
-    const d = adjustForWeekend(
-      buildSafeDate(firstDue.getFullYear(), firstDue.getMonth() + monthsToAdd, i.dueDay),
-      i.weekendRule,
-    )
-    tally(i.status, i.completedAt, d)
-  }
-
-  return {
-    completed,
-    inProgress,
-    overdue,
-    onTimeRate: evaluable > 0 ? Math.round((completedOnTime / evaluable) * 100) : 0,
-  }
 }
 
 function deltaPct(current: number, previous: number): number | null {
@@ -140,12 +72,12 @@ export function ProductivityStats({
   periodLabel,
 }: Props) {
   const current = useMemo(
-    () => computeStats(obligations, taxes, installments),
+    () => computeProductivityStats(obligations, taxes, installments),
     [obligations, taxes, installments],
   )
   const previous = useMemo(() => {
     if (!previousObligations && !previousTaxes && !previousInstallments) return null
-    return computeStats(
+    return computeProductivityStats(
       previousObligations ?? [],
       previousTaxes ?? [],
       previousInstallments ?? [],

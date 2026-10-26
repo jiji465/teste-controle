@@ -26,10 +26,8 @@ import {
 } from "lucide-react"
 import type { ObligationWithDetails, Tax, Installment, Service, Client } from "@/lib/types"
 import { effectiveStatus } from "@/lib/obligation-status"
-import {
-  adjustForWeekend,
-  buildSafeDate,
-  calculateDueDateFromCompetency, parseLocalDate } from "@/lib/date-utils"
+import { calculateDueDateFromCompetency, parseLocalDate } from "@/lib/date-utils"
+import { listParcelas } from "@/lib/installment-dates"
 
 type ItemType = "obrigacao" | "guia" | "parcela" | "servico"
 
@@ -177,36 +175,36 @@ export function RecentActivity({
       }
     }
 
+    // Parcelamentos: cada PARCELA é uma atividade — paga (no dia do
+    // pagamento/envio) ou atrasada (no vencimento dela). Antes só olhava a
+    // parcela atual e o parcelamento inteiro.
     for (const i of installments) {
-      const firstDue = parseLocalDate(i.firstDueDate)
-      const monthsToAdd = i.currentInstallment - 1
-      const due = adjustForWeekend(
-        buildSafeDate(firstDue.getFullYear(), firstDue.getMonth() + monthsToAdd, i.dueDay),
-        i.weekendRule,
-      )
-      if (i.completedAt) {
-        items.push({
-          id: `inst-${i.id}-c`,
-          itemName: i.name,
-          clientName: clientName(i.clientId),
-          clientId: i.clientId,
-          href: `/parcelamentos?clientId=${i.clientId}`,
-          type: "parcela",
-          action: "completed",
-          actor: i.completedBy,
-          timestamp: new Date(i.completedAt),
-        })
-      } else if (effectiveStatus({ status: i.status, calculatedDueDate: due }) === "overdue") {
-        items.push({
-          id: `inst-${i.id}-o`,
-          itemName: i.name,
-          clientName: clientName(i.clientId),
-          clientId: i.clientId,
-          href: `/parcelamentos?clientId=${i.clientId}`,
-          type: "parcela",
-          action: "overdue",
-          timestamp: due,
-        })
+      for (const p of listParcelas(i)) {
+        const label = `${i.name} — parcela ${p.parcelaNumber}/${i.installmentCount}`
+        if (p.status === "completed" && p.doneAt) {
+          items.push({
+            id: `inst-${i.id}-${p.parcelaNumber}-c`,
+            itemName: label,
+            clientName: clientName(i.clientId),
+            clientId: i.clientId,
+            href: `/parcelamentos?clientId=${i.clientId}`,
+            type: "parcela",
+            action: "completed",
+            actor: p.doneBy,
+            timestamp: new Date(p.doneAt),
+          })
+        } else if (p.status === "overdue") {
+          items.push({
+            id: `inst-${i.id}-${p.parcelaNumber}-o`,
+            itemName: label,
+            clientName: clientName(i.clientId),
+            clientId: i.clientId,
+            href: `/parcelamentos?clientId=${i.clientId}`,
+            type: "parcela",
+            action: "overdue",
+            timestamp: p.dueDate,
+          })
+        }
       }
     }
 

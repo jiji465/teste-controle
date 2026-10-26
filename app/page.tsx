@@ -19,8 +19,7 @@ const RegimeDistributionChart = dynamic(
     ),
   },
 )
-import { calculateDashboardStats, installmentInPeriod } from "@/lib/dashboard-utils"
-import { calculateDueDateFromCompetency, parseLocalDate } from "@/lib/date-utils"
+import { calculateDashboardStats, heroCriticalCount, selectPeriodItems } from "@/lib/dashboard-utils"
 import { getCurrentPeriod } from "@/lib/recurrence-engine"
 import { getGreetingMeta } from "@/lib/weather"
 import { WeatherGreeting } from "@/components/weather-greeting"
@@ -32,7 +31,6 @@ import { AnimatedHero } from "@/components/ui/animated-hero"
 import { QuickAccessTabs } from "@/components/quick-access-tabs"
 import { QuickShortcuts } from "@/components/quick-shortcuts"
 import { SectionHeader } from "@/components/section-header"
-import { adjustForWeekend, buildSafeDate } from "@/lib/date-utils"
 import { saveObligation } from "@/features/obligations/services"
 import { checkAndGenerateRecurrences } from "@/lib/auto-recurrence"
 import type { DashboardStats, ObligationWithDetails } from "@/lib/types"
@@ -45,7 +43,7 @@ import { toast } from "sonner"
 // também gradient + accent dinâmicos por horário (manhã/tarde/entardecer/noite).
 
 export default function DashboardPage() {
-  const { clients, taxes, obligations: rawObligations, obligationsWithDetails, installments, services, lockedPeriods, isLoading, refreshData, togglePeriodLock } = useData()
+  const { clients, taxes, obligationsWithDetails, installments, services, lockedPeriods, isLoading, refreshData, togglePeriodLock } = useData()
   const { isViewer, userName } = useAuth() // visualizador: esconde atalhos de ação (Indicadores só leitura)
   const [stats, setStats] = useState<DashboardStats | null>(null)
   const [isMounted, setIsMounted] = useState(false)
@@ -72,7 +70,7 @@ export default function DashboardPage() {
   }
 
   // Período corrente do contexto, com fallback para o mês atual real
-  const { period, isInPeriod, periodLabel, isFiltering } = useSelectedPeriod()
+  const { period, periodLabel, isFiltering, isCurrentMonth } = useSelectedPeriod()
   const currentPeriod = period === "all" || !/^\d{4}-\d{2}$/.test(period) ? getCurrentPeriod() : period
   const isPeriodLocked = useMemo(() => lockedPeriods.includes(currentPeriod), [lockedPeriods, currentPeriod])
 
@@ -80,57 +78,33 @@ export default function DashboardPage() {
     setIsMounted(true)
   }, [])
 
-  const obligations = useMemo(() => {
-    if (isLoading || !clients.length) return []
-    return obligationsWithDetails.filter((o) => isInPeriod(o.calculatedDueDate))
-  }, [obligationsWithDetails, clients.length, isLoading, isInPeriod])
+  // ─── Seleção do período (fonte única: lib/dashboard-utils) ───────────────
+  // Parcelamentos entram PARCELA A PARCELA (status/data da parcela do mês).
+  // No MÊS ATUAL, itens não concluídos que venceram em meses anteriores
+  // continuam contando como Atrasados/Pendências e no progresso (mesma regra
+  // do sino de alertas) — antes o Dashboard dizia "Tudo em dia" enquanto o
+  // sino mostrava atrasos.
+  const carryOverdue = isCurrentMonth
+  const selection = useMemo(() => {
+    if (isLoading || !clients.length) {
+      return { obligations: [], taxes: [], installments: [], installmentParcels: [], services: [], carriedOverdue: 0 }
+    }
+    return selectPeriodItems(
+      { obligations: obligationsWithDetails, taxes, installments, services },
+      period,
+      { carryOverdue },
+    )
+  }, [obligationsWithDetails, taxes, installments, services, clients.length, isLoading, period, carryOverdue])
 
-  // Taxes filtradas pelo período selecionado (mesma lógica de obrigações)
-  const filteredTaxes = useMemo(() => {
-    if (isLoading) return []
-    return taxes.filter((t) => {
-      const date = calculateDueDateFromCompetency(t.competencyMonth, t.dueDay, t.weekendRule, t.dueMonth)
-      return date ? isInPeriod(date) : true
-    })
-  }, [taxes, isLoading, isInPeriod])
-
-  // Parcelamentos que TOCAM o período selecionado — inclui se QUALQUER
-  // parcela cair no filtro, não só a atual. Antes a Dashboard mostrava
-  // "0 parc." mesmo com 7 parcelamentos ativos porque a parcela atual
-  // estava num mês passado.
-  const filteredInstallments = useMemo(() => {
-    if (isLoading) return []
-    return installments.filter((i) => {
-      const firstDue = parseLocalDate(i.firstDueDate)
-      for (let n = 1; n <= i.installmentCount; n++) {
-        const dueDate = adjustForWeekend(
-          buildSafeDate(firstDue.getFullYear(), firstDue.getMonth() + (n - 1), i.dueDay),
-          i.weekendRule,
-        )
-        if (isInPeriod(dueDate)) return true
-      }
-      return false
-    })
-  }, [installments, isLoading, isInPeriod])
-
-  // Serviços filtrados pelo período (usa dueDate único)
-  const filteredServices = useMemo(() => {
-    if (isLoading) return []
-    return services.filter((s) => isInPeriod(s.dueDate))
-  }, [services, isLoading, isInPeriod])
-
-  // Versão "sintética" dos parcelamentos com status DA PARCELA do período
-  // (não do parcelamento todo). Usada nos contadores que precisam dizer
-  // "X parcelas concluídas em Maio" em vez de "X parcelamentos inteiros
-  // concluídos". O parcelamento como um todo só vira completed quando
-  // todas as parcelas terminam — mas pra fins de "controle do que entreguei
-  // no mês", cada parcela conta separadamente.
-  const installmentsForStats = useMemo(() => {
-    if (isLoading) return []
-    return filteredInstallments
-      .map((i) => installmentInPeriod(i, period))
-      .filter((x): x is NonNullable<typeof x> => x !== null)
-  }, [filteredInstallments, period, isLoading])
+  const obligations = selection.obligations
+  const filteredTaxes = selection.taxes
+  const filteredServices = selection.services
+  // Uma entrada por PARCELA do período (status/data/conclusão da parcela)
+  const installmentsForStats = selection.installmentParcels
+  const carriedNote =
+    selection.carriedOverdue > 0
+      ? `inclui ${selection.carriedOverdue} atrasado${selection.carriedOverdue === 1 ? "" : "s"} de meses anteriores`
+      : null
 
   // ─── Período ANTERIOR (mês imediatamente antes do filtrado) ─────────────
   // Alimenta o delta "vs mês anterior" do ProductivityStats. Quando o
@@ -144,120 +118,35 @@ export default function DashboardPage() {
     return `${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(2, "0")}`
   }, [period])
 
-  const inPreviousPeriod = (d: string | Date | null | undefined): boolean => {
-    if (!previousPeriodKey || !d) return false
-    const date = parseLocalDate(d)
-    if (Number.isNaN(date.getTime())) return false
-    const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`
-    return key === previousPeriodKey
-  }
-
-  const previousObligations = useMemo(() => {
-    if (!previousPeriodKey) return undefined
-    return obligationsWithDetails.filter((o) => inPreviousPeriod(o.calculatedDueDate))
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [obligationsWithDetails, previousPeriodKey])
-
-  const previousTaxes = useMemo(() => {
-    if (!previousPeriodKey) return undefined
-    return taxes.filter((t) => {
-      const date = calculateDueDateFromCompetency(t.competencyMonth, t.dueDay, t.weekendRule, t.dueMonth)
-      return date ? inPreviousPeriod(date) : false
-    })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [taxes, previousPeriodKey])
-
-  const previousInstallments = useMemo(() => {
-    if (!previousPeriodKey) return undefined
-    return installments.filter((i) => {
-      const firstDue = parseLocalDate(i.firstDueDate)
-      for (let n = 1; n <= i.installmentCount; n++) {
-        const dueDate = adjustForWeekend(
-          buildSafeDate(firstDue.getFullYear(), firstDue.getMonth() + (n - 1), i.dueDay),
-          i.weekendRule,
-        )
-        if (inPreviousPeriod(dueDate)) return true
-      }
-      return false
-    })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [installments, previousPeriodKey])
-
-  // Serviços do mês anterior pra delta de Produtividade
-  const previousServices = useMemo(() => {
-    if (!previousPeriodKey) return undefined
-    return services.filter((s) => inPreviousPeriod(s.dueDate))
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [services, previousPeriodKey])
-
-  // Versão sintética dos parcelamentos do mês anterior (mesma lógica que
-  // installmentsForStats, mas pro período anterior).
-  const previousInstallmentsForStats = useMemo(() => {
-    if (!previousPeriodKey || !previousInstallments) return undefined
-    return previousInstallments
-      .map((i) => installmentInPeriod(i, previousPeriodKey))
-      .filter((x): x is NonNullable<typeof x> => x !== null)
-  }, [previousInstallments, previousPeriodKey])
-
-  // Contagem total de taxes/obligations/installments fora do filtro pra mostrar contexto quando vazio
-  const totalsOutsidePeriod = useMemo(() => {
-    if (!isFiltering) return { taxes: 0, obligations: 0, installments: 0 }
-    return {
-      taxes: taxes.filter((t) => t.status !== "completed").length - filteredTaxes.filter((t) => t.status !== "completed").length,
-      obligations: rawObligations.filter((o) => o.status !== "completed").length - obligations.filter((o) => o.status !== "completed").length,
-      installments:
-        installments.filter((i) => i.status !== "completed").length -
-        filteredInstallments.filter((i) => i.status !== "completed").length,
-    }
-  }, [isFiltering, taxes, filteredTaxes, rawObligations, obligations, installments, filteredInstallments])
+  const previousSelection = useMemo(() => {
+    if (!previousPeriodKey || isLoading || !clients.length) return null
+    return selectPeriodItems(
+      { obligations: obligationsWithDetails, taxes, installments, services },
+      previousPeriodKey,
+    )
+  }, [obligationsWithDetails, taxes, installments, services, clients.length, isLoading, previousPeriodKey])
 
   useEffect(() => {
     if (!isLoading && clients.length > 0) {
-      // Passa todos os tipos pra que o "Resumo Geral" reflita obrigações +
-      // guias + parcelamentos. Antes só obrigações entravam, então marcar
-      // uma guia como concluída não afetava nenhum card do dashboard.
+      // Os 4 tipos entram no "Resumo Geral" (obrigações + guias + parcelas +
+      // serviços), com os atrasados anteriores quando é o mês atual.
       setStats(
         calculateDashboardStats(
           clients,
-          obligations,
-          filteredTaxes,
-          filteredInstallments,
+          obligationsWithDetails,
+          taxes,
+          installments,
           period,
-          filteredServices,
+          services,
+          { carryOverdue },
         ),
       )
     }
-  }, [isLoading, clients, obligations, filteredTaxes, filteredInstallments, filteredServices, period])
+  }, [isLoading, clients, obligationsWithDetails, taxes, installments, services, period, carryOverdue])
 
-  const updateData = async () => {
-    await refreshData()
-  }
-
-  // Contagem usada só no hero (mensagem "X itens críticos pra resolver hoje").
-  // UrgencyTrail abaixo cuida do detalhamento.
-  const urgentCount = useMemo(() => {
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
-    let n = 0
-    for (const o of obligations) {
-      if (o.status === "completed") continue
-      const due = parseLocalDate(o.calculatedDueDate)
-      due.setHours(0, 0, 0, 0)
-      if (due <= today) n++
-    }
-    for (const i of filteredInstallments) {
-      if (i.status === "completed") continue
-      const firstDue = parseLocalDate(i.firstDueDate)
-      const monthsToAdd = i.currentInstallment - 1
-      const due = adjustForWeekend(
-        buildSafeDate(firstDue.getFullYear(), firstDue.getMonth() + monthsToAdd, i.dueDay),
-        i.weekendRule,
-      )
-      due.setHours(0, 0, 0, 0)
-      if (due <= today) n++
-    }
-    return n
-  }, [obligations, filteredInstallments])
+  // Hero: "X itens críticos pra resolver hoje" = atrasados OU vencendo hoje
+  // dos 4 tipos (antes ignorava guias e serviços).
+  const urgentCount = useMemo(() => heroCriticalCount(selection), [selection])
 
   if (!isMounted || isLoading) {
     return (
@@ -282,11 +171,11 @@ export default function DashboardPage() {
               month: "long",
               year: "numeric",
             })
-            const message = isFiltering
-              ? `Mostrando dados de ${periodLabel}.`
-              : urgentCount > 0
+            const critical =
+              urgentCount > 0
                 ? `Você tem ${urgentCount} ${urgentCount === 1 ? "item crítico" : "itens críticos"} pra resolver hoje.`
                 : "Nenhuma pendência crítica. Bom trabalho! 🎉"
+            const message = isFiltering ? `Mostrando dados de ${periodLabel}. ${critical}` : critical
             // Palavras do typewriter COERENTES com a situação real (não uma
             // lista fixa): se há atrasos, fala de atraso; se há vencimentos na
             // semana, fala disso; só diz "em dia" quando realmente está.
@@ -413,7 +302,11 @@ export default function DashboardPage() {
               <SectionHeader
                 icon={BarChart3}
                 title="Resumo Geral"
-                suffix={isFiltering && periodLabel ? `· ${periodLabel}` : undefined}
+                suffix={
+                  isFiltering && periodLabel
+                    ? `· ${periodLabel}${carriedNote ? ` · ${carriedNote}` : ""}`
+                    : undefined
+                }
               />
               <DashboardStatsCards stats={stats} periodLabel={periodLabel} />
             </div>
@@ -436,13 +329,17 @@ export default function DashboardPage() {
             <SectionHeader
               icon={ListChecks}
               title="Pendências"
-              suffix={isFiltering && periodLabel ? `· ${periodLabel}` : undefined}
+              suffix={
+                isFiltering && periodLabel
+                  ? `· ${periodLabel}${carriedNote ? ` · ${carriedNote}` : ""}`
+                  : undefined
+              }
             />
             <div className="grid gap-4 lg:grid-cols-[1fr_280px]">
               <UrgencyTrail
                 obligations={obligations}
                 taxes={filteredTaxes}
-                installments={filteredInstallments}
+                installments={installmentsForStats}
                 services={filteredServices}
                 clients={clients}
                 onCompleteObligation={completeObligation}
@@ -468,9 +365,9 @@ export default function DashboardPage() {
               obligations={obligations}
               taxes={filteredTaxes}
               installments={installmentsForStats}
-              previousObligations={previousObligations}
-              previousTaxes={previousTaxes}
-              previousInstallments={previousInstallmentsForStats}
+              previousObligations={previousSelection?.obligations}
+              previousTaxes={previousSelection?.taxes}
+              previousInstallments={previousSelection?.installmentParcels}
               periodLabel={periodLabel}
             />
           </div>
