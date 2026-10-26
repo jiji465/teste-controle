@@ -1,4 +1,4 @@
-import { hasSupabaseConfig, getSupabaseClient } from "@/lib/supabase/core"
+import { hasSupabaseConfig, getSupabaseClient, toDbError, assertAffected } from "@/lib/supabase/core"
 import type { CustomTemplatePackage, ObligationTemplate } from "@/lib/obligation-templates"
 import type { TaxRegime } from "@/lib/types"
 import type { BusinessActivity } from "@/lib/obligation-templates"
@@ -118,7 +118,7 @@ export async function saveCustomTemplateAsync(pkg: CustomTemplatePackage): Promi
     .upsert(templateToRow(stamped))
   if (error) {
     console.error("[templates] erro ao salvar no Supabase:", error)
-    throw new Error(`Falha ao salvar no servidor: ${error.message}`)
+    throw toDbError(error)
   }
 }
 
@@ -140,14 +140,16 @@ export async function deleteCustomTemplateAsync(id: string): Promise<void> {
 
   if (!hasSupabaseConfig()) return
   const supabase = getSupabaseClient()
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from("custom_obligation_templates")
     .delete()
     .eq("id", id)
+    .select("id")
   if (error) {
     console.error("[templates] erro ao deletar no Supabase:", error)
-    throw new Error(`Falha ao deletar no servidor: ${error.message}`)
+    throw toDbError(error)
   }
+  assertAffected(data)
 }
 
 // ─── Lista negra de templates padrão deletados ───────────────────────────────

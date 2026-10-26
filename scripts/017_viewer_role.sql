@@ -6,6 +6,8 @@
 -- (app_metadata) — que só o servidor/painel define, o usuário não altera.
 --
 -- Rode DEPOIS do 016. É idempotente e ignora tabelas ausentes.
+-- Depois do 023 (papéis deny-by-default), reexecutar este script NÃO mexe nas
+-- políticas — elas passam a ser governadas pelo 023.
 --
 -- Para tornar alguém visualizador (troque o e-mail):
 --   update auth.users
@@ -19,6 +21,7 @@ create or replace function public.is_viewer()
 returns boolean
 language sql
 stable
+set search_path = ''
 as $$
   select coalesce((auth.jwt() -> 'app_metadata' ->> 'role') = 'viewer', false)
 $$;
@@ -31,6 +34,11 @@ declare
     'apuracao_mensal','custom_obligation_templates','deleted_default_templates','locked_periods'
   ];
 begin
+  if to_regprocedure('public.is_staff()') is not null then
+    raise notice '017: 023 já aplicado — políticas mantidas (governadas pelo 023).';
+    return;
+  end if;
+
   foreach t in array tabelas loop
     if to_regclass('public.' || t) is not null then
       execute format('alter table public.%I enable row level security', t);

@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server"
 import { isValidCNPJ, normalizeCnpj } from "@/lib/cnpj-validation"
+import { createClient } from "@/lib/supabase/server"
+import { hasSupabaseConfig } from "@/lib/supabase/core"
+import { hasAppAccess, parseRole } from "@/lib/roles"
 
 const BRASILAPI_URL = "https://brasilapi.com.br/api/cnpj/v1"
 const RECEITAWS_URL = "https://receitaws.com.br/v1/cnpj"
@@ -43,6 +46,57 @@ type ReceitaWsResponse = {
   situacao?: string
 }
 
+// Dados públicos da Receita mudam pouco: cache de 1 dia no Data Cache do Next
+// (também poupa o limite de consultas da BrasilAPI/ReceitaWS).
+const EXTERNAL_FETCH = { headers: COMMON_HEADERS, next: { revalidate: 86_400 } } as const
+
+// Limite simples em memória por usuário (por instância do servidor): evita
+// que uma sessão use a rota como proxy de consulta em massa.
+const RATE_LIMIT = 30
+const RATE_WINDOW_MS = 60_000
+const hits = new Map<string, { count: number; resetAt: number }>()
+
+function rateLimited(key: string): { limited: boolean; retryAfter: number } {
+  const now = Date.now()
+  if (hits.size > 5_000) {
+    for (const [k, v] of hits) if (v.resetAt <= now) hits.delete(k)
+  }
+  const cur = hits.get(key)
+  if (!cur || cur.resetAt <= now) {
+    hits.set(key, { count: 1, resetAt: now + RATE_WINDOW_MS })
+    return { limited: false, retryAfter: 0 }
+  }
+  cur.count++
+  return { limited: cur.count > RATE_LIMIT, retryAfter: Math.ceil((cur.resetAt - now) / 1000) }
+}
+
+/** Quem está chamando: id do usuário logado com papel, ou uma resposta de erro. */
+async function authorize(): Promise<{ key: string } | { response: NextResponse }> {
+  if (!hasSupabaseConfig()) {
+    // Modo local de desenvolvimento (sem Supabase): não há login. Em produção
+    // o proxy já devolve 503 antes de chegar aqui.
+    if (process.env.NODE_ENV === "production") {
+      return { response: NextResponse.json({ error: "Serviço indisponível." }, { status: 503 }) }
+    }
+    return { key: "local-dev" }
+  }
+  try {
+    const supabase = await createClient()
+    const { data } = await supabase.auth.getUser()
+    const user = data?.user
+    if (!user) {
+      return { response: NextResponse.json({ error: "Faça login para consultar CNPJ." }, { status: 401 }) }
+    }
+    if (user.is_anonymous || !hasAppAccess(parseRole(user.app_metadata?.role))) {
+      return { response: NextResponse.json({ error: "Sua conta ainda não tem acesso liberado." }, { status: 403 }) }
+    }
+    return { key: user.id }
+  } catch (e) {
+    console.warn("[cnpj] falha ao validar sessão:", e)
+    return { response: NextResponse.json({ error: "Faça login para consultar CNPJ." }, { status: 401 }) }
+  }
+}
+
 function fromReceitaWs(d: ReceitaWsResponse): BrasilApiResponse {
   const cnae = d.atividade_principal?.[0]
   return {
@@ -66,6 +120,17 @@ export async function GET(
   _request: Request,
   { params }: { params: Promise<{ cnpj: string }> },
 ) {
+  const auth = await authorize()
+  if ("response" in auth) return auth.response
+
+  const rl = rateLimited(auth.key)
+  if (rl.limited) {
+    return NextResponse.json(
+      { error: "Muitas consultas em sequência. Aguarde cerca de 1 minuto e tente de novo." },
+      { status: 429, headers: { "Retry-After": String(rl.retryAfter) } },
+    )
+  }
+
   const { cnpj } = await params
   const cleanCnpj = normalizeCnpj(cnpj)
 
@@ -79,10 +144,7 @@ export async function GET(
 
   // Tentativa 1: BrasilAPI
   try {
-    const r = await fetch(`${BRASILAPI_URL}/${cleanCnpj}`, {
-      headers: COMMON_HEADERS,
-      cache: "no-store",
-    })
+    const r = await fetch(`${BRASILAPI_URL}/${cleanCnpj}`, EXTERNAL_FETCH)
 
     if (r.ok) {
       const data = (await r.json()) as BrasilApiResponse
@@ -103,10 +165,7 @@ export async function GET(
 
   // Tentativa 2: ReceitaWS (fallback)
   try {
-    const r = await fetch(`${RECEITAWS_URL}/${cleanCnpj}`, {
-      headers: COMMON_HEADERS,
-      cache: "no-store",
-    })
+    const r = await fetch(`${RECEITAWS_URL}/${cleanCnpj}`, EXTERNAL_FETCH)
 
     if (r.status === 429) {
       return NextResponse.json(

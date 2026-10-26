@@ -1,7 +1,10 @@
 -- 018_public_portfolio.sql
 -- =====================================================================
 -- Painel público (sem login): expõe SOMENTE dados agregados/anônimos da
--- carteira — nunca nome, CNPJ, fantasia ou localização.
+-- carteira — nunca nome, CNPJ, fantasia ou localização. Sem lista por
+-- empresa e sem grupos com menos de 3 empresas (somados em "outros" ou
+-- omitidos), para que ninguém deduza regime/atividade de uma empresa.
+-- Mesma definição do 023 (rodar de novo não regride).
 --
 -- Como funciona: uma função "security definer" roda com privilégio do dono
 -- (contorna o RLS internamente), mas devolve apenas os campos seguros que
@@ -13,30 +16,36 @@ create or replace function public.portfolio_publico()
 returns jsonb
 language sql
 security definer
-set search_path = public
+set search_path = ''
 stable
 as $$
+  with base as (
+    select coalesce(c.tax_regime, 'nao_informado') as regime,
+           coalesce(c.business_activity, 'nao_informado') as atividade,
+           c.status
+    from public.clients c
+  ),
+  reg as (select regime as k, count(*) as n from base group by regime),
+  ati as (select atividade as k, count(*) as n from base group by atividade)
   select jsonb_build_object(
-    'total',   (select count(*) from clients),
-    'ativos',  (select count(*) from clients where status = 'active'),
-    'inativos',(select count(*) from clients where status is distinct from 'active'),
-    -- distribuições (contagens anônimas — não ligam nome a categoria)
+    'total',    (select count(*) from base),
+    'ativos',   (select count(*) from base where status = 'active'),
+    'inativos', (select count(*) from base where status is distinct from 'active'),
+    -- distribuições: grupos com menos de 3 empresas são somados em "outros";
+    -- se "outros" também ficar abaixo de 3, ele é omitido.
     'porRegime', (
-      select coalesce(jsonb_object_agg(coalesce(tax_regime, 'nao_informado'), n), '{}'::jsonb)
-      from (select tax_regime, count(*) n from clients group by tax_regime) r
+      select coalesce(jsonb_object_agg(k, n), '{}'::jsonb) from (
+        select k, n from reg where n >= 3
+        union all
+        select 'outros', sum(n) from reg where n < 3 having sum(n) >= 3
+      ) r
     ),
     'porAtividade', (
-      select coalesce(jsonb_object_agg(coalesce(business_activity, 'nao_informado'), n), '{}'::jsonb)
-      from (select business_activity, count(*) n from clients group by business_activity) a
-    ),
-    -- lista ANÔNIMA: só regime, atividade e status. Sem id, nome, CNPJ, local.
-    'empresas', (
-      select coalesce(jsonb_agg(jsonb_build_object(
-               'regime', tax_regime,
-               'atividade', business_activity,
-               'status', status
-             ) order by tax_regime nulls last, business_activity nulls last), '[]'::jsonb)
-      from clients
+      select coalesce(jsonb_object_agg(k, n), '{}'::jsonb) from (
+        select k, n from ati where n >= 3
+        union all
+        select 'outros', sum(n) from ati where n < 3 having sum(n) >= 3
+      ) a
     )
   );
 $$;

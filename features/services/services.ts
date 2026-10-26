@@ -1,5 +1,5 @@
 import type { Service, ServiceCategory, RecurrenceType, Priority, WeekendRule } from "@/lib/types"
-import { hasSupabaseConfig, getSupabaseClient, fetchAll, toDbError } from "@/lib/supabase/core"
+import { hasSupabaseConfig, getSupabaseClient, fetchAll, toDbError, assertAffected } from "@/lib/supabase/core"
 
 // Storage local não cobre Serviços (Service é nova entidade). Em modo
 // sem Supabase, a lista volta vazia — usuário precisa do banco pra usar.
@@ -81,9 +81,10 @@ export async function deleteService(id: string): Promise<void> {
     throw new Error("Supabase não configurado")
   }
   const supabase = getSupabaseClient()
-  const { error } = await supabase.from("services").delete().eq("id", id)
+  const { data, error } = await supabase.from("services").delete().eq("id", id).select("id")
   if (error) {
     console.error("[db] Error deleting service:", error)
     throw toDbError(error)
   }
+  assertAffected(data)
 }

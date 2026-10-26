@@ -4,6 +4,17 @@
 -- assim funciona para clients/taxes/obligations/installments sem erro.
 -- ═══════════════════════════════════════════════════════════════════
 
+-- [023] Reexecução segura: se a versão nova do histórico (019/023 —
+-- SECURITY DEFINER, autor do servidor) já está instalada, este bloco NÃO
+-- sobrescreve a função nem os gatilhos (antes, rodar de novo quebrava a
+-- gravação do histórico e devolvia 'Sistema' como autor).
+do $do$
+begin
+  if to_regprocedure('public.history_actor()') is not null then
+    raise notice '%: histórico novo (019/023) já instalado — bloco antigo ignorado.', '006';
+    return;
+  end if;
+  execute $stmt$
 CREATE OR REPLACE FUNCTION public.add_history_entry()
 RETURNS TRIGGER AS $$
 DECLARE
@@ -55,4 +66,6 @@ BEGIN
 
   RETURN NULL;
 END;
-$$ LANGUAGE plpgsql;
+$$ LANGUAGE plpgsql
+  $stmt$;
+end $do$;

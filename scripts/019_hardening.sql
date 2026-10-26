@@ -13,6 +13,10 @@
 --    aviso é exibido (rode o 011_cleanup_duplicates.sql antes).
 -- 4. Tabela `history`: CHECKs aceitam 'deleted', 'client', 'service' e o
 --    autor passa a ser o usuário logado (e-mail do JWT), não 'Sistema'.
+--
+-- Reexecução segura: as funções aqui são as mesmas do 023 e, se o 023 já
+-- foi aplicado, as políticas NÃO são recriadas (o 023 as governa). A lista
+-- do CHECK de history é a completa (inclui 'apuracao' do 022).
 -- =====================================================================
 
 -- ─── 1 + 2. RLS ───────────────────────────────────────────────────────
@@ -24,6 +28,11 @@ declare
     'apuracao_mensal','custom_obligation_templates','deleted_default_templates'
   ];
 begin
+  if to_regprocedure('public.is_staff()') is not null then
+    raise notice '019: 023 já aplicado — políticas mantidas (governadas pelo 023).';
+    return;
+  end if;
+
   foreach t in array tabelas loop
     if to_regclass('public.' || t) is not null then
       execute format('alter table public.%I enable row level security', t);
@@ -89,7 +98,7 @@ end $$;
 -- ─── 4. Histórico ─────────────────────────────────────────────────────
 alter table public.history drop constraint if exists history_entity_type_check;
 alter table public.history add constraint history_entity_type_check
-  check (entity_type in ('obligation', 'tax', 'installment', 'client', 'service', 'period'));
+  check (entity_type in ('obligation', 'tax', 'installment', 'client', 'service', 'period', 'apuracao'));
 
 alter table public.history drop constraint if exists history_action_check;
 alter table public.history add constraint history_action_check
@@ -98,21 +107,23 @@ alter table public.history add constraint history_action_check
 alter table public.history add column if not exists user_id uuid;
 create index if not exists idx_history_entity on public.history(entity_type, entity_id);
 
--- Autor = usuário logado. completed_by (gravado pela tela) tem prioridade.
+-- Autor = e-mail do token (servidor). completed_by (digitado na tela) só
+-- aparece na descrição — não define o autor.
 create or replace function public.history_actor()
 returns text
 language sql
 stable
+set search_path = ''
 as $$
-  select coalesce(
-    auth.jwt() -> 'user_metadata' ->> 'name',
-    auth.jwt() ->> 'email',
-    'Sistema'
-  )
+  select coalesce(nullif(auth.jwt() ->> 'email', ''), 'Sistema')
 $$;
 
 create or replace function public.add_history_entry()
-returns trigger as $$
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
 declare
   new_status       text;
   old_status       text;
@@ -131,14 +142,14 @@ begin
     old_status       := to_jsonb(OLD) ->> 'status';
     new_completed_at := to_jsonb(NEW) ->> 'completed_at';
     old_completed_at := to_jsonb(OLD) ->> 'completed_at';
-    new_completed_by := to_jsonb(NEW) ->> 'completed_by';
+    new_completed_by := left(nullif(btrim(to_jsonb(NEW) ->> 'completed_by'), ''), 120);
 
     if new_status is not null and new_status is distinct from old_status then
       insert into public.history (entity_type, entity_id, action, description, user_name, user_id)
       values (
         tg_argv[0], NEW.id, 'status_changed',
         'Status alterado de ' || coalesce(old_status, 'N/A') || ' para ' || new_status,
-        coalesce(new_completed_by, public.history_actor()), auth.uid()
+        public.history_actor(), auth.uid()
       );
     end if;
 
@@ -146,8 +157,9 @@ begin
       insert into public.history (entity_type, entity_id, action, description, user_name, user_id)
       values (
         tg_argv[0], NEW.id, 'completed',
-        'Registro concluído em ' || new_completed_at,
-        coalesce(new_completed_by, public.history_actor()), auth.uid()
+        'Registro concluído em ' || new_completed_at
+          || coalesce(' (responsável informado: ' || new_completed_by || ')', ''),
+        public.history_actor(), auth.uid()
       );
     end if;
 
@@ -162,7 +174,8 @@ begin
 
   return null;
 end;
-$$ language plpgsql;
+$$;
+revoke all on function public.add_history_entry() from public, anon, authenticated;
 
 -- Gatilhos (inclui DELETE e a tabela services)
 do $$

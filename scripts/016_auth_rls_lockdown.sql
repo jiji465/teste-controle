@@ -12,6 +12,10 @@
 --
 -- É idempotente (pode rodar de novo sem erro) e ignora tabelas que ainda
 -- não existam (ex.: apuracao_mensal, se você ainda não rodou o 015).
+--
+-- Reexecução segura: se o 017 (papel viewer) ou o 023 (papéis) já foram
+-- aplicados, este script NÃO faz nada — antes ele trocava as políticas
+-- restritas por "Authenticated full access" e devolvia escrita ao viewer.
 -- =====================================================================
 
 do $$
@@ -29,6 +33,14 @@ declare
     'locked_periods'
   ];
 begin
+  if to_regprocedure('public.is_staff()') is not null
+     or exists (select 1 from pg_policies
+                where schemaname = 'public'
+                  and policyname in ('read all authenticated', 'write non-viewer insert', 'papel: leitura')) then
+    raise notice '016: políticas do 017/023 já existem — nada a fazer (evita reabrir escrita ao viewer).';
+    return;
+  end if;
+
   foreach t in array tabelas loop
     -- só mexe se a tabela existir de fato
     if to_regclass('public.' || t) is not null then

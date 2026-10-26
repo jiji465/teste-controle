@@ -18,11 +18,12 @@ import { LockedPeriodBanner } from "@/components/locked-period-banner"
 import { MobileBottomNav } from "@/components/mobile-bottom-nav"
 import { useAuth } from "@/contexts/auth-context"
 import { isRouteAllowedForViewer } from "@/lib/roles"
+import { PendingAccess } from "@/components/pending-access"
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const router = useRouter()
-  const { isViewer, isLoading } = useAuth()
+  const { isViewer, isPendingAccess, isLoading } = useAuth()
   const [collapsed, setCollapsed] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
 
@@ -59,6 +60,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     pathname?.startsWith("/login") || pathname?.startsWith("/auth") || pathname?.startsWith("/publico")
   if (isBareRoute) {
     return <div className="min-h-screen bg-background">{children}</div>
+  }
+
+  // Logado, mas sem papel definido (ou login anônimo): o banco não libera
+  // nada — mostra uma explicação em vez de telas vazias.
+  if (!isLoading && isPendingAccess) {
+    return <PendingAccess />
   }
 
   return (

@@ -176,6 +176,17 @@ DROP POLICY IF EXISTS "Allow public access to history" ON public.history;
 -- ============================================
 
 -- Função para adicionar entrada no histórico automaticamente
+-- [023] Reexecução segura: se a versão nova do histórico (019/023 —
+-- SECURITY DEFINER, autor do servidor) já está instalada, este bloco NÃO
+-- sobrescreve a função nem os gatilhos (antes, rodar de novo quebrava a
+-- gravação do histórico e devolvia 'Sistema' como autor).
+do $do$
+begin
+  if to_regprocedure('public.history_actor()') is not null then
+    raise notice '%: histórico novo (019/023) já instalado — bloco antigo ignorado.', 'setup_complete';
+    return;
+  end if;
+  execute $stmt$
 CREATE OR REPLACE FUNCTION public.add_history_entry()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -203,32 +214,30 @@ BEGIN
   
   RETURN COALESCE(NEW, OLD);
 END;
-$$ LANGUAGE plpgsql;
-
--- Triggers para histórico automático
-DROP TRIGGER IF EXISTS obligations_history_trigger ON public.obligations;
-CREATE TRIGGER obligations_history_trigger
+$$ LANGUAGE plpgsql
+  $stmt$;
+  -- Triggers para histórico automático
+  execute $stmt$DROP TRIGGER IF EXISTS obligations_history_trigger ON public.obligations$stmt$;
+  execute $stmt$CREATE TRIGGER obligations_history_trigger
   AFTER INSERT OR UPDATE OR DELETE ON public.obligations
   FOR EACH ROW
-  EXECUTE FUNCTION public.add_history_entry('obligation');
-
-DROP TRIGGER IF EXISTS taxes_history_trigger ON public.taxes;
-CREATE TRIGGER taxes_history_trigger
+  EXECUTE FUNCTION public.add_history_entry('obligation')$stmt$;
+  execute $stmt$DROP TRIGGER IF EXISTS taxes_history_trigger ON public.taxes$stmt$;
+  execute $stmt$CREATE TRIGGER taxes_history_trigger
   AFTER INSERT OR UPDATE OR DELETE ON public.taxes
   FOR EACH ROW
-  EXECUTE FUNCTION public.add_history_entry('tax');
-
-DROP TRIGGER IF EXISTS installments_history_trigger ON public.installments;
-CREATE TRIGGER installments_history_trigger
+  EXECUTE FUNCTION public.add_history_entry('tax')$stmt$;
+  execute $stmt$DROP TRIGGER IF EXISTS installments_history_trigger ON public.installments$stmt$;
+  execute $stmt$CREATE TRIGGER installments_history_trigger
   AFTER INSERT OR UPDATE OR DELETE ON public.installments
   FOR EACH ROW
-  EXECUTE FUNCTION public.add_history_entry('installment');
-
-DROP TRIGGER IF EXISTS clients_history_trigger ON public.clients;
-CREATE TRIGGER clients_history_trigger
+  EXECUTE FUNCTION public.add_history_entry('installment')$stmt$;
+  execute $stmt$DROP TRIGGER IF EXISTS clients_history_trigger ON public.clients$stmt$;
+  execute $stmt$CREATE TRIGGER clients_history_trigger
   AFTER INSERT OR UPDATE OR DELETE ON public.clients
   FOR EACH ROW
-  EXECUTE FUNCTION public.add_history_entry('client');
+  EXECUTE FUNCTION public.add_history_entry('client')$stmt$;
+end $do$;
 
 -- ============================================
 -- PASSO 6: ADICIONAR COMENTÁRIOS

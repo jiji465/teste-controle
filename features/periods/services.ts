@@ -1,4 +1,4 @@
-import { hasSupabaseConfig, getSupabaseClient, local } from "@/lib/supabase/core"
+import { hasSupabaseConfig, getSupabaseClient, local, toDbError, assertAffected } from "@/lib/supabase/core"
 
 /**
  * Fechamento de competência ("YYYY-MM"). Com Supabase, vive na tabela
@@ -40,17 +40,24 @@ export async function getLockedPeriods(): Promise<LockedPeriod[]> {
 export async function lockPeriod(period: string, lockedByName?: string, note?: string): Promise<void> {
   if (!hasSupabaseConfig()) { local.lockPeriod(period); return }
   const supabase = getSupabaseClient()
+  // Quem fechou e quando são carimbados pelo banco (scripts/023) a partir do
+  // token; locked_by_name enviado aqui é ignorado lá (serve ao modo local).
   const { error } = await supabase.from("locked_periods").upsert({
     period,
     locked_by_name: lockedByName ?? null,
     note: note ?? null,
   })
-  if (error) throw new Error(`Não foi possível fechar ${period}: ${error.message}`)
+  if (error) throw new Error(`Não foi possível fechar ${period}: ${toDbError(error).message}`)
 }
 
 export async function unlockPeriod(period: string): Promise<void> {
   if (!hasSupabaseConfig()) { local.unlockPeriod(period); return }
   const supabase = getSupabaseClient()
-  const { error } = await supabase.from("locked_periods").delete().eq("period", period)
-  if (error) throw new Error(`Não foi possível reabrir ${period}: ${error.message}`)
+  const { data, error } = await supabase.from("locked_periods").delete().eq("period", period).select("period")
+  if (error) throw new Error(`Não foi possível reabrir ${period}: ${toDbError(error).message}`)
+  try {
+    assertAffected(data)
+  } catch (e) {
+    throw new Error(`Não foi possível reabrir ${period}: ${(e as Error).message}`)
+  }
 }

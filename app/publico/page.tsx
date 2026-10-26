@@ -12,25 +12,26 @@ import Link from "next/link"
 import { LogIn, Building2, ShieldCheck, Loader2, PieChart } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
 import { createClient } from "@/lib/supabase/client"
 import { TAX_REGIME_LABELS } from "@/lib/types"
 import { BUSINESS_ACTIVITY_LABELS } from "@/lib/obligation-templates"
 
-type Empresa = { regime: string | null; atividade: string | null; status: string | null }
+// Só agregados: o banco (scripts/018 e 023) não devolve lista por empresa e
+// soma em "outros" os grupos com menos de 3 empresas.
 type Portfolio = {
   total: number
   ativos: number
   inativos: number
   porRegime: Record<string, number>
   porAtividade: Record<string, number>
-  empresas: Empresa[]
 }
 
+const OUTROS = "Outros (grupos com menos de 3 empresas)"
+
 const regimeLabel = (k: string) =>
-  (TAX_REGIME_LABELS as Record<string, string>)[k] ?? (k === "nao_informado" ? "Não informado" : k)
+  k === "outros" ? OUTROS : (TAX_REGIME_LABELS as Record<string, string>)[k] ?? (k === "nao_informado" ? "Não informado" : k)
 const atividadeLabel = (k: string) =>
-  (BUSINESS_ACTIVITY_LABELS as Record<string, string>)[k] ?? (k === "nao_informado" ? "Não informado" : k)
+  k === "outros" ? OUTROS : (BUSINESS_ACTIVITY_LABELS as Record<string, string>)[k] ?? (k === "nao_informado" ? "Não informado" : k)
 
 function DistBars({ title, data }: { title: string; data: Record<string, number>; }) {
   const entries = Object.entries(data).sort((a, b) => b[1] - a[1])
@@ -123,8 +124,9 @@ export default function PainelPublicoPage() {
         <div className="flex items-start gap-2 rounded-lg border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
           <ShieldCheck className="size-4 text-emerald-600 shrink-0 mt-0.5" />
           <span>
-            Esta página mostra apenas números agregados e uma lista anônima. Nome, CNPJ, nome fantasia e
-            localização das empresas ficam disponíveis apenas para usuários com login.
+            Esta página mostra apenas números agregados (grupos com menos de 3 empresas não aparecem
+            separados). Nome, CNPJ, nome fantasia e localização das empresas ficam disponíveis apenas para
+            usuários com login.
           </span>
         </div>
 
@@ -149,37 +151,10 @@ export default function PainelPublicoPage() {
             </div>
 
             <div className="grid gap-4 md:grid-cols-2">
-              <DistBars title="Por regime tributário" data={data.porRegime} />
-              <DistBars title="Por atividade" data={data.porAtividade} />
+              <DistBars title="Por regime tributário" data={data.porRegime ?? {}} />
+              <DistBars title="Por atividade" data={data.porAtividade ?? {}} />
             </div>
 
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm">Carteira (anônima) · {data.empresas.length} empresas</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <ul className="divide-y">
-                  {data.empresas.map((e, i) => (
-                    <li key={i} className="flex flex-wrap items-center gap-2 py-2 text-sm">
-                      <span className="text-muted-foreground w-20 shrink-0">Empresa {i + 1}</span>
-                      <Badge variant="secondary">{regimeLabel(e.regime ?? "nao_informado")}</Badge>
-                      <Badge variant="outline">{atividadeLabel(e.atividade ?? "nao_informado")}</Badge>
-                      <span
-                        className={
-                          "ml-auto text-xs font-medium " +
-                          (e.status === "active" ? "text-emerald-600" : "text-muted-foreground")
-                        }
-                      >
-                        {e.status === "active" ? "Ativa" : "Inativa"}
-                      </span>
-                    </li>
-                  ))}
-                  {data.empresas.length === 0 && (
-                    <li className="py-6 text-center text-sm text-muted-foreground">Nenhuma empresa cadastrada.</li>
-                  )}
-                </ul>
-              </CardContent>
-            </Card>
           </>
         )}
       </main>

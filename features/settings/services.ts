@@ -1,4 +1,4 @@
-import { hasSupabaseConfig, getSupabaseClient, toDbError } from "@/lib/supabase/core"
+import { hasSupabaseConfig, getSupabaseClient, toDbError, assertAffected } from "@/lib/supabase/core"
 
 /** Feriado estadual/municipal do escritório (entra no cálculo de dia útil). */
 export interface OfficeHoliday {
@@ -57,6 +57,7 @@ export async function deleteOfficeHoliday(date: string): Promise<void> {
     return
   }
   const supabase = getSupabaseClient()
-  const { error } = await supabase.from("office_holidays").delete().eq("holiday_date", date)
+  const { data, error } = await supabase.from("office_holidays").delete().eq("holiday_date", date).select("holiday_date")
   if (error) throw toDbError(error)
+  assertAffected(data)
 }

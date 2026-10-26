@@ -1,5 +1,5 @@
 import type { Tax } from "@/lib/types"
-import { hasSupabaseConfig, getSupabaseClient, fetchAll, local, toDbError } from "@/lib/supabase/core"
+import { hasSupabaseConfig, getSupabaseClient, fetchAll, local, toDbError, assertAffected } from "@/lib/supabase/core"
 
 function mapTaxToDb(tax: Tax) {
   return {
@@ -74,6 +74,7 @@ export async function saveTax(tax: Tax): Promise<void> {
 export async function deleteTax(id: string): Promise<void> {
   if (!hasSupabaseConfig()) { local.deleteTax(id); return }
   const supabase = getSupabaseClient()
-  const { error } = await supabase.from("taxes").delete().eq("id", id)
+  const { data, error } = await supabase.from("taxes").delete().eq("id", id).select("id")
   if (error) { console.error("[db] Error deleting tax:", error); throw toDbError(error) }
+  assertAffected(data)
 }

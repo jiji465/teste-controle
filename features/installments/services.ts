@@ -1,5 +1,5 @@
 import type { Installment } from "@/lib/types"
-import { hasSupabaseConfig, getSupabaseClient, fetchAll, local, toDbError } from "@/lib/supabase/core"
+import { hasSupabaseConfig, getSupabaseClient, fetchAll, local, toDbError, assertAffected } from "@/lib/supabase/core"
 
 function mapInstallmentToDb(installment: Installment) {
   return {
@@ -95,6 +95,7 @@ export async function saveInstallment(installment: Installment): Promise<void> {
 export async function deleteInstallment(id: string): Promise<void> {
   if (!hasSupabaseConfig()) { local.deleteInstallment(id); return }
   const supabase = getSupabaseClient()
-  const { error } = await supabase.from("installments").delete().eq("id", id)
+  const { data, error } = await supabase.from("installments").delete().eq("id", id).select("id")
   if (error) { console.error("[db] Error deleting installment:", error); throw toDbError(error) }
+  assertAffected(data)
 }

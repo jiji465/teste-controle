@@ -144,6 +144,15 @@ describe("safeRedirect", () => {
     expect(safeRedirect("/\\evil.com")).toBe("/")
     expect(safeRedirect(null)).toBe("/")
   })
+  it("resolve o caminho e exige a mesma origem (truques de normalização)", () => {
+    expect(safeRedirect("/.//evil.com")).toBe("/")
+    expect(safeRedirect("/././/evil.com/x")).toBe("/")
+    expect(safeRedirect("/%2e//evil.com")).toBe("/")
+    expect(safeRedirect("/x/../..//evil.com")).toBe("/")
+    expect(safeRedirect("/\t/evil.com")).toBe("/")
+    expect(safeRedirect("javascript:alert(1)")).toBe("/")
+    expect(safeRedirect("/clientes/../obrigacoes?a=1#b")).toBe("/obrigacoes?a=1#b")
+  })
 })
 
 

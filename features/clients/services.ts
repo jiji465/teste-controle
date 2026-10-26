@@ -1,6 +1,6 @@
 import type { Client } from "@/lib/types"
 import { normalizeCnpj } from "@/lib/cnpj-validation"
-import { hasSupabaseConfig, getSupabaseClient, fetchAll, local, toDbError } from "@/lib/supabase/core"
+import { hasSupabaseConfig, getSupabaseClient, fetchAll, local, toDbError, assertAffected } from "@/lib/supabase/core"
 
 function mapClientToDb(client: Client) {
   return {
@@ -98,8 +98,9 @@ export async function saveClient(client: Client): Promise<void> {
 export async function deleteClient(id: string): Promise<void> {
   if (!hasSupabaseConfig()) { local.deleteClient(id); return }
   const supabase = getSupabaseClient()
-  const { error } = await supabase.from("clients").delete().eq("id", id)
+  const { data, error } = await supabase.from("clients").delete().eq("id", id).select("id")
   if (error) { console.error("[db] Error deleting client:", error); throw toDbError(error) }
+  assertAffected(data)
 }
 
 export type ArchiveClientResult = {
@@ -177,12 +178,13 @@ export async function archiveClient(id: string): Promise<ArchiveClientResult> {
     else obrigToDelete.push(r.id)
   }
   if (obrigToDelete.length > 0) {
-    const { error } = await supabase.from("obligations").delete().in("id", obrigToDelete)
+    const { data, error } = await supabase.from("obligations").delete().in("id", obrigToDelete).select("id")
     if (error) {
       console.error("[archive] Error deleting obligations:", error)
       throw toDbError(error)
     }
-    result.obrigacoesDeleted = obrigToDelete.length
+    assertAffected(data)
+    result.obrigacoesDeleted = data.length
   }
 
   // 2. Guias: idem
@@ -196,12 +198,13 @@ export async function archiveClient(id: string): Promise<ArchiveClientResult> {
     else taxToDelete.push(r.id)
   }
   if (taxToDelete.length > 0) {
-    const { error } = await supabase.from("taxes").delete().in("id", taxToDelete)
+    const { data, error } = await supabase.from("taxes").delete().in("id", taxToDelete).select("id")
     if (error) {
       console.error("[archive] Error deleting taxes:", error)
       throw toDbError(error)
     }
-    result.guiasDeleted = taxToDelete.length
+    assertAffected(data)
+    result.guiasDeleted = data.length
   }
 
   // 3. Parcelamentos: preserva se tem qualquer parcela paga/enviada
@@ -222,23 +225,26 @@ export async function archiveClient(id: string): Promise<ArchiveClientResult> {
     else instToDelete.push(r.id)
   }
   if (instToDelete.length > 0) {
-    const { error } = await supabase.from("installments").delete().in("id", instToDelete)
+    const { data, error } = await supabase.from("installments").delete().in("id", instToDelete).select("id")
     if (error) {
       console.error("[archive] Error deleting installments:", error)
       throw toDbError(error)
     }
-    result.parcelasDeleted = instToDelete.length
+    assertAffected(data)
+    result.parcelasDeleted = data.length
   }
 
   // 4. Marca cliente como inativo
-  const { error: clientErr } = await supabase
+  const { data: clientRows, error: clientErr } = await supabase
     .from("clients")
     .update({ status: "inactive" })
     .eq("id", id)
+    .select("id")
   if (clientErr) {
     console.error("[archive] Error updating client status:", clientErr)
     throw toDbError(clientErr)
   }
+  assertAffected(clientRows)
 
   return result
 }
@@ -254,9 +260,10 @@ export async function reactivateClient(id: string): Promise<void> {
     return
   }
   const supabase = getSupabaseClient()
-  const { error } = await supabase.from("clients").update({ status: "active" }).eq("id", id)
+  const { data, error } = await supabase.from("clients").update({ status: "active" }).eq("id", id).select("id")
   if (error) {
     console.error("[db] Error reactivating client:", error)
     throw toDbError(error)
   }
+  assertAffected(data)
 }
