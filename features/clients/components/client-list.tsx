@@ -2,6 +2,7 @@
 
 import { StatFilterBar } from "@/components/stat-filter-bar"
 import { usePagination } from "@/hooks/use-pagination"
+import { useListSelection } from "@/hooks/use-list-selection"
 import { ListPagination } from "@/components/list-pagination"
 import { useMemo, useState } from "react"
 import { Button } from "@/components/ui/button"
@@ -52,7 +53,6 @@ export function ClientList({ clients, onUpdate }: ClientListProps) {
   const [isDetailsOpen, setIsDetailsOpen] = useState(false)
   const [templateClient, setTemplateClient] = useState<Client | null>(null)
   const [bulkTemplateClients, setBulkTemplateClients] = useState<Client[] | null>(null)
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [bulkLoading, setBulkLoading] = useState(false)
   const [showFilters, setShowFilters] = useState(false)
   const [regimeFilter, setRegimeFilter] = useState<string>("all")
@@ -109,7 +109,8 @@ export function ClientList({ clients, onUpdate }: ClientListProps) {
       if (regimeFilter !== "all" && client.taxRegime !== regimeFilter) return false
       if (statusFilter !== "all" && client.status !== statusFilter) return false
       if (activityFilter !== "all" && client.businessActivity !== activityFilter) return false
-      if (stateFilter !== "all" && client.state !== stateFilter) return false
+      // UF comparada em maiúsculas (cadastros antigos podem ter "sp")
+      if (stateFilter !== "all" && (client.state ?? "").trim().toUpperCase() !== stateFilter) return false
       return true
     })
 
@@ -146,6 +147,15 @@ export function ClientList({ clients, onUpdate }: ClientListProps) {
 
     return sorted
   }, [clients, search, regimeFilter, statusFilter, activityFilter, stateFilter, sortBy, sortOrder])
+
+  // Paginação: renderiza 50 linhas por vez (listas com centenas de itens travavam)
+  const pagination = usePagination(filteredClients)
+  const visibleIds = pagination.items.map((c) => c.id)
+  // Seleção some ao trocar busca/filtros/página: ação em lote só no que está na tela
+  const selection = useListSelection(
+    [search, regimeFilter, statusFilter, activityFilter, stateFilter, pagination.page].join("|"),
+  )
+  const { selectedIds, toggle: toggleSelect, clear: clearSelection } = selection
 
   // UFs disponíveis (apenas as que têm clientes cadastrados)
   const availableStates = useMemo(() => {
@@ -253,15 +263,6 @@ export function ClientList({ clients, onUpdate }: ClientListProps) {
     }
   }
 
-  const toggleSelect = (id: string) => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
-  }
-  const clearSelection = () => setSelectedIds(new Set())
 
   const handleBulkDelete = () => {
     if (selectedIds.size === 0) return
@@ -392,8 +393,6 @@ export function ClientList({ clients, onUpdate }: ClientListProps) {
     {} as Record<string, number>,
   )
 
-  // Paginação: renderiza 50 linhas por vez (listas com centenas de itens travavam)
-  const pagination = usePagination(filteredClients)
 
   return (
     <div className="space-y-4">
@@ -607,12 +606,10 @@ export function ClientList({ clients, onUpdate }: ClientListProps) {
             <TableRow>
               <TableHead className="w-10">
                 <Checkbox
-                  checked={filteredClients.length > 0 && filteredClients.every((c) => selectedIds.has(c.id))}
-                  onCheckedChange={(checked) => {
-                    if (checked) setSelectedIds(new Set(filteredClients.map((c) => c.id)))
-                    else clearSelection()
-                  }}
-                  aria-label="Selecionar todas"
+                  checked={selection.isAllVisibleSelected(visibleIds)}
+                  onCheckedChange={(checked) => selection.setAllVisible(visibleIds, !!checked)}
+                  aria-label={`Selecionar as ${visibleIds.length} empresas desta página`}
+                  title={`Selecionar as ${visibleIds.length} empresas desta página`}
                 />
               </TableHead>
               <ResizableTableHead defaultWidth={260} storageKey="clientes-name">
