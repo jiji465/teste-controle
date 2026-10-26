@@ -1,6 +1,7 @@
 import type { Client } from "@/lib/types"
 import { normalizeCnpj } from "@/lib/cnpj-validation"
 import { hasSupabaseConfig, getSupabaseClient, fetchAll, local, toDbError } from "@/lib/supabase/core"
+import { getLockedPeriods } from "@/features/periods/services"
 
 function mapClientToDb(client: Client) {
   return {
@@ -130,26 +131,29 @@ export async function archiveClient(id: string): Promise<ArchiveClientResult> {
     parcelasDeleted: 0,
     preservedCount: 0,
   }
+  const lockedPeriods = new Set((await getLockedPeriods()).map((p) => p.period))
 
   if (!hasSupabaseConfig()) {
     // Fallback localStorage (dev sem Supabase configurado)
     const obs = local.getObligations().filter((o) => o.clientId === id)
     const txs = local.getTaxes().filter((t) => t.clientId === id)
     const insts = local.getInstallments().filter((i) => i.clientId === id)
+    const obsToDelete = obs.filter((o) => o.status !== "completed")
+    const txsToDelete = txs.filter((t) => t.status !== "completed")
+    // Verifica TUDO antes de apagar qualquer coisa
+    assertNoLockedDeletes(
+      [...obsToDelete, ...txsToDelete].map((x) => x.competencyMonth),
+      lockedPeriods,
+    )
 
-    for (const o of obs) {
-      if (o.status === "completed") result.preservedCount++
-      else {
-        local.deleteObligation(o.id)
-        result.obrigacoesDeleted++
-      }
+    result.preservedCount += obs.length - obsToDelete.length + txs.length - txsToDelete.length
+    for (const o of obsToDelete) {
+      local.deleteObligation(o.id)
+      result.obrigacoesDeleted++
     }
-    for (const t of txs) {
-      if (t.status === "completed") result.preservedCount++
-      else {
-        local.deleteTax(t.id)
-        result.guiasDeleted++
-      }
+    for (const t of txsToDelete) {
+      local.deleteTax(t.id)
+      result.guiasDeleted++
     }
     for (const i of insts) {
       const hasPayment = (i.paidInstallments ?? []).some((p) => p.paidAt || p.sentAt)
@@ -166,71 +170,58 @@ export async function archiveClient(id: string): Promise<ArchiveClientResult> {
 
   const supabase = getSupabaseClient()
 
-  // 1. Obrigações: deleta as não-concluídas; conta as preservadas
-  const { data: obrigRows } = await supabase
-    .from("obligations")
-    .select("id, status")
-    .eq("client_id", id)
-  const obrigToDelete: string[] = []
-  for (const r of (obrigRows as Array<{ id: string; status: string }> | null) ?? []) {
-    if (r.status === "completed") result.preservedCount++
-    else obrigToDelete.push(r.id)
-  }
-  if (obrigToDelete.length > 0) {
-    const { error } = await supabase.from("obligations").delete().in("id", obrigToDelete)
+  // 1. Lê TUDO antes de apagar: se algum item a apagar estiver em competência
+  //    fechada, o banco recusaria no meio (obrigações já apagadas, guias não,
+  //    cliente ativo). Abortamos antes, sem mexer em nada.
+  type Row = { id: string; status: string; competency_month?: string | null }
+  const readRows = async <T,>(table: string, columns: string): Promise<T[]> => {
+    const { data, error } = await supabase.from(table).select(columns).eq("client_id", id)
     if (error) {
-      console.error("[archive] Error deleting obligations:", error)
+      console.error(`[archive] Error reading ${table}:`, error)
       throw toDbError(error)
     }
-    result.obrigacoesDeleted = obrigToDelete.length
+    return (data as T[] | null) ?? []
   }
-
-  // 2. Guias: idem
-  const { data: taxRows } = await supabase
-    .from("taxes")
-    .select("id, status")
-    .eq("client_id", id)
-  const taxToDelete: string[] = []
-  for (const r of (taxRows as Array<{ id: string; status: string }> | null) ?? []) {
-    if (r.status === "completed") result.preservedCount++
-    else taxToDelete.push(r.id)
-  }
-  if (taxToDelete.length > 0) {
-    const { error } = await supabase.from("taxes").delete().in("id", taxToDelete)
-    if (error) {
-      console.error("[archive] Error deleting taxes:", error)
-      throw toDbError(error)
-    }
-    result.guiasDeleted = taxToDelete.length
-  }
-
-  // 3. Parcelamentos: preserva se tem qualquer parcela paga/enviada
-  const { data: instRows } = await supabase
-    .from("installments")
-    .select("id, paid_installments")
-    .eq("client_id", id)
-  const instToDelete: string[] = []
-  for (const r of (instRows as Array<{
+  const obrigRows = await readRows<Row>("obligations", "id, status, competency_month")
+  const taxRows = await readRows<Row>("taxes", "id, status, competency_month")
+  const instRows = await readRows<{
     id: string
     paid_installments: Array<{ paid_at?: string; sent_at?: string; paidAt?: string; sentAt?: string }> | null
-  }> | null) ?? []) {
-    // O banco grava snake_case (ver installments/services.ts); camelCase cobre linhas antigas.
-    const hasPayment = (r.paid_installments ?? []).some(
-      (p) => p.paid_at || p.sent_at || p.paidAt || p.sentAt,
-    )
+  }>("installments", "id, paid_installments")
+
+  const obrigToDelete = obrigRows.filter((r) => r.status !== "completed")
+  const taxToDelete = taxRows.filter((r) => r.status !== "completed")
+  assertNoLockedDeletes(
+    [...obrigToDelete, ...taxToDelete].map((r) => r.competency_month),
+    lockedPeriods,
+  )
+  result.preservedCount += obrigRows.length - obrigToDelete.length + taxRows.length - taxToDelete.length
+
+  // O banco grava snake_case (ver installments/services.ts); camelCase cobre linhas antigas.
+  const instToDelete: string[] = []
+  for (const r of instRows) {
+    const hasPayment = (r.paid_installments ?? []).some((p) => p.paid_at || p.sent_at || p.paidAt || p.sentAt)
     if (hasPayment) result.preservedCount++
     else instToDelete.push(r.id)
   }
-  if (instToDelete.length > 0) {
-    const { error } = await supabase.from("installments").delete().in("id", instToDelete)
+
+  // 2. Apaga obrigações, guias e parcelamentos sem pagamento
+  const deleteIds = async (table: string, ids: string[]) => {
+    if (ids.length === 0) return
+    const { error } = await supabase.from(table).delete().in("id", ids)
     if (error) {
-      console.error("[archive] Error deleting installments:", error)
+      console.error(`[archive] Error deleting ${table}:`, error)
       throw toDbError(error)
     }
-    result.parcelasDeleted = instToDelete.length
   }
+  await deleteIds("obligations", obrigToDelete.map((r) => r.id))
+  result.obrigacoesDeleted = obrigToDelete.length
+  await deleteIds("taxes", taxToDelete.map((r) => r.id))
+  result.guiasDeleted = taxToDelete.length
+  await deleteIds("installments", instToDelete)
+  result.parcelasDeleted = instToDelete.length
 
-  // 4. Marca cliente como inativo
+  // 3. Marca cliente como inativo
   const { error: clientErr } = await supabase
     .from("clients")
     .update({ status: "inactive" })
@@ -241,6 +232,17 @@ export async function archiveClient(id: string): Promise<ArchiveClientResult> {
   }
 
   return result
+}
+
+/** Aborta o arquivamento se algum item a apagar estiver em competência fechada. */
+function assertNoLockedDeletes(competencies: Array<string | null | undefined>, locked: ReadonlySet<string>): void {
+  const hits = competencies.filter((c): c is string => !!c && locked.has(c.slice(0, 7)))
+  if (hits.length === 0) return
+  const periods = Array.from(new Set(hits.map((c) => c.slice(0, 7)))).sort()
+  throw new Error(
+    `Não é possível arquivar: ${hits.length} ${hits.length > 1 ? "itens pendentes estão" : "item pendente está"} em competência fechada (${periods.join(", ")}). ` +
+      "Reabra a competência ou conclua esses itens antes de arquivar. Nada foi alterado.",
+  )
 }
 
 /**

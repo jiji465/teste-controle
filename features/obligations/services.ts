@@ -1,5 +1,6 @@
 import type { Obligation } from "@/lib/types"
 import { hasSupabaseConfig, getSupabaseClient, fetchAll, local, toDbError } from "@/lib/supabase/core"
+import { assertLocalWriteAllowed } from "@/lib/period-lock"
 
 function mapObligationToDb(obligation: Obligation) {
   return {
@@ -79,14 +80,23 @@ export async function getObligations(): Promise<Obligation[]> {
 }
 
 export async function saveObligation(obligation: Obligation): Promise<void> {
-  if (!hasSupabaseConfig()) { local.saveObligation(obligation); return }
+  if (!hasSupabaseConfig()) {
+    // Sem banco não há trigger de fechamento: aplica a mesma regra aqui.
+    assertLocalWriteAllowed(local.getObligations().find((x) => x.id === obligation.id), obligation, local.getLockedPeriods())
+    local.saveObligation(obligation)
+    return
+  }
   const supabase = getSupabaseClient()
   const { error } = await supabase.from("obligations").upsert(mapObligationToDb(obligation))
   if (error) { console.error("[db] Error saving obligation:", error); throw toDbError(error) }
 }
 
 export async function deleteObligation(id: string): Promise<void> {
-  if (!hasSupabaseConfig()) { local.deleteObligation(id); return }
+  if (!hasSupabaseConfig()) {
+    assertLocalWriteAllowed(local.getObligations().find((x) => x.id === id), undefined, local.getLockedPeriods())
+    local.deleteObligation(id)
+    return
+  }
   const supabase = getSupabaseClient()
   const { error } = await supabase.from("obligations").delete().eq("id", id)
   if (error) { console.error("[db] Error deleting obligation:", error); throw toDbError(error) }
